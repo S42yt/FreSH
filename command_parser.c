@@ -1,9 +1,11 @@
 /*
  * Copyright (c) 2025 Musa
+  * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 
 #include "command_parser.h"
+#include "bin_register.h"
 #include "error_handler.h"
 #include <windows.h>
 #include <stdio.h>
@@ -20,6 +22,16 @@ int file_exists(const char *path) {
 }
 
 int find_in_user_bin(const char *command, char *command_path) {
+
+    if (is_bin_command(command)) {
+        const char *path = get_bin_command_path(command);
+        if (path) {
+            strcpy(command_path, path);
+            return 1;
+        }
+    }
+
+
     char *home_dir = getenv("USERPROFILE");
     char bin_path[MAX_PATH];
 
@@ -92,6 +104,7 @@ int execute_external_command(const char *cmd) {
     char *path_extensions[] = {"", ".exe", ".bat", ".cmd", ".com", NULL};
     int found = 0;
 
+
     if (find_in_user_bin(command_name, command_path)) {
         found = 1;
     } else if (strchr(command_name, '\\') || strchr(command_name, '/')) {
@@ -151,32 +164,46 @@ int execute_external_command(const char *cmd) {
         }
     }
 
-    STARTUPINFOA si = {sizeof(STARTUPINFOA)};
-    PROCESS_INFORMATION pi;
+    STARTUPINFOA si = {0};
+    PROCESS_INFORMATION pi = {0};
 
+    si.cb = sizeof(STARTUPINFOA);
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
 
     BOOL result = CreateProcessA(
-        NULL,
-        command_line,
-        NULL,
-        NULL,
-        TRUE,
-        0,
-        NULL,
-        NULL,
-        &si,
-        &pi
-    );
+                      NULL,
+                      command_line,
+                      NULL,
+                      NULL,
+                      TRUE,
+                      0,
+                      NULL,
+                      NULL,
+                      &si,
+                      &pi
+                  );
 
     if (!result) {
         DWORD error = GetLastError();
-        char error_msg[256];
-        snprintf(error_msg, sizeof(error_msg), "%s (Error code: %lu)", command_name, error);
-        show_error(ERROR_PROCESS_CREATION_FAILED_VAL, error_msg);
+        char error_msg[512];
+
+        switch (error) {
+        case ERROR_FILE_NOT_FOUND:
+            snprintf(error_msg, sizeof(error_msg), "%s: command not found", command_name);
+            show_error(ERROR_COMMAND_NOT_FOUND_VAL, command_name);
+            break;
+        case ERROR_ACCESS_DENIED:
+            snprintf(error_msg, sizeof(error_msg), "%s: permission denied", command_name);
+            show_error(ERROR_PERMISSION_DENIED_VAL, command_name);
+            break;
+        default:
+            snprintf(error_msg, sizeof(error_msg), "%s (Error code: %lu)", command_name, error);
+            show_error(ERROR_PROCESS_CREATION_FAILED_VAL, error_msg);
+            break;
+        }
         return 1;
     }
 

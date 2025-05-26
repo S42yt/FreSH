@@ -1,5 +1,6 @@
 /*
 * Copyright (c) 2025 Musa
+ * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 
@@ -20,8 +21,8 @@ typedef enum {
 } ErrorCode;
 
 void error_handler_init();
-void show_error(ErrorCode code, const char *details);
+void show_error(int error_code, const char *additional_info);
 void show_error_message(const char *message);
 void error_handler_cleanup();
 
-#endif
+#endif //ERROR_HANDLER_H

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2025 Musa
+ * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 
@@ -57,7 +58,7 @@ void history_load() {
         return;
     }
 
-    snprintf(path, MAX_PATH_SIZE, "%s\\.freeshell_history", home);
+    snprintf(path, MAX_PATH_SIZE, "%s\\.fresh_history", home);
 
     FILE *file = fopen(path, "r");
     if (!file) {
@@ -83,7 +84,7 @@ void history_save() {
         return;
     }
 
-    snprintf(path, MAX_PATH_SIZE, "%s\\.freeshell_history", home);
+    snprintf(path, MAX_PATH_SIZE, "%s\\.FreSH_history", home);
 
     FILE *file = fopen(path, "w");
     if (!file) {

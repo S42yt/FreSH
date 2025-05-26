@@ -1,5 +1,6 @@
 /*
 * Copyright (c) 2025 Musa
+ * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 
@@ -20,4 +21,4 @@ int shell_execute(const char *cmd);
 void shell_cleanup();
 int is_shell_running();
 
-#endif
+#endif //SHELL_CORE_H

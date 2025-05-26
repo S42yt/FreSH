@@ -1,5 +1,6 @@
 /*
 * Copyright (c) 2025 Musa
+ * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 
@@ -16,4 +17,4 @@ void print_shell_prompt();
 void prompt_cleanup();
 void set_prompt_color(int color);
 
-#endif
+#endif //SHELL_PROMPT_H

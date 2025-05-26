@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2025 Musa
+  * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 

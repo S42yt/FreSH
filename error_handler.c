@@ -1,160 +1,77 @@
 /*
  * Copyright (c) 2025 Musa
+ * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 
 #include "error_handler.h"
-#include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-
-#define COLOR_RESET 7
-#define COLOR_ERROR 12
-#define COLOR_WARNING 14
-#define COLOR_INFO 11
-#define COLOR_HIGHLIGHT_CUSTOM 15
-#define COLOR_SUGGESTION 10
-
-static HANDLE hConsole = NULL;
+#include <windows.h>
 
 void error_handler_init() {
-    hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
 }
 
-void set_console_color(int color) {
-    if (hConsole) {
-        SetConsoleTextAttribute(hConsole, color);
-    }
-}
+void show_error(int error_code, const char *additional_info) {
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-void reset_console_color() {
-    if (hConsole) {
-        SetConsoleTextAttribute(hConsole, COLOR_RESET);
-    }
-}
 
-void show_suggestion(ErrorCode code, const char *details) {
-    set_console_color(COLOR_SUGGESTION);
-    printf("│ ");
+    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_INTENSITY);
 
-    switch (code) {
-        case ERROR_COMMAND_NOT_FOUND_VAL:
-            if (details && strlen(details) > 0) {
-                // Check for common typos
-                if (strcmp(details, "gt") == 0 || strcmp(details, "gi") == 0) {
-                    printf("Did you mean 'git'?");
-                } else if (strcmp(details, "cd..") == 0) {
-                    printf("Did you mean 'cd ..'?");
-                } else if (strcmp(details, "makedir") == 0) {
-                    printf("Did you mean 'mkdir'?");
-                } else if (strcmp(details, "cls") == 0) {
-                    printf("Did you mean 'clear'?");
-                } else {
-                    printf("Check if the command is installed or in your PATH");
-                }
-            }
-            break;
-
-        case ERROR_PERMISSION_DENIED_VAL:
-            printf("Try running with administrator privileges");
-            break;
-
-        case ERROR_DIRECTORY_NOT_FOUND_VAL:
-            printf("Check if the directory name is correct");
-            break;
-
-        case ERROR_FILE_NOT_FOUND_VAL:
-            printf("Check if the file name is correct");
-            break;
-
-        case ERROR_INVALID_ARGUMENT_VAL:
-            printf("Check command syntax: missing or incorrect argument");
-            break;
-
-        default:
-            break;
+    switch (error_code) {
+    case ERROR_COMMAND_NOT_FOUND_VAL:
+        printf("FreSH: %s: command not found\n", additional_info ? additional_info : "unknown");
+        break;
+    case ERROR_DIRECTORY_NOT_FOUND_VAL:
+        printf("FreSH: cd: %s: No such file or directory\n", additional_info ? additional_info : "unknown");
+        break;
+    case ERROR_FILE_NOT_FOUND_VAL:
+        printf("FreSH: %s: No such file or directory\n", additional_info ? additional_info : "unknown");
+        break;
+    case ERROR_PERMISSION_DENIED_VAL:
+        printf("FreSH: %s: Permission denied\n", additional_info ? additional_info : "unknown");
+        break;
+    case ERROR_INVALID_ARGUMENT_VAL:
+        printf("FreSH: %s: Invalid argument\n", additional_info ? additional_info : "unknown");
+        break;
+    case ERROR_PROCESS_CREATION_FAILED_VAL:
+        printf("FreSH: Failed to execute %s\n", additional_info ? additional_info : "unknown command");
+        break;
+    case ERROR_PIPE_CREATION_FAILED_VAL:
+        printf("FreSH: Failed to create pipe for %s\n", additional_info ? additional_info : "command");
+        break;
+    case ERROR_GENERAL_VAL:
+        printf("FreSH: %s\n", additional_info ? additional_info : "An error occurred");
+        break;
+    default:
+        printf("FreSH: Unknown error occurred");
+        if (additional_info) {
+            printf(": %s", additional_info);
+        }
+        printf("\n");
+        break;
     }
 
-    set_console_color(COLOR_ERROR);
-    printf(" │\n");
-}
 
-void show_error(ErrorCode code, const char *details) {
-    set_console_color(COLOR_ERROR);
-    printf("\n╭───────────────────────────────────────────────────────╮\n");
-    printf("│ ");
-    set_console_color(COLOR_HIGHLIGHT_CUSTOM);
-    printf("ERROR");
-    set_console_color(COLOR_ERROR);
-    printf(": ");
-
-    switch (code) {
-        case ERROR_COMMAND_NOT_FOUND_VAL:
-            printf("Command not found");
-            break;
-        case ERROR_PERMISSION_DENIED_VAL:
-            printf("Permission denied");
-            break;
-        case ERROR_DIRECTORY_NOT_FOUND_VAL:
-            printf("Directory not found");
-            break;
-        case ERROR_FILE_NOT_FOUND_VAL:
-            printf("File not found");
-            break;
-        case ERROR_PIPE_CREATION_FAILED_VAL:
-            printf("Pipe creation failed");
-            break;
-        case ERROR_PROCESS_CREATION_FAILED_VAL:
-            if (strstr(details, "2") != NULL) {
-                printf("Command execution failed - not found");
-            } else if (strstr(details, "3") != NULL) {
-                printf("Command execution failed - path not found");
-            } else if (strstr(details, "5") != NULL) {
-                printf("Command execution failed - access denied");
-            } else {
-                printf("Process creation failed");
-            }
-            break;
-        case ERROR_INVALID_ARGUMENT_VAL:
-            printf("Invalid argument");
-            break;
-        case ERROR_GENERAL_VAL:
-            printf("General error");
-            break;
-        default:
-            printf("Unknown error");
-            break;
-    }
-
-    printf(" │\n");
-
-    if (details && *details) {
-        printf("│ ");
-        set_console_color(COLOR_INFO);
-        printf("%s", details);
-        set_console_color(COLOR_ERROR);
-        printf(" │\n");
-    }
-
-    show_suggestion(code, details);
-
-    printf("╰───────────────────────────────────────────────────────╯\n");
-    reset_console_color();
+    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+    fflush(stdout);
 }
 
 void show_error_message(const char *message) {
-    if (!message) return;
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    set_console_color(COLOR_ERROR);
-    printf("\n╭───────────────────────────────────────────────────────╮\n");
-    printf("│ ");
-    set_console_color(COLOR_HIGHLIGHT_CUSTOM);
-    printf("ERROR");
-    set_console_color(COLOR_ERROR);
-    printf(": %s │\n", message);
-    printf("╰───────────────────────────────────────────────────────╯\n");
-    reset_console_color();
+
+    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_INTENSITY);
+
+    printf("FreSH: %s\n", message ? message : "An error occurred");
+
+
+    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+    fflush(stdout);
 }
 
 void error_handler_cleanup() {
+
 }
