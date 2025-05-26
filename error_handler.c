@@ -22,7 +22,11 @@ void show_error(int error_code, const char *additional_info) {
 
     switch (error_code) {
     case ERROR_COMMAND_NOT_FOUND_VAL:
-        printf("FreSH: %s: command not found\n", additional_info ? additional_info : "unknown");
+        if (additional_info && strlen(additional_info) > 0) {
+            printf("FreSH: %s: command not found\n", additional_info);
+        } else {
+            printf("FreSH: command not found\n");
+        }
         break;
     case ERROR_DIRECTORY_NOT_FOUND_VAL:
         printf("FreSH: cd: %s: No such file or directory\n", additional_info ? additional_info : "unknown");
@@ -34,10 +38,10 @@ void show_error(int error_code, const char *additional_info) {
         printf("FreSH: %s: Permission denied\n", additional_info ? additional_info : "unknown");
         break;
     case ERROR_INVALID_ARGUMENT_VAL:
-        printf("FreSH: %s: Invalid argument\n", additional_info ? additional_info : "unknown");
+        printf("FreSH: %s\n", additional_info ? additional_info : "Invalid argument");
         break;
     case ERROR_PROCESS_CREATION_FAILED_VAL:
-        printf("FreSH: Failed to execute %s\n", additional_info ? additional_info : "unknown command");
+        printf("FreSH: %s\n", additional_info ? additional_info : "Failed to execute command");
         break;
     case ERROR_PIPE_CREATION_FAILED_VAL:
         printf("FreSH: Failed to create pipe for %s\n", additional_info ? additional_info : "command");
@@ -47,7 +51,7 @@ void show_error(int error_code, const char *additional_info) {
         break;
     default:
         printf("FreSH: Unknown error occurred");
-        if (additional_info) {
+        if (additional_info && strlen(additional_info) > 0) {
             printf(": %s", additional_info);
         }
         printf("\n");

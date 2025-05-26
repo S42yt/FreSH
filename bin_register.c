@@ -71,7 +71,8 @@ void register_bin_commands() {
                 if (ext && (strcmp(ext, ".exe") == 0 || strcmp(ext, ".bat") == 0 ||
                             strcmp(ext, ".cmd") == 0 || strcmp(ext, ".com") == 0 ||
                             strcmp(ext, ".ps1") == 0 || strcmp(ext, ".vbs") == 0 ||
-                            strcmp(ext, ".wsf") == 0 || strcmp(ext, ".msi") == 0)) {
+                            strcmp(ext, ".wsf") == 0 || strcmp(ext, ".msi") == 0 ||
+                            strcmp(ext, ".sh") == 0)) {
                     is_executable = 1;
                 } else if (!ext) {
 
@@ -162,12 +163,15 @@ void list_bin_commands() {
         printf("  - %%USERPROFILE%%\\AppData\\Local\\bin\n");
         printf("  - C:\\bin (system-wide)\n");
         printf("  - C:\\tools\\bin\n");
-        printf("\n  Supported file types: .exe, .bat, .cmd, .com, .ps1, .vbs, .wsf, .msi\n");
+        printf("\n  Supported file types: .exe, .bat, .cmd, .com, .ps1, .vbs, .wsf, .msi, .sh\n");
         printf("\n  Example: Create %%USERPROFILE%%\\bin\\l.bat with content:\n");
         printf("    @echo off\n");
         printf("    dir /B %%*\n");
         printf("\n  Or create %%USERPROFILE%%\\bin\\ll.ps1 with content:\n");
         printf("    Get-ChildItem @args | Format-Table Name, Length, LastWriteTime\n");
+        printf("\n  Or create %%USERPROFILE%%\\bin\\test.sh with content:\n");
+        printf("    #!/bin/bash\n");
+        printf("    echo \"Hello from shell script!\"\n");
     } else {
         for (int i = 0; i < bin_command_count; i++) {
             printf("  %s -> %s\n", bin_commands[i].name, bin_commands[i].path);

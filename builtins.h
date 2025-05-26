@@ -1,34 +1,22 @@
 /*
  * Copyright (c) 2025 Musa
- * FRESH - Feature-Rich Enhanced Shell
+ * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
 
 #ifndef BUILTINS_H
 #define BUILTINS_H
 
+#include <windows.h>
+
 int handle_builtin(char *cmd);
-void add_alias(const char *alias_def);
-void expand_aliases(char *cmd);
-void show_help();
-void clear_screen();
+void handle_ls();
+void handle_pwd();
+void handle_clear();
+void handle_help();
+void handle_history();
+void handle_which(const char *command);
+void handle_echo(const char *text);
+void handle_shinfo();
 
-int builtin_pwd();
-int builtin_echo(char *args);
-int builtin_which(char *cmd);
-int builtin_env();
-int builtin_export(char *args);
-int builtin_history();
-int builtin_ls(char *path);
-int builtin_cat(char *filename);
-int builtin_mkdir(char *dirname);
-int builtin_rm(char *filename);
-int builtin_cp(char *src, char *dest);
-int builtin_mv(char *src, char *dest);
-int builtin_grep(char *pattern, char *filename);
-int builtin_find(char *path, char *pattern);
-int builtin_head(char *filename);
-int builtin_tail(char *filename);
-int builtin_wc(char *filename);
-
-#endif // BUILTINS_H
+#endif //BUILTINS_H
