@@ -32,9 +32,9 @@ static int history_index = -1;
 static char current_input[MAX_CMD] = {0};
 
 void clear_current_line(int cursor_pos) {
-    
+
     printf("\r$ ");
-    
+
     for (int i = 0; i < cursor_pos + 10; i++) {
         printf(" ");
     }
@@ -46,28 +46,44 @@ void read_command_with_history(char *buffer, int buffer_size) {
     int input_len = 0;
     char input[MAX_CMD] = {0};
     int ch;
-    
-    
+
+
     history_index = -1;
     strcpy(current_input, "");
-    
+
     while (1) {
         ch = _getch();
-        
-        if (ch == 0 || ch == 224) { 
+
+        if (ch == 0 || ch == 224) {
             ch = _getch();
-            
+
             switch (ch) {
-                case KEY_UP: {
-                    if (history_index == -1) {
-                        
-                        strcpy(current_input, input);
-                        history_index = history_count() - 1;
-                    } else if (history_index > 0) {
-                        history_index--;
+            case KEY_UP: {
+                if (history_index == -1) {
+
+                    strcpy(current_input, input);
+                    history_index = history_count() - 1;
+                } else if (history_index > 0) {
+                    history_index--;
+                }
+
+                if (history_index >= 0 && history_index < history_count()) {
+                    const char *hist_cmd = history_get(history_index);
+                    if (hist_cmd) {
+                        clear_current_line(input_len);
+                        strcpy(input, hist_cmd);
+                        input_len = strlen(input);
+                        cursor_pos = input_len;
+                        printf("%s", input);
                     }
-                    
-                    if (history_index >= 0 && history_index < history_count()) {
+                }
+                break;
+            }
+
+            case KEY_DOWN: {
+                if (history_index != -1) {
+                    if (history_index < history_count() - 1) {
+                        history_index++;
                         const char *hist_cmd = history_get(history_index);
                         if (hist_cmd) {
                             clear_current_line(input_len);
@@ -76,152 +92,136 @@ void read_command_with_history(char *buffer, int buffer_size) {
                             cursor_pos = input_len;
                             printf("%s", input);
                         }
+                    } else {
+
+                        history_index = -1;
+                        clear_current_line(input_len);
+                        strcpy(input, current_input);
+                        input_len = strlen(input);
+                        cursor_pos = input_len;
+                        printf("%s", input);
                     }
-                    break;
                 }
-                
-                case KEY_DOWN: {
-                    if (history_index != -1) {
-                        if (history_index < history_count() - 1) {
-                            history_index++;
-                            const char *hist_cmd = history_get(history_index);
-                            if (hist_cmd) {
-                                clear_current_line(input_len);
-                                strcpy(input, hist_cmd);
-                                input_len = strlen(input);
-                                cursor_pos = input_len;
-                                printf("%s", input);
-                            }
-                        } else {
-                            
-                            history_index = -1;
-                            clear_current_line(input_len);
-                            strcpy(input, current_input);
-                            input_len = strlen(input);
-                            cursor_pos = input_len;
-                            printf("%s", input);
-                        }
+                break;
+            }
+
+            case KEY_LEFT: {
+                if (cursor_pos > 0) {
+                    cursor_pos--;
+                    printf("\b");
+                }
+                break;
+            }
+
+            case KEY_RIGHT: {
+                if (cursor_pos < input_len) {
+                    printf("%c", input[cursor_pos]);
+                    cursor_pos++;
+                }
+                break;
+            }
+
+            case KEY_HOME: {
+                while (cursor_pos > 0) {
+                    printf("\b");
+                    cursor_pos--;
+                }
+                break;
+            }
+
+            case KEY_END: {
+                while (cursor_pos < input_len) {
+                    printf("%c", input[cursor_pos]);
+                    cursor_pos++;
+                }
+                break;
+            }
+
+            case KEY_DELETE: {
+                if (cursor_pos < input_len) {
+
+                    for (int i = cursor_pos; i < input_len - 1; i++) {
+                        input[i] = input[i + 1];
                     }
-                    break;
-                }
-                
-                case KEY_LEFT: {
-                    if (cursor_pos > 0) {
-                        cursor_pos--;
+                    input_len--;
+                    input[input_len] = '\0';
+
+
+                    printf("%s ", input + cursor_pos);
+
+                    for (int i = cursor_pos; i <= input_len; i++) {
                         printf("\b");
                     }
-                    break;
                 }
-                
-                case KEY_RIGHT: {
-                    if (cursor_pos < input_len) {
-                        printf("%c", input[cursor_pos]);
-                        cursor_pos++;
-                    }
-                    break;
-                }
-                
-                case KEY_HOME: {
-                    while (cursor_pos > 0) {
-                        printf("\b");
-                        cursor_pos--;
-                    }
-                    break;
-                }
-                
-                case KEY_END: {
-                    while (cursor_pos < input_len) {
-                        printf("%c", input[cursor_pos]);
-                        cursor_pos++;
-                    }
-                    break;
-                }
-                
-                case KEY_DELETE: {
-                    if (cursor_pos < input_len) {
-                        
-                        for (int i = cursor_pos; i < input_len - 1; i++) {
-                            input[i] = input[i + 1];
-                        }
-                        input_len--;
-                        input[input_len] = '\0';
-                        
-                        
-                        printf("%s ", input + cursor_pos);
-                        
-                        for (int i = cursor_pos; i <= input_len; i++) {
-                            printf("\b");
-                        }
-                    }
-                    break;
-                }
+                break;
+            }
             }
         } else {
-            
+
             switch (ch) {
-                case KEY_ENTER: {
-                    printf("\n");
-                    strncpy(buffer, input, buffer_size - 1);
-                    buffer[buffer_size - 1] = '\0';
-                    return;
-                }
-                
-                case KEY_BACKSPACE: {
-                    if (cursor_pos > 0) {
-                        
-                        for (int i = cursor_pos - 1; i < input_len - 1; i++) {
-                            input[i] = input[i + 1];
-                        }
-                        cursor_pos--;
-                        input_len--;
-                        input[input_len] = '\0';
-                        
-                        
-                        printf("\b%s ", input + cursor_pos);
-                        
-                        for (int i = cursor_pos; i <= input_len; i++) {
-                            printf("\b");
-                        }
+            case KEY_ENTER: {
+                printf("\n");
+                strncpy(buffer, input, buffer_size - 1);
+                buffer[buffer_size - 1] = '\0';
+                return;
+            }
+
+            case KEY_BACKSPACE: {
+                if (cursor_pos > 0) {
+
+                    for (int i = cursor_pos - 1; i < input_len - 1; i++) {
+                        input[i] = input[i + 1];
                     }
-                    break;
-                }
-                
-                case KEY_ESC: {
-                    
-                    clear_current_line(input_len);
-                    input[0] = '\0';
-                    input_len = 0;
-                    cursor_pos = 0;
-                    history_index = -1;
-                    break;
-                }
-                
-                default: {
-                    
-                    if (ch >= 32 && ch <= 126 && input_len < buffer_size - 1) {
-                        
-                        for (int i = input_len; i > cursor_pos; i--) {
-                            input[i] = input[i - 1];
-                        }
-                        input[cursor_pos] = ch;
-                        input_len++;
-                        input[input_len] = '\0';
-                        
-                        
-                        printf("%s", input + cursor_pos);
-                        cursor_pos++;
-                        
-                        
-                        for (int i = cursor_pos; i < input_len; i++) {
-                            printf("\b");
-                        }
+                    cursor_pos--;
+                    input_len--;
+                    input[input_len] = '\0';
+
+
+                    printf("\b%s ", input + cursor_pos);
+
+                    for (int i = cursor_pos; i <= input_len; i++) {
+                        printf("\b");
                     }
-                    break;
                 }
+                break;
+            }
+
+            case KEY_ESC: {
+
+                clear_current_line(input_len);
+                input[0] = '\0';
+                input_len = 0;
+                cursor_pos = 0;
+                history_index = -1;
+                break;
+            }
+
+            default: {
+
+                if (ch >= 32 && ch <= 126 && input_len < buffer_size - 1) {
+
+                    for (int i = input_len; i > cursor_pos; i--) {
+                        input[i] = input[i - 1];
+                    }
+                    input[cursor_pos] = ch;
+                    input_len++;
+                    input[input_len] = '\0';
+
+
+                    printf("%s", input + cursor_pos);
+                    cursor_pos++;
+
+
+                    for (int i = cursor_pos; i < input_len; i++) {
+                        printf("\b");
+                    }
+                }
+                break;
+            }
             }
         }
-        
-        
+
+
         if (history_index == -1) {
             strcpy(current_input, input);
         }

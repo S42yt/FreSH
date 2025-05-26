@@ -7,7 +7,7 @@
 #include "builtins.h"
 #include "bin_register.h"
 #include "history.h"
-#include "git_branch.h"  
+#include "git_branch.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -66,7 +66,7 @@ void handle_ls() {
                 file_count++;
             }
 
-            
+
             SYSTEMTIME st;
             FileTimeToSystemTime(&findFileData.ftLastWriteTime, &st);
 
@@ -95,7 +95,7 @@ void handle_ls() {
 void handle_pwd() {
     char current_dir[MAX_PATH];
     if (_getcwd(current_dir, MAX_PATH) != NULL) {
-        
+
         for (char *p = current_dir; *p; p++) {
             if (*p == '\\') *p = '/';
         }
@@ -113,16 +113,16 @@ void handle_clear() {
     COORD homeCoords = { 0, 0 };
 
     if (hConsole == INVALID_HANDLE_VALUE) {
-        
+
         for (int i = 0; i < 50; i++) {
             printf("\n");
         }
         return;
     }
 
-    
+
     if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) {
-        
+
         for (int i = 0; i < 50; i++) {
             printf("\n");
         }
@@ -131,40 +131,40 @@ void handle_clear() {
 
     cellCount = csbi.dwSize.X * csbi.dwSize.Y;
 
-    
+
     if (!FillConsoleOutputCharacter(
-        hConsole,
-        (TCHAR)' ',
-        cellCount,
-        homeCoords,
-        &count
-    )) {
-        
+                hConsole,
+                (TCHAR)' ',
+                cellCount,
+                homeCoords,
+                &count
+            )) {
+
         for (int i = 0; i < 50; i++) {
             printf("\n");
         }
         return;
     }
 
-    
+
     if (!FillConsoleOutputAttribute(
-        hConsole,
-        csbi.wAttributes,
-        cellCount,
-        homeCoords,
-        &count
-    )) {
-        
+                hConsole,
+                csbi.wAttributes,
+                cellCount,
+                homeCoords,
+                &count
+            )) {
+
         for (int i = 0; i < 50; i++) {
             printf("\n");
         }
         return;
     }
 
-    
+
     SetConsoleCursorPosition(hConsole, homeCoords);
 
-    
+
 }
 
 void handle_help() {
@@ -195,23 +195,23 @@ void handle_help() {
 void handle_history() {
     printf("Command History:\n");
     print_separator(50);
-    
+
     int count = history_count();
     if (count == 0) {
         printf("No commands in history\n");
         return;
     }
-    
+
     printf("%-4s %s\n", "No.", "Command");
     print_separator(50);
-    
+
     for (int i = 0; i < count; i++) {
         const char *cmd = history_get(i);
         if (cmd) {
             printf("%-4d %s\n", i + 1, cmd);
         }
     }
-    
+
     print_separator(50);
     printf("Total: %d command(s)\n", count);
 }
@@ -222,11 +222,11 @@ void handle_which(const char *command) {
         return;
     }
 
-    
+
     if (strcmp(command, "$SHELL") == 0 || strcmp(command, "shell") == 0) {
         char exe_path[MAX_PATH];
         if (GetModuleFileNameA(NULL, exe_path, MAX_PATH)) {
-            
+
             for (char *p = exe_path; *p; p++) {
                 if (*p == '\\') *p = '/';
             }
@@ -237,13 +237,13 @@ void handle_which(const char *command) {
         return;
     }
 
-    
+
     if (is_bin_command(command)) {
         const char *path = get_bin_command_path(command);
         if (path) {
             char display_path[MAX_PATH];
             strcpy(display_path, path);
-            
+
             for (char *p = display_path; *p; p++) {
                 if (*p == '\\') *p = '/';
             }
@@ -252,7 +252,7 @@ void handle_which(const char *command) {
         }
     }
 
-    
+
     char *path_env = getenv("PATH");
     if (path_env) {
         char path_copy[32768];
@@ -268,7 +268,7 @@ void handle_which(const char *command) {
                 snprintf(full_path, MAX_PATH, "%s\\%s%s", path_token, command, extensions[i]);
 
                 if (GetFileAttributesA(full_path) != INVALID_FILE_ATTRIBUTES) {
-                    
+
                     for (char *p = full_path; *p; p++) {
                         if (*p == '\\') *p = '/';
                     }
@@ -295,19 +295,19 @@ void handle_shinfo() {
     printf("Shell Script Support Information:\n");
     printf("=====================================\n");
     printf("FreSH supports executing .sh scripts but requires a Unix shell interpreter.\n\n");
-    
+
     printf("Recommended interpreters:\n");
     printf("  1. Git Bash (comes with Git for Windows)\n");
     printf("  2. WSL (Windows Subsystem for Linux)\n");
     printf("  3. MSYS2\n");
     printf("  4. Cygwin\n\n");
-    
+
     printf("To install Git Bash:\n");
     printf("  Download from: https://git-scm.com/download/win\n\n");
-    
+
     printf("To enable WSL:\n");
     printf("  Run: wsl --install\n\n");
-    
+
     printf("Once installed, you can run shell scripts like:\n");
     printf("  ./build.sh\n");
     printf("  ./script.sh\n");
@@ -316,39 +316,39 @@ void handle_shinfo() {
 void handle_gitinfo() {
     printf("Git Repository Information:\n");
     print_separator(50);
-    
+
     if (!is_git_repository()) {
         printf("Not in a git repository\n");
         return;
     }
-    
+
     printf("Repository Status: Active\n");
-    
+
     char *repo = get_git_repo_name();
     if (repo) {
         printf("Repository: %s\n", repo);
     }
-    
+
     char *branch = get_git_branch();
     if (branch) {
         printf("Current Branch: %s\n", branch);
     } else {
         printf("Current Branch: Unable to determine\n");
     }
-    
+
     char *user = get_git_user();
     if (user) {
         printf("Git User: %s\n", user);
     } else {
         printf("Git User: Not configured\n");
     }
-    
+
     print_separator(50);
 }
 
 void handle_gitconfig(const char *args) {
     if (!args || strlen(args) == 0) {
-        
+
         printf("Git Display Configuration:\n");
         print_separator(40);
         printf("%-10s %s\n", "Setting", "Value");
@@ -365,20 +365,20 @@ void handle_gitconfig(const char *args) {
         printf("  gitconfig repo false    - Hide repository name\n");
         return;
     }
-    
+
     char args_copy[256];
     strncpy(args_copy, args, sizeof(args_copy) - 1);
     args_copy[sizeof(args_copy) - 1] = '\0';
-    
+
     char *setting = strtok(args_copy, " \t");
     char *value = strtok(NULL, " \t");
-    
+
     if (!setting || !value) {
         printf("Usage: gitconfig <setting> <true|false>\n");
         printf("Settings: user, branch, repo\n");
         return;
     }
-    
+
     int bool_value;
     if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "on") == 0) {
         bool_value = 1;
@@ -388,7 +388,7 @@ void handle_gitconfig(const char *args) {
         printf("Invalid value '%s'. Use: true, false, 1, 0, on, or off\n", value);
         return;
     }
-    
+
     if (strcmp(setting, "user") == 0) {
         git_config_set_user(bool_value);
         printf("Git user display %s\n", bool_value ? "enabled" : "disabled");
@@ -408,7 +408,7 @@ int handle_builtin(char *cmd) {
         return 0;
     }
 
-    
+
     char *start = cmd;
     while (*start && isspace(*start)) start++;
 
@@ -449,7 +449,7 @@ int handle_builtin(char *cmd) {
         list_bin_commands();
         return 1;
     }
-    
+
     if (strcmp(start, "shinfo") == 0) {
         handle_shinfo();
         return 1;
