@@ -4,7 +4,6 @@
  * MIT License - See LICENSE file for details
  */
 
-
 #ifndef SHELL_PROMPT_H
 #define SHELL_PROMPT_H
 

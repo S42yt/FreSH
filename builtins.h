@@ -18,5 +18,7 @@ void handle_history();
 void handle_which(const char *command);
 void handle_echo(const char *text);
 void handle_shinfo();
+void handle_gitinfo();
+void handle_gitconfig(const char *args);
 
 #endif //BUILTINS_H

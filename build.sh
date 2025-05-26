@@ -32,7 +32,6 @@ gcc build/o/main.o build/o/shell_core.o build/o/shell_prompt.o build/o/command_p
 
 # Check if build was successful
 if [ $? -eq 0 ]; then
-    echo -e "\e[32mBuild successful! Executable is in build/FreSH.exe\e[0m"
     # Make the executable file executable
     chmod +x build/FreSH.exe
 else
