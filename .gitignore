@@ -56,3 +56,16 @@ build/
 
 # CMake
 cmake-build-debug
+
+# IDEs
+
+# Visual Studio
+*.suo
+*.user
+*.ncb
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains IDEs
+.idea/
