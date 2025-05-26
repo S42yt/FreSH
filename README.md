@@ -4,8 +4,6 @@ A fast bash-like shell written in C for Windows.
 
 **Important:** Global Installation of FreSH is not supported from the official repo rn. Support will come soon.
 
-_Note: Would probably work on UNIX or Linux but its not the focus so no support is planned._
-
 ![TUI](./assets/FreSH_tui.png)
 
 ## Building
