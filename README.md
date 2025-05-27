@@ -6,6 +6,9 @@ A fast bash-like shell written in C for Windows.
 
 ## Installation
 
+
+![WIZARD](./assets/FreSH_wizard.png)
+
 ### Wizard Installation
 
 1. Download the latest `FreSH-Setup.exe` from the releases page
@@ -39,8 +42,6 @@ astyle --style=google --indent=spaces=4 --suffix=none *.c *.h
 
 Build FreSH:
 ```sh
-./build.ps1
-#or
 ./build.sh
 ```
 

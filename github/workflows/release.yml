@@ -1,0 +1,303 @@
+name: Build and Release FreSH
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'draft'
+        type: choice
+        options:
+          - draft
+          - prerelease
+          - release
+
+env:
+  FRESH_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+        update: true
+
+    - name: Extract version from tag or input
+      shell: bash
+      run: |
+        if [[ "${{ github.event_name }}" == "push" ]]; then
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        else
+          VERSION="${{ github.event.inputs.version }}"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Building FreSH version: $VERSION"
+
+    - name: Update version in source files
+      shell: bash
+      run: |
+        # Update version in installer header
+        sed -i 's/#define FRESH_VERSION ".*"/#define FRESH_VERSION "'$VERSION'"/' installation/installer.h
+        
+        # Update version in README if needed
+        sed -i 's/v[0-9]\+\.[0-9]\+\.[0-9]\+/v'$VERSION'/g' README.md
+        
+        echo "Updated version to: $VERSION"
+
+    - name: Build FreSH Core
+      shell: msys2 {0}
+      run: |
+        echo "🚀 Building FreSH Core v$VERSION..."
+        echo "=================================="
+        
+        # Make build script executable and run it
+        chmod +x build.sh
+        ./build.sh
+        
+        # Verify build
+        if [ -f "build/FreSH.exe" ]; then
+          echo "✅ FreSH.exe built successfully"
+          ls -la build/FreSH.exe
+          
+          # Get file size
+          SIZE=$(stat -c%s "build/FreSH.exe")
+          echo "📦 FreSH.exe size: ${SIZE} bytes"
+        else
+          echo "❌ Failed to build FreSH.exe"
+          exit 1
+        fi
+
+    - name: Build FreSH Installer
+      shell: msys2 {0}
+      run: |
+        echo "🔧 Building FreSH Installation Wizard v$VERSION..."
+        echo "=============================================="
+        
+        cd installation
+        
+        # Make build script executable and run it
+        chmod +x build.sh
+        ./build.sh
+        
+        # Verify installer build
+        if [ -f "build/FreSH-Setup.exe" ]; then
+          echo "✅ FreSH-Setup.exe built successfully"
+          ls -la build/FreSH-Setup.exe
+          
+          # Get file size
+          SIZE=$(stat -c%s "build/FreSH-Setup.exe")
+          echo "📦 FreSH-Setup.exe size: ${SIZE} bytes"
+        else
+          echo "❌ Failed to build FreSH-Setup.exe"
+          exit 1
+        fi
+        
+        cd ..
+
+    - name: Generate Changelog
+      shell: bash
+      run: |
+        echo "📝 Generating changelog for v$VERSION..."
+        
+        # Get the previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        
+        if [ -n "$PREV_TAG" ]; then
+          echo "Comparing with previous version: $PREV_TAG"
+          
+          # Generate commit log since last tag
+          echo "## 🔄 Changes since $PREV_TAG" > CHANGELOG_TEMP.md
+          echo "" >> CHANGELOG_TEMP.md
+          git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD >> CHANGELOG_TEMP.md
+          echo "" >> CHANGELOG_TEMP.md
+          echo "" >> CHANGELOG_TEMP.md
+        else
+          echo "## 🎉 Initial Release" > CHANGELOG_TEMP.md
+          echo "" >> CHANGELOG_TEMP.md
+        fi
+
+    - name: Create Release Notes
+      shell: bash
+      run: |
+        cat > release_notes.md << 'EOF'
+        # 🚀 FreSH v${{ env.VERSION }} - First-Run Experience Shell
+
+        ![FreSH Version](https://img.shields.io/badge/FreSH-v${{ env.VERSION }}-blue?style=for-the-badge&logo=windows)
+        ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?style=for-the-badge&logo=windows)
+        ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+
+        ## 📋 CHANGELOG
+
+        **⚠️ Please update this section with actual changes before publishing the release!**
+
+        EOF
+        
+        # Add generated changelog if it exists
+        if [ -f "CHANGELOG_TEMP.md" ]; then
+          cat CHANGELOG_TEMP.md >> release_notes.md
+        fi
+        
+        cat >> release_notes.md << 'EOF'
+        
+        ### ✨ New Features
+        - Feature 1: Description
+        - Feature 2: Description
+        
+        ### 🐛 Bug Fixes
+        - Fixed issue with...
+        - Resolved problem where...
+        
+        ### 🔧 Improvements
+        - Enhanced performance of...
+        - Improved user experience for...
+        
+        ### 🗑️ Removed
+        - Deprecated feature X
+        - Removed legacy code Y
+
+        ---
+
+        ## 📦 Installation
+
+        ### 🎯 Quick Install (Recommended)
+        1. **Download** `FreSH-Setup.exe` below
+        2. **Run** the installer
+        3. **Choose** installation type:
+           - 🏠 **Current User** (no admin required)
+           - 🌐 **System-Wide** (requires admin privileges)
+        4. **Follow** the installation wizard
+        5. **Open** any terminal and type `FreSH` to start!
+
+        ### 🛠️ What the Installer Does
+        - ✅ Installs FreSH.exe to chosen location
+        - ✅ Registers FreSH as Windows shell option
+        - ✅ Adds FreSH to system PATH
+        - ✅ Creates Start Menu and Desktop shortcuts
+        - ✅ Includes uninstaller for easy removal
+        - ✅ Registers in Windows Add/Remove Programs
+
+        ## 📝 License
+
+        This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+
+        ---
+
+        **📥 Download:** Use `FreSH-Setup.exe` below for the complete installation experience.
+
+        **🏗️ Build Information:**
+        - **Version:** v${{ env.VERSION }}
+        - **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        - **Commit SHA:** ${{ github.sha }}
+        - **Workflow:** ${{ github.workflow }}
+        - **Runner:** ${{ runner.os }}
+
+        **📊 Package Sizes:**
+        - FreSH Core: ~$(stat -c%s "build/FreSH.exe" | numfmt --to=iec)
+        - FreSH Setup: ~$(stat -c%s "installation/build/FreSH-Setup.exe" | numfmt --to=iec)
+        EOF
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ env.VERSION }}
+        name: "FreSH v${{ env.VERSION }} - First-Run Experience Shell"
+        body_path: release_notes.md
+        draft: ${{ github.event.inputs.release_type == 'draft' || github.event.inputs.release_type == '' }}
+        prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
+        files: |
+          installation/build/FreSH-Setup.exe
+          build/FreSH.exe
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fail_on_unmatched_files: true
+        generate_release_notes: false
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: FreSH-v${{ env.VERSION }}-Build-Artifacts
+        path: |
+          build/FreSH.exe
+          installation/build/FreSH-Setup.exe
+          release_notes.md
+        retention-days: 90
+        compression-level: 6
+
+    - name: Create Build Summary
+      shell: bash
+      run: |
+        echo "# 🎉 FreSH v$VERSION Build Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "## ✅ Build Results" >> $GITHUB_STEP_SUMMARY
+        echo "| Component | Status | Size |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|------|" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f "build/FreSH.exe" ]; then
+          SIZE=$(stat -c%s "build/FreSH.exe" | numfmt --to=iec)
+          echo "| FreSH Core | ✅ Success | $SIZE |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| FreSH Core | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ -f "installation/build/FreSH-Setup.exe" ]; then
+          SIZE=$(stat -c%s "installation/build/FreSH-Setup.exe" | numfmt --to=iec)
+          echo "| FreSH Installer | ✅ Success | $SIZE |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| FreSH Installer | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📦 Release Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version:** v$VERSION" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Date:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release Type:** ${{ github.event.inputs.release_type || 'draft' }}" >> $GITHUB_STEP_SUMMARY
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "1. 📝 **Review** the draft release and update the changelog" >> $GITHUB_STEP_SUMMARY
+        echo "2. 🧪 **Test** the installer on a clean Windows system" >> $GITHUB_STEP_SUMMARY
+        echo "3. ✅ **Verify** all features work as expected" >> $GITHUB_STEP_SUMMARY
+        echo "4. 🌍 **Publish** the release when ready" >> $GITHUB_STEP_SUMMARY
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📊 File Details" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "FreSH Core Executable:" >> $GITHUB_STEP_SUMMARY
+        ls -lah build/FreSH.exe >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "FreSH Installation Wizard:" >> $GITHUB_STEP_SUMMARY
+        ls -lah installation/build/FreSH-Setup.exe >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+    - name: Notify Build Completion
+      shell: bash
+      run: |
+        echo "🎊 Build completed successfully!"
+        echo "📋 Version: v$VERSION"
+        echo "📁 Artifacts uploaded to GitHub"
+        echo "🔗 Release draft created: https://github.com/${{ github.repository }}/releases"
+        echo ""
+        echo "Next steps:"
+        echo "1. Review and edit the release notes"
+        echo "2. Test the installer"
+        echo "3. Publish the release"
