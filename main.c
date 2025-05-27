@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Musa
+ * Copyright (c) 2025 Musa/S42
   * FreSH - First-Run Experience Shell
  * MIT License - See LICENSE file for details
  */
@@ -239,8 +239,7 @@ int main() {
 
     history_load();
     printf("FreSH v1.0 - First-Run Experience Shell\n");
-    printf("Type 'help' for available commands, 'exit' to quit\n");
-    printf("Use Up/Down arrows for command history, Ctrl+C to exit\n\n");
+    printf("Type 'help' for available commands, 'exit' to quit\n\n");
 
     while (1) {
         print_shell_prompt();
