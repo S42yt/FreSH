@@ -1,7 +1,8 @@
 name: Build and Release FreSH
-
 on:
   push:
+    branches:
+      - master
     tags:
       - 'v*'
   workflow_dispatch:
