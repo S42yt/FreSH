@@ -1,5 +1,7 @@
 # FreSH - First-Run Experience Shell
 
+# Dawg i dont have windows even anymore i think im gonna rewrite this for mac lmao
+
 A fast bash-like shell written in C for Windows.
 
 ![TUI](./assets/FreSH_tui.png)
