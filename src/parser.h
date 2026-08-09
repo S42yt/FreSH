@@ -34,6 +34,8 @@ typedef enum {
     N_WHILE,
     N_UNTIL,
     N_FOR,
+    N_CASE,
+    N_CASE_ITEM,
     N_GROUP,
     N_FUNC
 } NodeKind;

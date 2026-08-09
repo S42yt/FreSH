@@ -18,6 +18,7 @@ typedef enum {
     T_AND_AND,
     T_OR_OR,
     T_SEMI,
+    T_DSEMI,
     T_AMP,
     T_NEWLINE,
     T_REDIR,
@@ -46,8 +47,9 @@ typedef struct {
     char *error;
 } Parser;
 
-static const char *RESERVED[] = {"if",    "then", "elif", "else", "fi",   "for",  "in",
-                                 "while", "until", "do",  "done", "function", "{", "}", NULL};
+static const char *RESERVED[] = {"if",   "then",  "elif", "else",     "fi", "for",  "in",
+                                 "while", "until", "do",   "done",     "case", "esac",
+                                 "function", "{",  "}",    NULL};
 
 static void token_push(TokenList *list, Token token) {
     if (list->len + 1 >= list->cap) {
@@ -204,6 +206,12 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             Token t = {T_AMP, NULL, 0, 0, R_IN};
             token_push(out, t);
             p++;
+            continue;
+        }
+        if (*p == ';' && p[1] == ';') {
+            Token t = {T_DSEMI, NULL, 0, 0, R_IN};
+            token_push(out, t);
+            p += 2;
             continue;
         }
         if (*p == ';') {
@@ -445,6 +453,68 @@ static Node *parse_for(Parser *ps) {
     return node;
 }
 
+static Node *parse_case(Parser *ps) {
+    advance(ps);
+    Token *subject = peek(ps);
+    if (subject->type != T_WORD) {
+        fail(ps, "syntax error: case requires a word");
+        return NULL;
+    }
+    Node *node = node_new(N_CASE);
+    node->name = xstrdup(subject->text);
+    advance(ps);
+    skip_line_breaks(ps);
+
+    if (!is_reserved(peek(ps), "in")) {
+        ps->incomplete = 1;
+        node_free(node);
+        return NULL;
+    }
+    advance(ps);
+
+    Node **slot = &node->right;
+    while (1) {
+        skip_line_breaks(ps);
+        if (is_reserved(peek(ps), "esac")) break;
+        if (peek(ps)->type == T_EOF) {
+            ps->incomplete = 1;
+            node_free(node);
+            return NULL;
+        }
+
+        Node *item = node_new(N_CASE_ITEM);
+        if (peek(ps)->type == T_LPAREN) advance(ps);
+        while (peek(ps)->type == T_WORD) {
+            sl_push_copy(&item->words, peek(ps)->text);
+            advance(ps);
+            if (peek(ps)->type == T_PIPE) advance(ps);
+            else break;
+        }
+        if (peek(ps)->type != T_RPAREN) {
+            fail(ps, "syntax error: expected ')' in case");
+            node_free(item);
+            node_free(node);
+            return NULL;
+        }
+        advance(ps);
+
+        const char *stop[] = {"esac", NULL};
+        item->right = parse_list(ps, stop);
+        if (peek(ps)->type == T_DSEMI) advance(ps);
+
+        *slot = item;
+        slot = &item->extra;
+    }
+
+    if (!is_reserved(peek(ps), "esac")) {
+        ps->incomplete = 1;
+        node_free(node);
+        return NULL;
+    }
+    advance(ps);
+    return node;
+}
+
 static Node *parse_group(Parser *ps) {
     advance(ps);
     const char *stop[] = {"}", NULL};
@@ -535,6 +605,7 @@ static Node *parse_compound(Parser *ps) {
     if (is_reserved(t, "while")) return parse_loop(ps, N_WHILE);
     if (is_reserved(t, "until")) return parse_loop(ps, N_UNTIL);
     if (is_reserved(t, "for")) return parse_for(ps);
+    if (is_reserved(t, "case")) return parse_case(ps);
     if (is_reserved(t, "{")) return parse_group(ps);
     if (is_reserved(t, "function")) {
         advance(ps);
@@ -553,20 +624,17 @@ static Node *parse_compound(Parser *ps) {
         free(fname);
         return func;
     }
-    if (t->type == T_WORD && !t->quoted && strcmp(t->text, "!") == 0) {
-        advance(ps);
-        Node *node = node_new(N_NOT);
-        node->right = parse_command(ps);
-        if (!node->right) {
-            node_free(node);
-            return NULL;
-        }
-        return node;
-    }
     return parse_simple(ps);
 }
 
 static Node *parse_pipeline(Parser *ps) {
+    int negated = 0;
+    Token *first = peek(ps);
+    if (first->type == T_WORD && !first->quoted && strcmp(first->text, "!") == 0) {
+        negated = 1;
+        advance(ps);
+    }
+
     Node *left = parse_command(ps);
     if (!left) return NULL;
     while (peek(ps)->type == T_PIPE) {
@@ -582,6 +650,12 @@ static Node *parse_pipeline(Parser *ps) {
         pipe_node->left = left;
         pipe_node->right = right;
         left = pipe_node;
+    }
+
+    if (negated) {
+        Node *node = node_new(N_NOT);
+        node->right = left;
+        left = node;
     }
     return left;
 }
@@ -611,7 +685,9 @@ static Node *parse_list(Parser *ps, const char **stop) {
     Node *list = NULL;
     while (1) {
         skip_newlines(ps);
-        if (peek(ps)->type == T_EOF || peek(ps)->type == T_RPAREN) break;
+        if (peek(ps)->type == T_EOF || peek(ps)->type == T_RPAREN ||
+            peek(ps)->type == T_DSEMI)
+            break;
         if (at_stop(ps, stop)) break;
 
         Node *cmd = parse_and_or(ps);

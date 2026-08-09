@@ -14,7 +14,7 @@ No Git Bash, no WSL, no MSYS2 — FreSH runs shell scripts itself.
 - quoting, `\` escapes, globs (`*.c`, `src/?.h`)
 - variables, `export`, `$?`, `$#`, `$@`, `$1`, `${VAR:-default}`, `${#VAR}`
 - command substitution `$(...)` and `` `...` ``, arithmetic `$((1 + 2))`
-- `if / elif / else / fi`, `while`, `until`, `for x in ...`, `{ ...; }`, `!`
+- `if / elif / else / fi`, `while`, `until`, `for x in ...`, `case ... esac`, `{ ...; }`, `!`
 - shell functions, `return`, `break`, `continue`, `shift`, `local` positional parameters
 - `.sh` scripts run natively — FreSH is the interpreter, no external shell involved
 

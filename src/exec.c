@@ -664,6 +664,49 @@ static int truthy(int status) {
     return status == 0;
 }
 
+static int pattern_match(const char *pattern, const char *text) {
+    while (*pattern) {
+        if (*pattern == '*') {
+            pattern++;
+            if (!*pattern) return 1;
+            for (const char *p = text; *p || !*pattern; p++) {
+                if (pattern_match(pattern, p)) return 1;
+                if (!*p) break;
+            }
+            return 0;
+        }
+        if (*pattern == '?') {
+            if (!*text) return 0;
+            pattern++;
+            text++;
+            continue;
+        }
+        if (*pattern == '[') {
+            const char *class_start = ++pattern;
+            int negate = *pattern == '!' || *pattern == '^';
+            if (negate) pattern++;
+            int matched = 0;
+            while (*pattern && (*pattern != ']' || pattern == class_start)) {
+                if (pattern[1] == '-' && pattern[2] && pattern[2] != ']') {
+                    if (*text >= pattern[0] && *text <= pattern[2]) matched = 1;
+                    pattern += 3;
+                } else {
+                    if (*text == *pattern) matched = 1;
+                    pattern++;
+                }
+            }
+            if (*pattern == ']') pattern++;
+            if (matched == negate || !*text) return 0;
+            text++;
+            continue;
+        }
+        if (*pattern != *text) return 0;
+        pattern++;
+        text++;
+    }
+    return *text == '\0';
+}
+
 int exec_node(Node *node) {
     if (!node || !shell.running) return shell.last_status;
     if (shell.returning || shell.break_level || shell.continue_level) return shell.last_status;
@@ -757,6 +800,28 @@ static int exec_switch(Node *node) {
         sl_free(&values);
         break;
     }
+
+    case N_CASE: {
+        char *subject = expand_single(node->name);
+        for (Node *item = node->right; item; item = item->extra) {
+            int matched = 0;
+            for (size_t i = 0; i < item->words.len && !matched; i++) {
+                char *pattern = expand_single(item->words.items[i]);
+                matched = pattern_match(pattern, subject);
+                free(pattern);
+            }
+            if (matched) {
+                status = exec_node(item->right);
+                break;
+            }
+        }
+        free(subject);
+        break;
+    }
+
+    case N_CASE_ITEM:
+        status = exec_node(node->right);
+        break;
 
     case N_FUNC:
         function_define(node->name, node->right);
