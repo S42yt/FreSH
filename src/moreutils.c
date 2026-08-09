@@ -271,15 +271,29 @@ static int more_shuf(int argc, char **argv) {
 
 static int more_fold(int argc, char **argv) {
     int width = 80;
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-w") == 0 && i + 1 < argc) width = atoi(argv[i + 1]);
-        else if (argv[i][0] == '-' && isdigit((unsigned char)argv[i][1])) width = atoi(argv[i] + 1);
+    int start = 1;
+    while (start < argc) {
+        if (strcmp(argv[start], "-w") == 0 && start + 1 < argc) {
+            width = atoi(argv[start + 1]);
+            start += 2;
+            continue;
+        }
+        if (argv[start][0] == '-' && isdigit((unsigned char)argv[start][1])) {
+            width = atoi(argv[start] + 1);
+            start++;
+            continue;
+        }
+        if (argv[start][0] == '-' && argv[start][1]) {
+            start++;
+            continue;
+        }
+        break;
     }
     if (width < 1) width = 80;
 
     StrList lines;
     sl_init(&lines);
-    read_lines(argc, argv, first_operand(argc, argv), &lines);
+    read_lines(argc, argv, start, &lines);
     for (size_t i = 0; i < lines.len; i++) {
         const char *line = lines.items[i];
         size_t length = strlen(line);

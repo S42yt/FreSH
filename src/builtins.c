@@ -364,12 +364,15 @@ static void print_long_entry(const WIN32_FIND_DATAA *data) {
     const char *color = entry_color(data);
     char marker = entry_marker(data);
 
-    printf("%s%c%c%c%s  %s%8s%s  %s%2d %s %02d:%02d%s  %s%s%s%c\n", style(S_DIM),
-           is_dir ? 'd' : '-', (data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? '-' : 'w',
+    char decorated[MAX_PATH + 2];
+    snprintf(decorated, sizeof(decorated), "%s%c", data->cFileName, marker);
+
+    printf("%s%c%c%c%s  %s%8s%s  %s%2d %s %02d:%02d%s  %s%s%s\n", style(S_DIM), is_dir ? 'd' : '-',
+           (data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? '-' : 'w',
            is_executable_name(data->cFileName) || is_dir ? 'x' : '-', style(S_RESET),
            style(S_VALUE), size_text, style(S_RESET), style(S_DIM), st.wDay,
-           MONTHS[(st.wMonth - 1) % 12], st.wHour, st.wMinute, style(S_RESET), color,
-           data->cFileName, *color ? style(S_RESET) : "", marker ? marker : ' ');
+           MONTHS[(st.wMonth - 1) % 12], st.wHour, st.wMinute, style(S_RESET), color, decorated,
+           *color ? style(S_RESET) : "");
 }
 
 static int builtin_ls(int argc, char **argv) {
