@@ -81,11 +81,26 @@ static int choose_scope(InstallScope *scope) {
     return 1;
 }
 
+static void ask_default_shell(InstallOptions *options) {
+    tui_screen("Default shell");
+    tui_text("Windows Terminal opens a profile when you start it or press Ctrl+Shift+T.");
+    tui_text("FreSH can take that spot, the way PowerShell has it now.");
+    tui_blank();
+    tui_text("Your current settings.json is backed up first, and uninstalling");
+    tui_text("puts the old default back.");
+    tui_blank();
+
+    const char *options_text[] = {"Make FreSH my default shell",
+                                  "Keep my current default, just add FreSH to the list"};
+    options->default_shell = tui_menu(options_text, 2) == 0;
+}
+
 static int confirm(const InstallOptions *options) {
     tui_screen("Confirm");
     tui_text(options->scope == INSTALL_USER ? "Installing for the current user"
                                             : "Installing for all users");
     printf("  Location: %s\n", options->install_dir);
+    printf("  Default shell: %s\n", options->default_shell ? "yes" : "no");
     tui_blank();
 
     const char *choices[] = {"Install now", "Cancel"};
@@ -122,9 +137,10 @@ static int run_uninstall(void) {
     return removed ? 0 : 1;
 }
 
-static int run_silent(InstallScope scope) {
+static int run_silent(InstallScope scope, int default_shell) {
     InstallOptions options;
     installer_default_options(&options, scope);
+    options.default_shell = default_shell;
     silent_mode = 1;
     step_index = 0;
     step_total = installer_step_count(&options);
@@ -143,11 +159,13 @@ int main(int argc, char *argv[]) {
             return run_uninstall();
         if (strcmp(argv[i], "/silent") == 0 || strcmp(argv[i], "--silent") == 0) {
             InstallScope scope = installer_is_admin() ? INSTALL_SYSTEM : INSTALL_USER;
+            int default_shell = 0;
             for (int j = 1; j < argc; j++) {
                 if (strcmp(argv[j], "/user") == 0) scope = INSTALL_USER;
                 if (strcmp(argv[j], "/system") == 0) scope = INSTALL_SYSTEM;
+                if (strcmp(argv[j], "/default") == 0) default_shell = 1;
             }
-            return run_silent(scope);
+            return run_silent(scope, default_shell);
         }
     }
 
@@ -171,6 +189,7 @@ int main(int argc, char *argv[]) {
 
     InstallOptions options;
     installer_default_options(&options, scope);
+    ask_default_shell(&options);
 
     if (!confirm(&options)) {
         tui_screen("Cancelled");

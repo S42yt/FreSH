@@ -88,6 +88,7 @@ int installer_step_count(const InstallOptions *options) {
     if (options->terminal_profile) steps++;
     if (options->context_menu) steps++;
     if (options->script_association) steps++;
+    if (options->default_shell) steps++;
     return steps;
 }
 
@@ -220,6 +221,130 @@ static void json_escape_path(const char *path, char *out, size_t out_size) {
         out[index++] = *p;
     }
     out[index] = '\0';
+}
+
+static int terminal_settings_paths(char paths[][MAX_PATH_LEN], int max) {
+    const char *candidates[] = {
+        "%s\\Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\LocalState\\settings.json",
+        "%s\\Packages\\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\\LocalState\\settings.json",
+        "%s\\Microsoft\\Windows Terminal\\settings.json",
+    };
+    char base[MAX_PATH_LEN];
+    if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, base) != S_OK) return 0;
+
+    int count = 0;
+    for (int i = 0; i < 3 && count < max; i++) {
+        char candidate[MAX_PATH_LEN];
+        snprintf(candidate, sizeof(candidate), candidates[i], base);
+        if (GetFileAttributesA(candidate) != INVALID_FILE_ATTRIBUTES)
+            snprintf(paths[count++], MAX_PATH_LEN, "%s", candidate);
+    }
+    return count;
+}
+
+static char *read_text_file(const char *path, long *length_out) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long length = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (length < 0) {
+        fclose(f);
+        return NULL;
+    }
+    char *text = malloc((size_t)length + 1);
+    if (!text) {
+        fclose(f);
+        return NULL;
+    }
+    size_t read = fread(text, 1, (size_t)length, f);
+    text[read] = '\0';
+    fclose(f);
+    if (length_out) *length_out = (long)read;
+    return text;
+}
+
+static int write_text_file(const char *path, const char *text) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return 0;
+    fputs(text, f);
+    fclose(f);
+    return 1;
+}
+
+static int set_default_profile(const char *settings_path, const char *guid) {
+    char *text = read_text_file(settings_path, NULL);
+    if (!text) return 0;
+
+    char backup[MAX_PATH_LEN];
+    snprintf(backup, sizeof(backup), "%s.fresh-backup", settings_path);
+    if (GetFileAttributesA(backup) == INVALID_FILE_ATTRIBUTES) write_text_file(backup, text);
+
+    char *key = strstr(text, "\"defaultProfile\"");
+    if (!key) {
+        free(text);
+        return 0;
+    }
+    char *colon = strchr(key, ':');
+    if (!colon) {
+        free(text);
+        return 0;
+    }
+    char *open_quote = strchr(colon, '"');
+    if (!open_quote) {
+        free(text);
+        return 0;
+    }
+    char *close_quote = strchr(open_quote + 1, '"');
+    if (!close_quote) {
+        free(text);
+        return 0;
+    }
+
+    size_t prefix = (size_t)(open_quote + 1 - text);
+    size_t suffix_length = strlen(close_quote);
+    char *updated = malloc(prefix + strlen(guid) + suffix_length + 1);
+    if (!updated) {
+        free(text);
+        return 0;
+    }
+    memcpy(updated, text, prefix);
+    memcpy(updated + prefix, guid, strlen(guid));
+    memcpy(updated + prefix + strlen(guid), close_quote, suffix_length + 1);
+
+    int ok = write_text_file(settings_path, updated);
+    free(updated);
+    free(text);
+    return ok;
+}
+
+static int make_default_shell(void) {
+    char paths[4][MAX_PATH_LEN];
+    int count = terminal_settings_paths(paths, 4);
+    int changed = 0;
+    for (int i = 0; i < count; i++)
+        if (set_default_profile(paths[i], FRESH_TERMINAL_GUID)) changed = 1;
+    return changed;
+}
+
+static void restore_default_shell(void) {
+    char paths[4][MAX_PATH_LEN];
+    int count = terminal_settings_paths(paths, 4);
+    for (int i = 0; i < count; i++) {
+        char *text = read_text_file(paths[i], NULL);
+        if (!text) continue;
+        int ours = strstr(text, FRESH_TERMINAL_GUID) != NULL;
+        free(text);
+        if (!ours) continue;
+
+        char backup[MAX_PATH_LEN];
+        snprintf(backup, sizeof(backup), "%s.fresh-backup", paths[i]);
+        char *saved = read_text_file(backup, NULL);
+        if (!saved) continue;
+        write_text_file(paths[i], saved);
+        free(saved);
+        DeleteFileA(backup);
+    }
 }
 
 static int register_terminal_profile(const InstallOptions *options) {
@@ -405,6 +530,8 @@ int installer_perform(const InstallOptions *options, StepLogger log) {
         log(shortcut_in_folder(options, CSIDL_PROGRAMS), "Start Menu shortcut created");
     if (options->desktop_shortcut)
         log(shortcut_in_folder(options, CSIDL_DESKTOP), "Desktop shortcut created");
+    if (options->default_shell)
+        log(make_default_shell(), "Set as the default Windows Terminal profile");
 
     return 1;
 }
@@ -428,6 +555,7 @@ int installer_uninstall(StepLogger log) {
         if (!read_install_location(roots[i], install_dir, sizeof(install_dir))) continue;
         removed_any = 1;
 
+        restore_default_shell();
         log(remove_from_path(scopes[i], install_dir), "Removed from PATH");
 
         delete_key_tree(roots[i], UNINSTALL_KEY);

@@ -14,6 +14,7 @@
 #include <string.h>
 #include <windows.h>
 
+#include "coreutils.h"
 #include "exec.h"
 #include "expand.h"
 #include "gitinfo.h"
@@ -257,6 +258,10 @@ static int describe_command(const char *name, int verbose) {
     if (resolve_command(name, path, sizeof(path))) {
         path_to_slashes(path);
         printf("%s\n", path);
+        return 0;
+    }
+    if (coreutil_lookup(name)) {
+        printf("%s is a command bundled with FreSH\n", name);
         return 0;
     }
     shell_error("%s: not found", name);
@@ -600,19 +605,27 @@ static int builtin_help(int argc, char **argv) {
     (void)argc;
     (void)argv;
     printf("FreSH %s\n\n", FRESH_VERSION);
-    printf("Builtins:\n");
-    StrList names;
-    sl_init(&names);
-    builtin_names(&names);
     int width = term_width();
     int columns = width / 14;
     if (columns < 1) columns = 1;
-    for (size_t i = 0; i < names.len; i++) {
-        printf("  %-12s", names.items[i]);
-        if ((i + 1) % (size_t)columns == 0) putchar('\n');
+
+    const char *titles[] = {"Shell builtins:", "Bundled commands (used when no exe is on PATH):"};
+    for (int group = 0; group < 2; group++) {
+        StrList names;
+        sl_init(&names);
+        if (group == 0) builtin_names(&names);
+        else coreutil_names(&names);
+        sl_sort(&names);
+
+        printf("%s\n", titles[group]);
+        for (size_t i = 0; i < names.len; i++) {
+            printf("  %-12s", names.items[i]);
+            if ((i + 1) % (size_t)columns == 0) putchar('\n');
+        }
+        if (names.len % (size_t)columns) putchar('\n');
+        putchar('\n');
+        sl_free(&names);
     }
-    if (names.len % (size_t)columns) putchar('\n');
-    sl_free(&names);
 
     printf("\nLine editing:\n");
     printf("  Tab            complete commands, files and variables\n");

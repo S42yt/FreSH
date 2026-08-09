@@ -29,5 +29,6 @@ int function_defined(const char *name);
 void function_names(StrList *out);
 
 char *apply_aliases(const char *line);
+int pattern_match(const char *pattern, const char *text);
 
 #endif

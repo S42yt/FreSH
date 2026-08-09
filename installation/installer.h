@@ -32,6 +32,7 @@ typedef struct {
     int terminal_profile;
     int context_menu;
     int script_association;
+    int default_shell;
 } InstallOptions;
 
 typedef void (*StepLogger)(int ok, const char *message);

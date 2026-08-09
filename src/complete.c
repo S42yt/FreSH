@@ -13,6 +13,7 @@
 #include <windows.h>
 
 #include "builtins.h"
+#include "coreutils.h"
 #include "exec.h"
 #include "vars.h"
 
@@ -70,6 +71,7 @@ static void complete_commands(const char *token, StrList *out) {
     StrList names;
     sl_init(&names);
     builtin_names(&names);
+    coreutil_names(&names);
     function_names(&names);
     alias_list(&names);
     path_commands(&names);

@@ -61,16 +61,20 @@ static size_t next_char(const char *text, size_t index) {
     return index;
 }
 
+static int word_break(char c) {
+    return isspace((unsigned char)c) || c == '/' || c == '\\';
+}
+
 static size_t word_left(const char *text, size_t index) {
-    while (index > 0 && isspace((unsigned char)text[index - 1])) index--;
-    while (index > 0 && !isspace((unsigned char)text[index - 1])) index--;
+    while (index > 0 && word_break(text[index - 1])) index--;
+    while (index > 0 && !word_break(text[index - 1])) index--;
     return index;
 }
 
 static size_t word_right(const char *text, size_t index) {
     size_t length = strlen(text);
-    while (index < length && isspace((unsigned char)text[index])) index++;
-    while (index < length && !isspace((unsigned char)text[index])) index++;
+    while (index < length && word_break(text[index])) index++;
+    while (index < length && !word_break(text[index])) index++;
     return index;
 }
 
@@ -449,7 +453,7 @@ char *line_read(int continuation) {
             editor.cursor = 0;
         } else if (key == KEY_CTRL_K) {
             delete_range(&editor, editor.cursor, editor.buffer.len);
-        } else if (key == KEY_CTRL_W) {
+        } else if (key == KEY_CTRL_W || key == 127) {
             size_t from = word_left(editor.buffer.data, editor.cursor);
             delete_range(&editor, from, editor.cursor);
             editor.cursor = from;
@@ -462,7 +466,7 @@ char *line_read(int continuation) {
             sb_clear(&editor.buffer);
             editor.cursor = 0;
             editor.history_index = -1;
-        } else if (key >= 32 && key < 256) {
+        } else if (key >= 32 && key < 256 && key != 127) {
             char c = (char)key;
             insert_text(&editor, &c, 1);
             editor.history_index = -1;

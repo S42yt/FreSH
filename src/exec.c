@@ -16,6 +16,7 @@
 #include <windows.h>
 
 #include "builtins.h"
+#include "coreutils.h"
 #include "expand.h"
 #include "shell.h"
 #include "vars.h"
@@ -536,8 +537,17 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         status = f ? call_function(f, &args) : builtin(argc, argv);
         if (redirected) fds_restore(&save);
     } else {
-        char path[PATH_BUF];
-        if (!resolve_command(argv[0], path, sizeof(path))) {
+        char path[PATH_BUF] = "";
+        int resolved = resolve_command(argv[0], path, sizeof(path));
+        BuiltinFn fallback = resolved ? NULL : coreutil_lookup(argv[0]);
+
+        if (fallback) {
+            FdSave save;
+            int redirected = !io_is_default(&io);
+            if (redirected) fds_apply(&io, &save);
+            status = fallback(argc, argv);
+            if (redirected) fds_restore(&save);
+        } else if (!resolved) {
             FdSave save;
             int redirected = !io_is_default(&io);
             if (redirected) fds_apply(&io, &save);
@@ -664,7 +674,7 @@ static int truthy(int status) {
     return status == 0;
 }
 
-static int pattern_match(const char *pattern, const char *text) {
+int pattern_match(const char *pattern, const char *text) {
     while (*pattern) {
         if (*pattern == '*') {
             pattern++;
