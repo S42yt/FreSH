@@ -18,13 +18,20 @@
 #include "vars.h"
 
 static size_t token_start(const char *buffer, size_t cursor) {
-    size_t start = cursor;
-    while (start > 0) {
-        char c = buffer[start - 1];
-        if (c == ' ' || c == '\t' || c == '|' || c == '&' || c == ';' || c == '<' || c == '>' ||
-            c == '(')
-            break;
-        start--;
+    size_t start = 0;
+    char quote = 0;
+
+    for (size_t i = 0; i < cursor; i++) {
+        char c = buffer[i];
+        if (quote) {
+            if (c == quote) quote = 0;
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            continue;
+        }
+        if (strchr(" \t|&;<>(", c)) start = i + 1;
     }
     return start;
 }
@@ -162,7 +169,9 @@ void complete_at(const char *buffer, size_t cursor, StrList *matches, size_t *re
     size_t start = token_start(buffer, cursor);
     *replace_start = start;
 
-    char *token = xstrndup(buffer + start, cursor - start);
+    char *raw = xstrndup(buffer + start, cursor - start);
+    char *token = raw;
+    if (*token == '"' || *token == '\'') token++;
 
     if (token[0] == '$') {
         complete_variables(token, matches);
@@ -174,5 +183,5 @@ void complete_at(const char *buffer, size_t cursor, StrList *matches, size_t *re
         complete_paths(token, matches, wants_directories(command));
         free(command);
     }
-    free(token);
+    free(raw);
 }

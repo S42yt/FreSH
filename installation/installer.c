@@ -319,7 +319,17 @@ static int set_default_profile(const char *settings_path, const char *guid) {
     return ok;
 }
 
-static int make_default_shell(void) {
+static int fragment_exists(const InstallOptions *options) {
+    char directory[MAX_PATH_LEN];
+    if (!terminal_fragment_path(options, directory, sizeof(directory))) return 0;
+    char file[MAX_PATH_LEN];
+    snprintf(file, sizeof(file), "%s\\fresh.json", directory);
+    return GetFileAttributesA(file) != INVALID_FILE_ATTRIBUTES;
+}
+
+static int make_default_shell(const InstallOptions *options) {
+    if (!fragment_exists(options)) return 0;
+
     char paths[4][MAX_PATH_LEN];
     int count = terminal_settings_paths(paths, 4);
     int changed = 0;
@@ -328,23 +338,51 @@ static int make_default_shell(void) {
     return changed;
 }
 
+static char *find_default_profile(const char *text, size_t *length_out) {
+    char *key = strstr(text, "\"defaultProfile\"");
+    if (!key) return NULL;
+    char *colon = strchr(key, ':');
+    if (!colon) return NULL;
+    char *open_quote = strchr(colon, '"');
+    if (!open_quote) return NULL;
+    char *close_quote = strchr(open_quote + 1, '"');
+    if (!close_quote) return NULL;
+    *length_out = (size_t)(close_quote - open_quote - 1);
+    return open_quote + 1;
+}
+
 static void restore_default_shell(void) {
     char paths[4][MAX_PATH_LEN];
     int count = terminal_settings_paths(paths, 4);
+
     for (int i = 0; i < count; i++) {
         char *text = read_text_file(paths[i], NULL);
         if (!text) continue;
-        int ours = strstr(text, FRESH_TERMINAL_GUID) != NULL;
+
+        size_t length = 0;
+        char *value = find_default_profile(text, &length);
+        int ours = value && length == strlen(FRESH_TERMINAL_GUID) &&
+                   strncmp(value, FRESH_TERMINAL_GUID, length) == 0;
         free(text);
         if (!ours) continue;
 
         char backup[MAX_PATH_LEN];
         snprintf(backup, sizeof(backup), "%s.fresh-backup", paths[i]);
+
         char *saved = read_text_file(backup, NULL);
-        if (!saved) continue;
-        write_text_file(paths[i], saved);
-        free(saved);
-        DeleteFileA(backup);
+        if (saved) {
+            size_t saved_length = 0;
+            char *previous = find_default_profile(saved, &saved_length);
+            if (previous) {
+                char guid[128];
+                snprintf(guid, sizeof(guid), "%.*s", (int)saved_length, previous);
+                set_default_profile(paths[i], guid);
+            }
+            free(saved);
+            DeleteFileA(backup);
+            continue;
+        }
+        set_default_profile(paths[i], "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}");
     }
 }
 
@@ -368,15 +406,14 @@ static int register_terminal_profile(const InstallOptions *options) {
             "            \"guid\": \"%s\",\n"
             "            \"name\": \"FreSH\",\n"
             "            \"commandline\": \"%s\",\n"
-            "            \"icon\": \"%s\",\n"
+            "            \"icon\": \"\\u03bb\",\n"
             "            \"startingDirectory\": \"%%USERPROFILE%%\",\n"
-            "            \"colorScheme\": \"Campbell\",\n"
             "            \"suppressApplicationTitle\": false,\n"
             "            \"hidden\": false\n"
             "        }\n"
             "    ]\n"
             "}\n",
-            FRESH_TERMINAL_GUID, escaped, escaped);
+            FRESH_TERMINAL_GUID, escaped);
     fclose(f);
     return 1;
 }
@@ -533,7 +570,7 @@ int installer_perform(const InstallOptions *options, StepLogger log) {
     if (options->desktop_shortcut)
         log(shortcut_in_folder(options, CSIDL_DESKTOP), "Desktop shortcut created");
     if (options->default_shell)
-        log(make_default_shell(), "Set as the default Windows Terminal profile");
+        log(make_default_shell(options), "Set as the default Windows Terminal profile");
 
     return 1;
 }
@@ -552,12 +589,13 @@ int installer_uninstall(StepLogger log) {
     InstallScope scopes[] = {INSTALL_USER, INSTALL_SYSTEM};
     int removed_any = 0;
 
+    restore_default_shell();
+
     for (int i = 0; i < 2; i++) {
         char install_dir[MAX_PATH_LEN] = "";
         if (!read_install_location(roots[i], install_dir, sizeof(install_dir))) continue;
         removed_any = 1;
 
-        restore_default_shell();
         log(remove_from_path(scopes[i], install_dir), "Removed from PATH");
 
         delete_key_tree(roots[i], UNINSTALL_KEY);
