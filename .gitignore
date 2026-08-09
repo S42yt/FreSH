@@ -30,6 +30,7 @@
 
 # Executables
 *.exe
+*.res
 *.out
 *.app
 *.i*86
@@ -56,6 +57,10 @@ build/
 
 # Generated installer payload
 installation/payload.h
+
+# Generated icon
+src/fresh.ico
+installation/fresh.ico
 
 # CMake
 cmake-build-debug

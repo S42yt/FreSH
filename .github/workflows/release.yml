@@ -51,6 +51,7 @@ jobs:
         run: |
           sed -i "s/#define FRESH_VERSION \".*\"/#define FRESH_VERSION \"$VERSION\"/" src/shell.h
           sed -i "s/#define FRESH_VERSION \".*\"/#define FRESH_VERSION \"$VERSION\"/" installation/installer.h
+          sed -i "s/VALUE \"ProductVersion\", \".*\"/VALUE \"ProductVersion\", \"$VERSION\"/" src/fresh.rc installation/setup.rc
 
       - name: Build
         shell: msys2 {0}
