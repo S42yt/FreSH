@@ -96,6 +96,22 @@ set        shift      source     test  [    true       type
 unalias    unset      which      .
 ```
 
+## Bundled commands
+
+Windows ships none of the tools a bash or zsh user expects, so FreSH carries
+its own:
+
+```
+basename   cat    cp     cut    date   dirname  du      env     find   grep
+head       hostname  kill  mkdir  mv    printf   rm      rmdir   seq    sleep
+sort       tail   tee    touch  tr     uname    uniq    wc      whoami xargs
+```
+
+These are fallbacks. If a real executable of the same name is on `PATH` it
+wins, so an installed GNU `grep` keeps its regexes. The exceptions are `find`
+and `sort`, where the Windows tools of that name do something entirely
+different — FreSH always uses its own.
+
 External programs are resolved through `PATH` using `PATHEXT`, plus `.ps1` and
 `.sh`. `.ps1` files are handed to PowerShell, `.bat`/`.cmd` to cmd.exe, `.sh`
 files are executed by FreSH itself.

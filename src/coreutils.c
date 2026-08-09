@@ -88,17 +88,22 @@ static int core_head_tail(int argc, char **argv, int is_head) {
     int count = 10;
     int start = 1;
 
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            count = atoi(argv[i + 1]);
-            start = i + 2;
-        } else if (argv[i][0] == '-' && isdigit((unsigned char)argv[i][1])) {
-            count = atoi(argv[i] + 1);
-            start = i + 1;
-        } else if (argv[i][0] != '-') {
-            start = i;
-            break;
+    while (start < argc) {
+        if (strcmp(argv[start], "-n") == 0 && start + 1 < argc) {
+            count = atoi(argv[start + 1]);
+            start += 2;
+            continue;
         }
+        if (argv[start][0] == '-' && isdigit((unsigned char)argv[start][1])) {
+            count = atoi(argv[start] + 1);
+            start++;
+            continue;
+        }
+        if (argv[start][0] == '-' && argv[start][1]) {
+            start++;
+            continue;
+        }
+        break;
     }
     if (count <= 0) count = 10;
 
@@ -965,6 +970,14 @@ static const Coreutil COREUTILS[] = {
     {"tr", core_tr},             {"uname", core_uname},     {"uniq", core_uniq},
     {"wc", core_wc},             {"whoami", core_whoami},   {"xargs", core_xargs},
 };
+
+int coreutil_preferred(const char *name) {
+    static const char *SHADOWED[] = {"find", "sort", "more", "where", NULL};
+    for (int i = 0; SHADOWED[i]; i++) {
+        if (strcmp(SHADOWED[i], name) == 0) return coreutil_lookup(name) != NULL;
+    }
+    return 0;
+}
 
 BuiltinFn coreutil_lookup(const char *name) {
     for (size_t i = 0; i < sizeof(COREUTILS) / sizeof(COREUTILS[0]); i++) {

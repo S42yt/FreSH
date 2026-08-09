@@ -10,6 +10,7 @@
 #include "builtins.h"
 
 BuiltinFn coreutil_lookup(const char *name);
+int coreutil_preferred(const char *name);
 void coreutil_names(StrList *out);
 
 #endif

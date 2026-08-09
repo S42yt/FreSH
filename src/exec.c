@@ -538,7 +538,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         if (redirected) fds_restore(&save);
     } else {
         char path[PATH_BUF] = "";
-        int resolved = resolve_command(argv[0], path, sizeof(path));
+        int preferred = coreutil_preferred(argv[0]);
+        int resolved = preferred ? 0 : resolve_command(argv[0], path, sizeof(path));
         BuiltinFn fallback = resolved ? NULL : coreutil_lookup(argv[0]);
 
         if (fallback) {
