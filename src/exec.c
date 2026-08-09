@@ -252,11 +252,17 @@ static int io_is_default(const IoSet *io) {
     return io->in == base.in && io->out == base.out && io->err == base.err;
 }
 
+static void discard_stdin_buffer(void) {
+    fflush(stdin);
+    setvbuf(stdin, NULL, _IOFBF, BUFSIZ);
+}
+
 static void fds_apply(const IoSet *io, FdSave *save) {
     IoSet base = io_default();
     save->saved[0] = save->saved[1] = save->saved[2] = -1;
     fflush(stdout);
     fflush(stderr);
+    if (io->in != base.in) discard_stdin_buffer();
 
     HANDLE handles[3] = {io->in, io->out, io->err};
     HANDLE defaults[3] = {base.in, base.out, base.err};
@@ -282,6 +288,7 @@ static void fds_apply(const IoSet *io, FdSave *save) {
 static void fds_restore(FdSave *save) {
     fflush(stdout);
     fflush(stderr);
+    if (save->saved[0] >= 0) discard_stdin_buffer();
     for (int i = 0; i < 3; i++) {
         if (save->saved[i] < 0) continue;
         _dup2(save->saved[i], i);
