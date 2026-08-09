@@ -12,9 +12,12 @@
 static int step_index = 0;
 static int step_total = 1;
 
+static int silent_mode = 0;
+
 static void log_step(int ok, const char *message) {
     step_index++;
     tui_step(ok, message);
+    if (silent_mode) return;
     tui_progress(step_index, step_total);
     printf("\n");
 }
@@ -119,6 +122,18 @@ static int run_uninstall(void) {
     return removed ? 0 : 1;
 }
 
+static int run_silent(InstallScope scope) {
+    InstallOptions options;
+    installer_default_options(&options, scope);
+    silent_mode = 1;
+    step_index = 0;
+    step_total = installer_step_count(&options);
+    printf("Installing FreSH %s to %s\n", FRESH_VERSION, options.install_dir);
+    if (!installer_perform(&options, log_step)) return 1;
+    printf("Done. Open a new terminal and run FreSH.\n");
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     installer_init();
     tui_init();
@@ -126,6 +141,14 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "/uninstall") == 0 || strcmp(argv[i], "--uninstall") == 0)
             return run_uninstall();
+        if (strcmp(argv[i], "/silent") == 0 || strcmp(argv[i], "--silent") == 0) {
+            InstallScope scope = installer_is_admin() ? INSTALL_SYSTEM : INSTALL_USER;
+            for (int j = 1; j < argc; j++) {
+                if (strcmp(argv[j], "/user") == 0) scope = INSTALL_USER;
+                if (strcmp(argv[j], "/system") == 0) scope = INSTALL_SYSTEM;
+            }
+            return run_silent(scope);
+        }
     }
 
     show_welcome();
