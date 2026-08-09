@@ -9,9 +9,8 @@
 
 #include "util.h"
 
-void prompt_build(StrBuf *out, int *visible_width);
-void prompt_build_right(StrBuf *out, int *visible_width);
-void prompt_build_continuation(StrBuf *out, int *visible_width);
+void prompt_build(StrBuf *out);
+void prompt_build_continuation(StrBuf *out);
 int display_width(const char *text);
 
 #endif

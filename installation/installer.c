@@ -131,6 +131,10 @@ static int write_payload(const InstallOptions *options) {
 }
 
 static int write_uninstaller(const InstallOptions *options) {
+    char legacy[MAX_PATH_LEN];
+    snprintf(legacy, sizeof(legacy), "%s\\Uninstall.exe", options->install_dir);
+    DeleteFileA(legacy);
+
     char target[MAX_PATH_LEN];
     snprintf(target, sizeof(target), "%s\\Uninstall-FreSH.exe", options->install_dir);
     return CopyFileA(self_path, target, FALSE) ? 1 : 0;

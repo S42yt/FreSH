@@ -35,9 +35,8 @@ typedef struct {
     size_t cursor;
     StrBuf prompt;
     int prompt_width;
-    StrBuf rprompt;
-    int rprompt_width;
-    int last_row;
+    int prompt_rows;
+    int rows_up;
     char *suggestion;
     int history_index;
     char *stashed;
@@ -151,26 +150,31 @@ static void update_suggestion(Editor *editor) {
     editor->suggestion = xstrdup(entry + editor->buffer.len);
 }
 
+static void prompt_metrics(Editor *editor) {
+    const char *last = editor->prompt.data;
+    int rows = 0;
+    for (const char *p = editor->prompt.data; *p; p++) {
+        if (*p == '\n') {
+            rows++;
+            last = p + 1;
+        }
+    }
+    editor->prompt_rows = rows;
+    editor->prompt_width = display_width(last);
+}
+
 static void render(Editor *editor) {
     StrBuf frame;
     sb_init(&frame);
 
-    if (editor->last_row > 0) sb_printf(&frame, "\x1b[%dA", editor->last_row);
+    if (editor->rows_up > 0) sb_printf(&frame, "\x1b[%dA", editor->rows_up);
     sb_puts(&frame, "\r\x1b[J");
-
-    int width = term_width();
-    int used = editor->prompt_width + display_width(editor->buffer.data);
-
-    if (editor->rprompt_width > 0 && used + editor->rprompt_width + 2 < width) {
-        sb_printf(&frame, "\x1b[%dG", width - editor->rprompt_width);
-        sb_puts(&frame, editor->rprompt.data);
-        sb_puts(&frame, "\r");
-    }
-
     sb_puts(&frame, editor->prompt.data);
     highlight(editor->buffer.data, &frame);
 
-    int total = used;
+    int width = term_width();
+    int total = editor->prompt_width + display_width(editor->buffer.data);
+
     if (editor->suggestion) {
         sb_puts(&frame, HL_SUGGEST);
         sb_puts(&frame, editor->suggestion);
@@ -182,17 +186,26 @@ static void render(Editor *editor) {
     int cursor_cell = editor->prompt_width + display_width(prefix);
     free(prefix);
 
-    int end_row = total / width;
-    int cursor_row = cursor_cell / width;
+    int end_row = editor->prompt_rows + total / width;
+    int cursor_row = editor->prompt_rows + cursor_cell / width;
     int cursor_col = cursor_cell % width;
 
     if (end_row > cursor_row) sb_printf(&frame, "\x1b[%dA", end_row - cursor_row);
     sb_puts(&frame, "\r");
     if (cursor_col > 0) sb_printf(&frame, "\x1b[%dC", cursor_col);
 
-    editor->last_row = cursor_row;
+    editor->rows_up = cursor_row;
     term_write(frame.data);
     sb_free(&frame);
+}
+
+static void finish_line(Editor *editor) {
+    editor->cursor = editor->buffer.len;
+    free(editor->suggestion);
+    editor->suggestion = NULL;
+    render(editor);
+    term_write("\r\n");
+    editor->rows_up = 0;
 }
 
 static void editor_set_text(Editor *editor, const char *text) {
@@ -218,7 +231,7 @@ static void delete_range(Editor *editor, size_t from, size_t to) {
 }
 
 static void print_matches(Editor *editor, const StrList *matches) {
-    term_write("\n");
+    term_write("\r\n");
     size_t longest = 0;
     for (size_t i = 0; i < matches->len; i++) {
         size_t length = strlen(matches->items[i]);
@@ -232,12 +245,12 @@ static void print_matches(Editor *editor, const StrList *matches) {
     sb_init(&out);
     for (size_t i = 0; i < matches->len; i++) {
         sb_printf(&out, "%-*s", column_width, matches->items[i]);
-        if ((i + 1) % (size_t)columns == 0) sb_putc(&out, '\n');
+        if ((i + 1) % (size_t)columns == 0) sb_puts(&out, "\r\n");
     }
-    if (matches->len % (size_t)columns) sb_putc(&out, '\n');
+    if (matches->len % (size_t)columns) sb_puts(&out, "\r\n");
     term_write(out.data);
     sb_free(&out);
-    editor->last_row = 0;
+    editor->rows_up = 0;
 }
 
 static void apply_match(Editor *editor, size_t start, const char *match, int single) {
@@ -305,11 +318,11 @@ static void search_history(Editor *editor) {
     while (1) {
         StrBuf frame;
         sb_init(&frame);
-        if (editor->last_row > 0) sb_printf(&frame, "\x1b[%dA", editor->last_row);
+        if (editor->rows_up > 0) sb_printf(&frame, "\x1b[%dA", editor->rows_up);
         sb_puts(&frame, "\r\x1b[J");
         sb_printf(&frame, HL_OPERATOR "search:" HL_RESET " %s", query.data);
         if (found >= 0) sb_printf(&frame, HL_SUGGEST "  %s" HL_RESET, history_get(found));
-        editor->last_row = 0;
+        editor->rows_up = 0;
         term_write(frame.data);
         sb_free(&frame);
 
@@ -332,7 +345,7 @@ static void search_history(Editor *editor) {
     }
 
     sb_free(&query);
-    editor->last_row = 0;
+    editor->rows_up = 0;
     term_write("\r\x1b[J");
 }
 
@@ -366,13 +379,12 @@ char *line_read(int continuation) {
     memset(&editor, 0, sizeof(editor));
     sb_init(&editor.buffer);
     sb_init(&editor.prompt);
-    sb_init(&editor.rprompt);
     sl_init(&editor.menu);
     editor.history_index = -1;
 
-    if (continuation) prompt_build_continuation(&editor.prompt, &editor.prompt_width);
-    else prompt_build(&editor.prompt, &editor.prompt_width);
-    if (!continuation) prompt_build_right(&editor.rprompt, &editor.rprompt_width);
+    if (continuation) prompt_build_continuation(&editor.prompt);
+    else prompt_build(&editor.prompt);
+    prompt_metrics(&editor);
 
     render(&editor);
 
@@ -382,19 +394,20 @@ char *line_read(int continuation) {
         int was_tab = key == KEY_TAB;
 
         if (key == KEY_ENTER) {
-            term_write("\n");
+            finish_line(&editor);
             result = xstrdup(editor.buffer.data);
             break;
         }
         if (key == KEY_CTRL_C) {
-            term_write("^C\n");
+            finish_line(&editor);
+            term_write("^C\r\n");
             result = xstrdup("");
             shell.last_status = 130;
             break;
         }
         if (key == KEY_CTRL_D) {
             if (editor.buffer.len == 0) {
-                term_write("\n");
+                finish_line(&editor);
                 result = NULL;
                 break;
             }
@@ -442,7 +455,7 @@ char *line_read(int continuation) {
             editor.cursor = from;
         } else if (key == KEY_CTRL_L) {
             term_clear_screen();
-            editor.last_row = 0;
+            editor.rows_up = 0;
         } else if (key == KEY_CTRL_R) {
             search_history(&editor);
         } else if (key == KEY_ESC) {
@@ -465,7 +478,6 @@ char *line_read(int continuation) {
 
     sb_free(&editor.buffer);
     sb_free(&editor.prompt);
-    sb_free(&editor.rprompt);
     sl_free(&editor.menu);
     free(editor.suggestion);
     free(editor.stashed);

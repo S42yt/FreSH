@@ -31,7 +31,7 @@ static const char *DEFAULT_RC =
     "# git branch, dirty marker, user name in prompt\n"
     "FRESH_SHOW_GIT=1\n"
     "FRESH_SHOW_GIT_DIRTY=1\n"
-    "FRESH_SHOW_USER=0\n"
+    "FRESH_SHOW_USER=1\n"
     "# right aligned exit code of the last command\n"
     "FRESH_SHOW_RPROMPT=1\n"
     "HISTSIZE=5000\n"
