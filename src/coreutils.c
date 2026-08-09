@@ -16,6 +16,7 @@
 #include <windows.h>
 
 #include "exec.h"
+#include "moreutils.h"
 #include "shell.h"
 #include "util.h"
 #include "vars.h"
@@ -983,10 +984,11 @@ BuiltinFn coreutil_lookup(const char *name) {
     for (size_t i = 0; i < sizeof(COREUTILS) / sizeof(COREUTILS[0]); i++) {
         if (strcmp(COREUTILS[i].name, name) == 0) return COREUTILS[i].fn;
     }
-    return NULL;
+    return moreutil_lookup(name);
 }
 
 void coreutil_names(StrList *out) {
     for (size_t i = 0; i < sizeof(COREUTILS) / sizeof(COREUTILS[0]); i++)
         sl_push_copy(out, COREUTILS[i].name);
+    moreutil_names(out);
 }

@@ -23,7 +23,7 @@ file(GLOB FRESH_SOURCES ${CMAKE_SOURCE_DIR}/src/*.c)
 add_executable(FreSH ${FRESH_SOURCES} ${CMAKE_SOURCE_DIR}/src/fresh.rc
                      ${CMAKE_SOURCE_DIR}/src/fresh.ico)
 target_compile_definitions(FreSH PRIVATE _WIN32_WINNT=0x0601)
-target_link_libraries(FreSH advapi32)
+target_link_libraries(FreSH advapi32 shell32 ole32)
 
 add_custom_command(
     OUTPUT ${CMAKE_SOURCE_DIR}/installation/payload.h

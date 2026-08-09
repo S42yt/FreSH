@@ -21,13 +21,9 @@
 #include "history.h"
 #include "prompt.h"
 #include "shell.h"
+#include "style.h"
 #include "term.h"
 #include "vars.h"
-
-#define DIR_COLOR "\x1b[1;34m"
-#define EXE_COLOR "\x1b[1;32m"
-#define LINK_COLOR "\x1b[1;36m"
-#define RESET_COLOR "\x1b[0m"
 
 static void sync_cwd(void) {
     char cwd[PATH_BUF];
@@ -236,7 +232,8 @@ static int builtin_history(int argc, char **argv) {
     int count = history_count();
     int limit = argc > 1 ? atoi(argv[1]) : count;
     if (limit <= 0 || limit > count) limit = count;
-    for (int i = count - limit; i < count; i++) printf("%5d  %s\n", i + 1, history_get(i));
+    for (int i = count - limit; i < count; i++)
+        printf("  %s%4d%s  %s\n", style(S_DIM), i + 1, style(S_RESET), history_get(i));
     return 0;
 }
 
@@ -302,14 +299,51 @@ static int builtin_rehash(int argc, char **argv) {
     return 0;
 }
 
-static int colors_enabled(void) {
-    return _isatty(_fileno(stdout));
-}
-
 static int is_executable_name(const char *name) {
     const char *ext = path_ext(name);
     return str_ieq(ext, ".exe") || str_ieq(ext, ".bat") || str_ieq(ext, ".cmd") ||
-           str_ieq(ext, ".com") || str_ieq(ext, ".ps1") || str_ieq(ext, ".sh");
+           str_ieq(ext, ".com") || str_ieq(ext, ".ps1") || str_ieq(ext, ".sh") ||
+           str_ieq(ext, ".msi");
+}
+
+static int extension_in(const char *ext, const char *list) {
+    char needle[32];
+    snprintf(needle, sizeof(needle), "%s;", ext);
+    return ext[0] && _stricmp(ext, "") != 0 && strstr(list, needle) != NULL;
+}
+
+static const char *entry_color(const WIN32_FIND_DATAA *data) {
+    if (!style_enabled()) return "";
+    if (data->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) return S_DIR;
+    if (data->cFileName[0] == '.') return S_HIDDEN;
+
+    const char *ext = path_ext(data->cFileName);
+    if (is_executable_name(data->cFileName)) return S_EXEC;
+    if (extension_in(ext, ".zip;.7z;.rar;.tar;.gz;.xz;.zst;.bz2;.cab;")) return S_ARCHIVE;
+    if (extension_in(ext, ".png;.jpg;.jpeg;.gif;.bmp;.ico;.svg;.webp;.tif;")) return S_IMAGE;
+    if (extension_in(ext, ".mp3;.mp4;.mkv;.wav;.flac;.mov;.avi;.webm;.ogg;")) return S_MEDIA;
+    if (extension_in(ext, ".c;.h;.cpp;.hpp;.cs;.py;.js;.ts;.tsx;.rs;.go;.java;.rb;.php;.lua;"))
+        return S_CODE;
+    if (extension_in(ext, ".json;.yml;.yaml;.toml;.ini;.cfg;.xml;.conf;.rc;.env;")) return S_CONFIG;
+    return "";
+}
+
+static char entry_marker(const WIN32_FIND_DATAA *data) {
+    if (data->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) return '/';
+    if (is_executable_name(data->cFileName)) return '*';
+    return '\0';
+}
+
+static void human_size(ULONGLONG size, char *out, size_t out_size) {
+    const char *units[] = {"B", "K", "M", "G", "T"};
+    double value = (double)size;
+    int unit = 0;
+    while (value >= 1024 && unit < 4) {
+        value /= 1024;
+        unit++;
+    }
+    if (unit == 0) snprintf(out, out_size, "%.0f %s", value, units[unit]);
+    else snprintf(out, out_size, "%.1f %s", value, units[unit]);
 }
 
 static void print_long_entry(const WIN32_FIND_DATAA *data) {
@@ -322,26 +356,26 @@ static void print_long_entry(const WIN32_FIND_DATAA *data) {
     ULONGLONG size = ((ULONGLONG)data->nFileSizeHigh << 32) | data->nFileSizeLow;
 
     char size_text[32];
-    if (is_dir) snprintf(size_text, sizeof(size_text), "%8s", "-");
-    else if (size < 1024) snprintf(size_text, sizeof(size_text), "%6llu B", size);
-    else if (size < 1024 * 1024) snprintf(size_text, sizeof(size_text), "%5.1f KB", size / 1024.0);
-    else if (size < 1024ULL * 1024 * 1024)
-        snprintf(size_text, sizeof(size_text), "%5.1f MB", size / (1024.0 * 1024.0));
-    else snprintf(size_text, sizeof(size_text), "%5.1f GB", size / (1024.0 * 1024.0 * 1024.0));
+    if (is_dir) snprintf(size_text, sizeof(size_text), "%s", "-");
+    else human_size(size, size_text, sizeof(size_text));
 
-    const char *color = !colors_enabled()  ? ""
-                        : is_dir           ? DIR_COLOR
-                        : is_executable_name(data->cFileName) ? EXE_COLOR
-                                                             : "";
-    printf("%c%c%c  %s  %04d-%02d-%02d %02d:%02d  %s%s%s\n", is_dir ? 'd' : '-',
-           (data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? '-' : 'w',
-           is_executable_name(data->cFileName) || is_dir ? 'x' : '-', size_text, st.wYear, st.wMonth,
-           st.wDay, st.wHour, st.wMinute, color, data->cFileName, *color ? RESET_COLOR : "");
+    static const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    const char *color = entry_color(data);
+    char marker = entry_marker(data);
+
+    printf("%s%c%c%c%s  %s%8s%s  %s%2d %s %02d:%02d%s  %s%s%s%c\n", style(S_DIM),
+           is_dir ? 'd' : '-', (data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? '-' : 'w',
+           is_executable_name(data->cFileName) || is_dir ? 'x' : '-', style(S_RESET),
+           style(S_VALUE), size_text, style(S_RESET), style(S_DIM), st.wDay,
+           MONTHS[(st.wMonth - 1) % 12], st.wHour, st.wMinute, style(S_RESET), color,
+           data->cFileName, *color ? style(S_RESET) : "", marker ? marker : ' ');
 }
 
 static int builtin_ls(int argc, char **argv) {
     int show_all = 0;
     int long_format = 0;
+    int one_per_line = 0;
     const char *target = ".";
 
     for (int i = 1; i < argc; i++) {
@@ -349,6 +383,7 @@ static int builtin_ls(int argc, char **argv) {
             for (const char *flag = argv[i] + 1; *flag; flag++) {
                 if (*flag == 'a') show_all = 1;
                 else if (*flag == 'l') long_format = 1;
+                else if (*flag == '1') one_per_line = 1;
             }
         } else {
             target = argv[i];
@@ -370,49 +405,67 @@ static int builtin_ls(int argc, char **argv) {
     StrList names;
     sl_init(&names);
     size_t longest = 0;
+    int directories = 0;
+    int files = 0;
+    ULONGLONG total = 0;
+
     do {
         if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
         if (!show_all && data.cFileName[0] == '.') continue;
+
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            directories++;
+        } else {
+            files++;
+            total += ((ULONGLONG)data.nFileSizeHigh << 32) | data.nFileSizeLow;
+        }
+
         if (long_format) {
             print_long_entry(&data);
             continue;
         }
+
+        const char *color = entry_color(&data);
+        char marker = entry_marker(&data);
+        size_t visible = strlen(data.cFileName) + (marker ? 1 : 0);
+        if (visible > longest) longest = visible;
+
         StrBuf entry;
         sb_init(&entry);
-        int is_dir = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        const char *color = !colors_enabled()  ? ""
-                            : is_dir           ? DIR_COLOR
-                            : is_executable_name(data.cFileName) ? EXE_COLOR
-                                                                 : "";
         sb_puts(&entry, color);
         sb_puts(&entry, data.cFileName);
-        if (*color) sb_puts(&entry, RESET_COLOR);
-        if (strlen(data.cFileName) > longest) longest = strlen(data.cFileName);
+        if (marker) sb_putc(&entry, marker);
+        if (*color) sb_puts(&entry, style(S_RESET));
         sl_push(&names, sb_take(&entry));
     } while (FindNextFileA(find, &data));
     FindClose(find);
 
-    if (long_format) {
-        sl_free(&names);
-        return 0;
-    }
+    if (!long_format && names.len > 0) {
+        sl_sort(&names);
+        int width = term_width();
+        int column_width = (int)longest + 2;
+        int columns = one_per_line ? 1 : (column_width > 0 ? width / column_width : 1);
+        if (columns < 1) columns = 1;
 
-    sl_sort(&names);
-    int width = term_width();
-    int column_width = (int)longest + 2;
-    int columns = column_width > 0 ? width / column_width : 1;
-    if (columns < 1) columns = 1;
-
-    for (size_t i = 0; i < names.len; i++) {
-        const char *entry = names.items[i];
-        fputs(entry, stdout);
-        if ((i + 1) % (size_t)columns == 0 || i + 1 == names.len) {
-            putchar('\n');
-        } else {
-            for (int pad = display_width(entry); pad < column_width; pad++) putchar(' ');
+        for (size_t i = 0; i < names.len; i++) {
+            const char *entry = names.items[i];
+            fputs(entry, stdout);
+            if ((i + 1) % (size_t)columns == 0 || i + 1 == names.len) {
+                putchar('\n');
+            } else {
+                for (int pad = display_width(entry); pad < column_width; pad++) putchar(' ');
+            }
         }
     }
     sl_free(&names);
+
+    if (directories + files > 0) {
+        char size_text[32];
+        human_size(total, size_text, sizeof(size_text));
+        printf("%s%s %d director%s, %d file%s, %s%s\n", style(S_DIM), S_LAMBDA, directories,
+               directories == 1 ? "y" : "ies", files, files == 1 ? "" : "s", size_text,
+               style(S_RESET));
+    }
     return 0;
 }
 
@@ -593,18 +646,23 @@ static int builtin_gitinfo(int argc, char **argv) {
         return 1;
     }
     path_to_slashes(root);
-    printf("repository  %s\n", git_repo_name() ? git_repo_name() : "?");
-    printf("root        %s\n", root);
-    printf("branch      %s\n", git_branch() ? git_branch() : "detached");
-    printf("user        %s\n", git_user() ? git_user() : "not configured");
-    printf("state       %s\n", git_dirty() ? "dirty" : "clean");
+    const char *rows[][2] = {{"repository", git_repo_name() ? git_repo_name() : "?"},
+                             {"root", root},
+                             {"branch", git_branch() ? git_branch() : "detached"},
+                             {"user", git_user() ? git_user() : "not configured"},
+                             {"state", git_dirty() ? "dirty" : "clean"}};
+    for (int i = 0; i < 5; i++)
+        printf("  %s%-11s%s %s%s%s\n", style(S_LABEL), rows[i][0], style(S_RESET), style(S_VALUE),
+               rows[i][1], style(S_RESET));
     return 0;
 }
 
 static int builtin_help(int argc, char **argv) {
     (void)argc;
     (void)argv;
-    printf("FreSH %s\n\n", FRESH_VERSION);
+    printf("\n  %s%s%s  %sFreSH%s %s%s%s\n", style(S_ACCENT), S_LAMBDA, style(S_RESET),
+           style(S_HEADING), style(S_RESET), style(S_DIM), FRESH_VERSION, style(S_RESET));
+    printf("  %sa zsh flavoured shell for Windows%s\n\n", style(S_DIM), style(S_RESET));
     int width = term_width();
     int columns = width / 14;
     if (columns < 1) columns = 1;
@@ -617,7 +675,7 @@ static int builtin_help(int argc, char **argv) {
         else coreutil_names(&names);
         sl_sort(&names);
 
-        printf("%s\n", titles[group]);
+        printf("  %s%s%s\n", style(S_LABEL), titles[group], style(S_RESET));
         for (size_t i = 0; i < names.len; i++) {
             printf("  %-12s", names.items[i]);
             if ((i + 1) % (size_t)columns == 0) putchar('\n');
@@ -627,14 +685,16 @@ static int builtin_help(int argc, char **argv) {
         sl_free(&names);
     }
 
-    printf("\nLine editing:\n");
-    printf("  Tab            complete commands, files and variables\n");
-    printf("  Up / Down      history, filtered by what is already typed\n");
-    printf("  Right / End    accept the inline history suggestion\n");
-    printf("  Ctrl+R         search history\n");
-    printf("  Ctrl+A/E       start / end of line     Ctrl+W  delete word\n");
-    printf("  Ctrl+U/K       cut to start / end      Ctrl+L  clear screen\n");
-    printf("\nConfiguration lives in ~/.freshrc (sourced at startup).\n");
+    printf("  %sLine editing%s\n", style(S_LABEL), style(S_RESET));
+    printf("  Tab              complete commands, files and variables\n");
+    printf("  Up / Down        history, filtered by what is already typed\n");
+    printf("  Right / End      accept the inline history suggestion\n");
+    printf("  Ctrl+R           search history\n");
+    printf("  Ctrl+A / Ctrl+E  start and end of line\n");
+    printf("  Ctrl+W / Backsp  delete the previous word\n");
+    printf("  Ctrl+U / Ctrl+K  cut to start and to end\n");
+    printf("  Ctrl+L           clear the screen\n\n");
+    printf("  %sConfiguration lives in ~/.freshrc%s\n\n", style(S_DIM), style(S_RESET));
     return 0;
 }
 
