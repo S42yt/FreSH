@@ -4,6 +4,7 @@
  * GNU General Public License v3.0 - See LICENSE file for details
  */
 
+#include <io.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,13 +46,14 @@ static const char *DEFAULT_RC =
     "alias gp='git pull'\n";
 
 void shell_error(const char *fmt, ...) {
+    int colored = _isatty(_fileno(stderr));
     fflush(stdout);
-    fputs("\x1b[31mFreSH: ", stderr);
+    fputs(colored ? "\x1b[31mFreSH: " : "FreSH: ", stderr);
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
-    fputs("\x1b[0m\n", stderr);
+    fputs(colored ? "\x1b[0m\n" : "\n", stderr);
     fflush(stderr);
 }
 

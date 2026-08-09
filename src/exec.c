@@ -665,7 +665,7 @@ static int truthy(int status) {
 }
 
 int exec_node(Node *node) {
-    if (!node) return shell.last_status;
+    if (!node || !shell.running) return shell.last_status;
     if (shell.returning || shell.break_level || shell.continue_level) return shell.last_status;
 
     int mark = tracked_count;
@@ -873,12 +873,17 @@ int exec_script_file(const char *path, const StrList *args) {
         for (size_t i = 0; i < args->len; i++) sl_push_copy(&shell.params, args->items[i]);
     }
 
+    int was_running = shell.running;
     shell.depth++;
     int status = exec_text(text);
     shell.depth--;
     shell.returning = 0;
 
     if (args) {
+        if (!shell.running) {
+            shell.running = was_running;
+            status = shell.last_status;
+        }
         sl_free(&shell.params);
         shell.params = saved;
     }
