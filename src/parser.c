@@ -515,7 +515,20 @@ static Node *parse_simple(Parser *ps) {
     return node;
 }
 
+static Node *parse_compound(Parser *ps);
+
 static Node *parse_command(Parser *ps) {
+    Node *node = parse_compound(ps);
+    if (node && node->kind != N_SIMPLE) {
+        while (peek(ps)->type == T_REDIR) {
+            add_redir(node, peek(ps));
+            advance(ps);
+        }
+    }
+    return node;
+}
+
+static Node *parse_compound(Parser *ps) {
     Token *t = peek(ps);
 
     if (is_reserved(t, "if")) return parse_if(ps);

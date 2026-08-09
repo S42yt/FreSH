@@ -8,6 +8,7 @@
 
 #include <ctype.h>
 #include <direct.h>
+#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -258,7 +259,7 @@ static int describe_command(const char *name, int verbose) {
         printf("%s\n", path);
         return 0;
     }
-    shell_error("%s not found", name);
+    shell_error("%s: not found", name);
     return 1;
 }
 
@@ -296,6 +297,10 @@ static int builtin_rehash(int argc, char **argv) {
     return 0;
 }
 
+static int colors_enabled(void) {
+    return _isatty(_fileno(stdout));
+}
+
 static int is_executable_name(const char *name) {
     const char *ext = path_ext(name);
     return str_ieq(ext, ".exe") || str_ieq(ext, ".bat") || str_ieq(ext, ".cmd") ||
@@ -319,7 +324,10 @@ static void print_long_entry(const WIN32_FIND_DATAA *data) {
         snprintf(size_text, sizeof(size_text), "%5.1f MB", size / (1024.0 * 1024.0));
     else snprintf(size_text, sizeof(size_text), "%5.1f GB", size / (1024.0 * 1024.0 * 1024.0));
 
-    const char *color = is_dir ? DIR_COLOR : is_executable_name(data->cFileName) ? EXE_COLOR : "";
+    const char *color = !colors_enabled()  ? ""
+                        : is_dir           ? DIR_COLOR
+                        : is_executable_name(data->cFileName) ? EXE_COLOR
+                                                             : "";
     printf("%c%c%c  %s  %04d-%02d-%02d %02d:%02d  %s%s%s\n", is_dir ? 'd' : '-',
            (data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? '-' : 'w',
            is_executable_name(data->cFileName) || is_dir ? 'x' : '-', size_text, st.wYear, st.wMonth,
@@ -367,7 +375,10 @@ static int builtin_ls(int argc, char **argv) {
         StrBuf entry;
         sb_init(&entry);
         int is_dir = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        const char *color = is_dir ? DIR_COLOR : is_executable_name(data.cFileName) ? EXE_COLOR : "";
+        const char *color = !colors_enabled()  ? ""
+                            : is_dir           ? DIR_COLOR
+                            : is_executable_name(data.cFileName) ? EXE_COLOR
+                                                                 : "";
         sb_puts(&entry, color);
         sb_puts(&entry, data.cFileName);
         if (*color) sb_puts(&entry, RESET_COLOR);

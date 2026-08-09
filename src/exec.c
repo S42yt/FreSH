@@ -538,7 +538,11 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     } else {
         char path[PATH_BUF];
         if (!resolve_command(argv[0], path, sizeof(path))) {
+            FdSave save;
+            int redirected = !io_is_default(&io);
+            if (redirected) fds_apply(&io, &save);
             shell_error("%s: command not found", argv[0]);
+            if (redirected) fds_restore(&save);
             status = 127;
         } else if (is_shell_script(path)) {
             FdSave save;
@@ -568,6 +572,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     return status;
 }
 
+static int exec_switch(Node *node);
+
 static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out) {
     if (node->kind == N_SIMPLE) return exec_simple(node, io, background, async_out);
 
@@ -576,7 +582,7 @@ static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out)
     FdSave save;
     int redirected = !io_is_default(&io);
     if (redirected) fds_apply(&io, &save);
-    int status = node->kind == N_GROUP ? exec_node(node->right) : exec_node(node);
+    int status = exec_switch(node);
     if (redirected) fds_restore(&save);
     return status;
 }
@@ -663,12 +669,27 @@ int exec_node(Node *node) {
     if (shell.returning || shell.break_level || shell.continue_level) return shell.last_status;
 
     int mark = tracked_count;
+    int status;
+
+    if (node->kind != N_SIMPLE && node->kind != N_PIPE && node->redirs)
+        status = exec_command(node, io_default(), node->background, NULL);
+    else status = exec_switch(node);
+
+    release_tracked(mark);
+    shell.last_status = status;
+    return status;
+}
+
+static int exec_switch(Node *node) {
     int status = 0;
 
     switch (node->kind) {
     case N_SIMPLE:
+        status = exec_simple(node, io_default(), node->background, NULL);
+        break;
+
     case N_GROUP:
-        status = exec_command(node, io_default(), node->background, NULL);
+        status = exec_node(node->right);
         break;
 
     case N_PIPE:
@@ -743,7 +764,6 @@ int exec_node(Node *node) {
         break;
     }
 
-    release_tracked(mark);
     shell.last_status = status;
     return status;
 }
