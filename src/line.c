@@ -18,6 +18,7 @@
 #include "history.h"
 #include "prompt.h"
 #include "shell.h"
+#include "style.h"
 #include "term.h"
 #include "util.h"
 #include "vars.h"
@@ -147,6 +148,7 @@ static void highlight(const char *text, StrBuf *out) {
 static void update_suggestion(Editor *editor) {
     free(editor->suggestion);
     editor->suggestion = NULL;
+    if (!option_enabled("FRESH_SUGGEST", 1)) return;
     if (editor->buffer.len == 0 || editor->cursor != editor->buffer.len) return;
 
     int index = history_search_prefix(editor->buffer.data, history_count() - 1, -1);
@@ -176,7 +178,8 @@ static void render(Editor *editor) {
     if (editor->rows_up > 0) sb_printf(&frame, "\x1b[%dA", editor->rows_up);
     sb_puts(&frame, "\r\x1b[J");
     sb_puts(&frame, editor->prompt.data);
-    highlight(editor->buffer.data, &frame);
+    if (option_enabled("FRESH_HIGHLIGHT", 1)) highlight(editor->buffer.data, &frame);
+    else sb_puts(&frame, editor->buffer.data);
 
     int width = term_width();
     int total = editor->prompt_width + display_width(editor->buffer.data);

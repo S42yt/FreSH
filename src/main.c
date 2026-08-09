@@ -16,6 +16,7 @@
 #include "line.h"
 #include "parser.h"
 #include "shell.h"
+#include "style.h"
 #include "term.h"
 #include "util.h"
 #include "vars.h"
@@ -23,19 +24,51 @@
 ShellState shell;
 
 static const char *DEFAULT_RC =
-    "# FreSH configuration - sourced on every start\n"
+    "# FreSH configuration\n"
+    "# This file is a FreSH script, sourced every time the shell starts.\n"
+    "# Anything you can type at the prompt works here.\n"
     "\n"
-    "# prompt character shown before the cursor\n"
+    "# ---- startup ----------------------------------------------------------\n"
+    "\n"
+    "# show the banner when an interactive shell starts\n"
+    "FRESH_BANNER=1\n"
+    "# replace the banner with your own line, leave empty for the default one\n"
+    "FRESH_BANNER_TEXT=\"\"\n"
+    "# where ~ points and where cd with no argument goes\n"
+    "# HOME=\"C:/Users/me\"\n"
+    "# uncomment to start every shell in one place\n"
+    "# cd ~\n"
+    "\n"
+    "# ---- prompt -----------------------------------------------------------\n"
+    "\n"
+    "# character on the second prompt line\n"
     "FRESH_PROMPT_CHAR=\"\xce\xbb\"\n"
     "# how many trailing path components to show\n"
     "FRESH_PATH_DEPTH=3\n"
-    "# git branch, dirty marker, user name in prompt\n"
+    "# user name on the first prompt line\n"
+    "FRESH_SHOW_USER=1\n"
+    "# git branch, and the ! marker when the tree is dirty\n"
     "FRESH_SHOW_GIT=1\n"
     "FRESH_SHOW_GIT_DIRTY=1\n"
-    "FRESH_SHOW_USER=1\n"
-    "# right aligned exit code of the last command\n"
+    "# exit code of the last command, right aligned\n"
     "FRESH_SHOW_RPROMPT=1\n"
+    "# put the current directory in the window title\n"
+    "FRESH_TITLE=1\n"
+    "\n"
+    "# ---- editing ----------------------------------------------------------\n"
+    "\n"
+    "# colour output and syntax highlighting\n"
+    "FRESH_COLOR=1\n"
+    "FRESH_HIGHLIGHT=1\n"
+    "# grey inline suggestion from history, accepted with Right or End\n"
+    "FRESH_SUGGEST=1\n"
+    "\n"
+    "# ---- history ----------------------------------------------------------\n"
+    "\n"
     "HISTSIZE=5000\n"
+    "# HISTFILE=\"C:/Users/me/.fresh_history\"\n"
+    "\n"
+    "# ---- aliases ----------------------------------------------------------\n"
     "\n"
     "alias ll='ls -l'\n"
     "alias la='ls -la'\n"
@@ -43,7 +76,17 @@ static const char *DEFAULT_RC =
     "alias ...='cd ../..'\n"
     "alias g='git'\n"
     "alias gs='git status'\n"
-    "alias gp='git pull'\n";
+    "alias gp='git pull'\n"
+    "alias gc='git commit'\n"
+    "alias gd='git diff'\n"
+    "\n"
+    "# ---- your own ---------------------------------------------------------\n"
+    "\n"
+    "# export EDITOR=nvim\n"
+    "# export PATH=\"$HOME/bin;$PATH\"\n"
+    "#\n"
+    "# functions work too:\n"
+    "# mkcd() { mkdir -p \"$1\"; cd \"$1\"; }\n";
 
 void shell_error(const char *fmt, ...) {
     int colored = _isatty(_fileno(stderr));
@@ -122,8 +165,22 @@ static int needs_more_input(const char *text) {
     return incomplete;
 }
 
+static void show_banner(void) {
+    if (!option_enabled("FRESH_BANNER", 1)) return;
+
+    const char *custom = var_get("FRESH_BANNER_TEXT");
+    if (custom && *custom) {
+        printf("%s\n\n", custom);
+        return;
+    }
+    printf("\n  %s%s%s  %sFreSH%s %s%s%s\n", style(S_ACCENT), S_LAMBDA, style(S_RESET),
+           style(S_HEADING), style(S_RESET), style(S_DIM), FRESH_VERSION, style(S_RESET));
+    printf("  %stype help for the basics, edit ~/.freshrc to make it yours%s\n\n", style(S_DIM),
+           style(S_RESET));
+}
+
 static void interactive_loop(void) {
-    printf("\x1b[1;32mFreSH\x1b[0m %s  \x1b[90mtype help for the basics\x1b[0m\n\n", FRESH_VERSION);
+    show_banner();
 
     while (shell.running) {
         char *line = line_read(0);

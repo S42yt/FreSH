@@ -13,6 +13,7 @@
 
 #include "gitinfo.h"
 #include "shell.h"
+#include "style.h"
 #include "term.h"
 #include "vars.h"
 
@@ -41,12 +42,6 @@ int display_width(const char *text) {
         width++;
     }
     return width;
-}
-
-static int option_enabled(const char *name, int fallback) {
-    const char *value = var_get(name);
-    if (!value || !*value) return fallback;
-    return !(strcmp(value, "0") == 0 || str_ieq(value, "false") || str_ieq(value, "off"));
 }
 
 static void short_path(StrBuf *out) {
@@ -141,6 +136,8 @@ void prompt_build(StrBuf *out) {
 }
 
 void prompt_set_title(void) {
+    if (!option_enabled("FRESH_TITLE", 1)) return;
+
     StrBuf path;
     sb_init(&path);
     short_path(&path);

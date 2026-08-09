@@ -29,5 +29,6 @@
 
 int style_enabled(void);
 const char *style(const char *code);
+int option_enabled(const char *name, int fallback);
 
 #endif
