@@ -145,7 +145,6 @@ static void complete_paths(const char *token, StrList *out, int directories_only
         token_slash = strpbrk(token_slash + 1, "/\\");
     }
     size_t prefix_length = token_last ? (size_t)(token_last - token) + 1 : 0;
-    int use_slashes = strchr(token, '/') != NULL || token[0] == '~';
 
     do {
         if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
@@ -156,8 +155,8 @@ static void complete_paths(const char *token, StrList *out, int directories_only
         sb_init(&sb);
         sb_putn(&sb, token, prefix_length);
         sb_puts(&sb, data.cFileName);
-        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) sb_putc(&sb, use_slashes ? '/' : '\\');
-        if (use_slashes) path_to_slashes(sb.data);
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) sb_putc(&sb, '/');
+        path_to_slashes(sb.data);
         push_unique(out, sb.data);
         sb_free(&sb);
     } while (FindNextFileA(find, &data));
