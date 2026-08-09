@@ -20,7 +20,7 @@
 #include "util.h"
 #include "vars.h"
 
-Shell shell;
+ShellState shell;
 
 static const char *DEFAULT_RC =
     "# FreSH configuration - sourced on every start\n"

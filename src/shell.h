@@ -21,9 +21,9 @@ typedef struct {
     int depth;
     StrList params;
     char *script_name;
-} Shell;
+} ShellState;
 
-extern Shell shell;
+extern ShellState shell;
 
 void shell_init(int interactive);
 void shell_cleanup(void);
