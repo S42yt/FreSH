@@ -47,7 +47,10 @@ static int builtin_cd(int argc, char **argv) {
             shell_error("cd: OLDPWD not set");
             return 1;
         }
-        printf("%s\n", target);
+        char shown[PATH_BUF];
+        snprintf(shown, sizeof(shown), "%s", target);
+        path_to_slashes(shown);
+        printf("%s\n", shown);
     } else {
         target = argv[1];
     }

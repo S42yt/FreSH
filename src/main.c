@@ -80,7 +80,7 @@ static void prepend_user_bins(void) {
 static void load_rc(void) {
     char *rc = config_path(".freshrc");
     if (!path_is_file(rc)) {
-        FILE *f = fopen(rc, "w");
+        FILE *f = fopen(rc, "wb");
         if (f) {
             fputs(DEFAULT_RC, f);
             fclose(f);

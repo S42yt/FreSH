@@ -60,13 +60,13 @@ static void field_add_split(Expander *ex, const char *text) {
     }
     const char *p = text;
     while (*p) {
-        if (*p == ' ' || *p == '\t' || *p == '\n') {
+        if (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
             if (ex->has_content) field_flush(ex);
             p++;
             continue;
         }
         const char *start = p;
-        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') p++;
         field_add(ex, start, (size_t)(p - start));
     }
 }

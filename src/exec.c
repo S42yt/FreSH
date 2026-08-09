@@ -101,10 +101,10 @@ static void pathext_list(StrList *out) {
     const char *pathext = var_get("PATHEXT");
     if (!pathext || !*pathext) pathext = ".COM;.EXE;.BAT;.CMD";
     char *copy = xstrdup(pathext);
-    char *token = strtok(copy, ";");
-    while (token) {
+    char *cursor = copy;
+    char *token;
+    while ((token = str_next_field(&cursor, ';')) != NULL) {
         if (*token) sl_push_copy(out, token);
-        token = strtok(NULL, ";");
     }
     free(copy);
     sl_push_copy(out, ".ps1");
@@ -146,15 +146,14 @@ int resolve_command(const char *name, char *out, size_t out_size) {
     if (!path) return 0;
 
     char *copy = xstrdup(path);
-    char *dir = strtok(copy, ";");
+    char *cursor = copy;
+    char *dir;
     int found = 0;
-    while (dir && !found) {
-        if (*dir) {
-            char *base = path_join(dir, name);
-            found = try_with_extensions(base, out, out_size);
-            free(base);
-        }
-        dir = strtok(NULL, ";");
+    while (!found && (dir = str_next_field(&cursor, ';')) != NULL) {
+        if (!*dir) continue;
+        char *base = path_join(dir, name);
+        found = try_with_extensions(base, out, out_size);
+        free(base);
     }
     free(copy);
     return found;
@@ -170,8 +169,9 @@ static void ensure_command_cache(void) {
         const char *path = var_get("PATH");
         if (path) {
             char *copy = xstrdup(path);
-            char *dir = strtok(copy, ";");
-            while (dir) {
+            char *cursor = copy;
+            char *dir;
+            while ((dir = str_next_field(&cursor, ';')) != NULL) {
                 if (*dir) {
                     char *pattern = path_join(dir, "*");
                     WIN32_FIND_DATAA data;
@@ -194,7 +194,6 @@ static void ensure_command_cache(void) {
                         FindClose(find);
                     }
                 }
-                dir = strtok(NULL, ";");
             }
             free(copy);
         }

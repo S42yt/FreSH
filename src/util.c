@@ -174,6 +174,19 @@ char *str_trim(char *s) {
     return s;
 }
 
+char *str_next_field(char **cursor, char separator) {
+    if (!*cursor || !**cursor) return NULL;
+    char *start = *cursor;
+    char *end = strchr(start, separator);
+    if (end) {
+        *end = '\0';
+        *cursor = end + 1;
+    } else {
+        *cursor = start + strlen(start);
+    }
+    return start;
+}
+
 void path_to_slashes(char *p) {
     for (; *p; p++)
         if (*p == '\\') *p = '/';

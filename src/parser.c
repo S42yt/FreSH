@@ -65,7 +65,7 @@ static void token_list_free(TokenList *list) {
 }
 
 static int is_delim(char c) {
-    return c == '\0' || c == ' ' || c == '\t' || c == '\n' || c == '|' || c == '&' ||
+    return c == '\0' || c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '|' || c == '&' ||
            c == ';' || c == '<' || c == '>' || c == '(' || c == ')';
 }
 
@@ -157,7 +157,11 @@ static char *scan_word(const char **p, int *quoted, int *incomplete) {
 static void tokenize(const char *src, TokenList *out, int *incomplete) {
     const char *p = src;
     while (*p) {
-        while (*p == ' ' || *p == '\t') p++;
+        while (*p == ' ' || *p == '\t' || *p == '\r') p++;
+        if (*p == '\\' && p[1] == '\r' && p[2] == '\n') {
+            p += 3;
+            continue;
+        }
         if (*p == '\\' && p[1] == '\n') {
             p += 2;
             continue;
