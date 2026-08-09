@@ -370,6 +370,7 @@ static int register_terminal_profile(const InstallOptions *options) {
             "            \"icon\": \"%s\",\n"
             "            \"startingDirectory\": \"%%USERPROFILE%%\",\n"
             "            \"colorScheme\": \"Campbell\",\n"
+            "            \"suppressApplicationTitle\": false,\n"
             "            \"hidden\": false\n"
             "        }\n"
             "    ]\n"

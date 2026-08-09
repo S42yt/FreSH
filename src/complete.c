@@ -85,7 +85,25 @@ static void complete_commands(const char *token, StrList *out) {
     sl_sort(out);
 }
 
-static void complete_paths(const char *token, StrList *out) {
+static char *command_word(const char *buffer, size_t start) {
+    size_t begin = start;
+    while (begin > 0) {
+        char c = buffer[begin - 1];
+        if (c == '|' || c == ';' || c == '&' || c == '(') break;
+        begin--;
+    }
+    while (buffer[begin] == ' ' || buffer[begin] == '\t') begin++;
+    size_t end = begin;
+    while (buffer[end] && !isspace((unsigned char)buffer[end])) end++;
+    return xstrndup(buffer + begin, end - begin);
+}
+
+static int wants_directories(const char *command) {
+    return strcmp(command, "cd") == 0 || strcmp(command, "rmdir") == 0 ||
+           strcmp(command, "pushd") == 0 || strcmp(command, "mkdir") == 0;
+}
+
+static void complete_paths(const char *token, StrList *out, int directories_only) {
     char expanded[PATH_BUF];
     const char *home = var_get("HOME");
     if (token[0] == '~' && (token[1] == '/' || token[1] == '\\' || token[1] == '\0'))
@@ -125,6 +143,7 @@ static void complete_paths(const char *token, StrList *out) {
     do {
         if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
         if (data.cFileName[0] == '.' && leaf[0] != '.') continue;
+        if (directories_only && !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
 
         StrBuf sb;
         sb_init(&sb);
@@ -149,9 +168,11 @@ void complete_at(const char *buffer, size_t cursor, StrList *matches, size_t *re
         complete_variables(token, matches);
     } else if (at_command_position(buffer, start) && !strpbrk(token, "/\\.")) {
         complete_commands(token, matches);
-        complete_paths(token, matches);
+        complete_paths(token, matches, 0);
     } else {
-        complete_paths(token, matches);
+        char *command = command_word(buffer, start);
+        complete_paths(token, matches, wants_directories(command));
+        free(command);
     }
     free(token);
 }

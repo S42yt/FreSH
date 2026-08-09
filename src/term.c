@@ -79,6 +79,12 @@ void term_clear_screen(void) {
     term_write("\x1b[2J\x1b[H");
 }
 
+void term_set_title(const char *title) {
+    SetConsoleTitleA(title);
+    printf("\x1b]0;%s\x07", title);
+    fflush(stdout);
+}
+
 static int map_extended(int code) {
     switch (code) {
     case 72: return KEY_UP;

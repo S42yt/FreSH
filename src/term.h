@@ -50,6 +50,7 @@ int term_height(void);
 int term_read_key(void);
 void term_write(const char *s);
 void term_clear_screen(void);
+void term_set_title(const char *title);
 int term_cursor_row(void);
 
 #endif

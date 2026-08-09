@@ -305,7 +305,6 @@ static void complete(Editor *editor) {
         char *prefix = xstrndup(editor->menu.items[0], common);
         apply_match(editor, start, prefix, 0);
         free(prefix);
-        return;
     }
 
     print_matches(editor, &editor->menu);
@@ -386,8 +385,12 @@ char *line_read(int continuation) {
     sl_init(&editor.menu);
     editor.history_index = -1;
 
-    if (continuation) prompt_build_continuation(&editor.prompt);
-    else prompt_build(&editor.prompt);
+    if (continuation) {
+        prompt_build_continuation(&editor.prompt);
+    } else {
+        prompt_set_title();
+        prompt_build(&editor.prompt);
+    }
     prompt_metrics(&editor);
 
     render(&editor);

@@ -10,6 +10,7 @@
 #include "util.h"
 
 void prompt_build(StrBuf *out);
+void prompt_set_title(void);
 void prompt_build_continuation(StrBuf *out);
 int display_width(const char *text);
 

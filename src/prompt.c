@@ -140,6 +140,20 @@ void prompt_build(StrBuf *out) {
     sb_puts(out, COLOR_RESET " ");
 }
 
+void prompt_set_title(void) {
+    StrBuf path;
+    sb_init(&path);
+    short_path(&path);
+
+    StrBuf title;
+    sb_init(&title);
+    sb_printf(&title, "FreSH  %s", path.data);
+    term_set_title(title.data);
+
+    sb_free(&path);
+    sb_free(&title);
+}
+
 void prompt_build_continuation(StrBuf *out) {
     sb_puts(out, COLOR_GIT "\xe2\x80\xa6" COLOR_RESET " ");
 }
