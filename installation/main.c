@@ -31,7 +31,7 @@ static void show_welcome(void) {
     tui_text("  - register FreSH as a Windows application and add it to PATH");
     tui_text("  - add a Windows Terminal profile, like PowerShell has");
     tui_text("  - add 'Open FreSH here' to the Explorer context menu");
-    tui_text("  - register FreSH as a handler for .sh scripts");
+    tui_text("  - register FreSH as a handler for .frsh and .sh scripts");
     tui_wait_key();
 }
 

@@ -200,6 +200,7 @@ static int register_script_association(const InstallOptions *options) {
     ok &= write_string_value(root, subkey, NULL, command);
 
     ok &= write_string_value(root, "Software\\Classes\\.sh\\OpenWithProgids", "FreSH.Script", "");
+    ok &= write_string_value(root, "Software\\Classes\\.frsh", NULL, "FreSH.Script");
     ok &= write_string_value(root, "Software\\Classes\\.fresh", NULL, "FreSH.Script");
     return ok;
 }
@@ -526,7 +527,7 @@ int installer_perform(const InstallOptions *options, StepLogger log) {
         log(register_terminal_profile(options), "Windows Terminal profile created");
     if (options->context_menu) log(register_context_menu(options), "Explorer context menu added");
     if (options->script_association)
-        log(register_script_association(options), "Registered as handler for .sh scripts");
+        log(register_script_association(options), "Registered as handler for .frsh scripts");
     if (options->start_menu_shortcut)
         log(shortcut_in_folder(options, CSIDL_PROGRAMS), "Start Menu shortcut created");
     if (options->desktop_shortcut)
@@ -564,6 +565,7 @@ int installer_uninstall(StepLogger log) {
         delete_key_tree(roots[i], CONTEXT_KEY);
         delete_key_tree(roots[i], CONTEXT_DIR_KEY);
         delete_key_tree(roots[i], PROGID_KEY);
+        RegDeleteKeyA(roots[i], "Software\\Classes\\.frsh");
         RegDeleteKeyA(roots[i], "Software\\Classes\\.fresh");
         log(1, "Registry entries removed");
 

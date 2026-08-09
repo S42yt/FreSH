@@ -108,6 +108,7 @@ static void pathext_list(StrList *out) {
         if (*token) sl_push_copy(out, token);
     }
     free(copy);
+    sl_push_copy(out, ".frsh");
     sl_push_copy(out, ".ps1");
     sl_push_copy(out, ".sh");
 }
@@ -185,7 +186,8 @@ static void ensure_command_cache(void) {
                             if (!*ext) continue;
                             if (!str_ieq(ext, ".exe") && !str_ieq(ext, ".com") &&
                                 !str_ieq(ext, ".bat") && !str_ieq(ext, ".cmd") &&
-                                !str_ieq(ext, ".ps1") && !str_ieq(ext, ".sh"))
+                                !str_ieq(ext, ".ps1") && !str_ieq(ext, ".sh") &&
+                                !str_ieq(ext, ".frsh"))
                                 continue;
                             char name[PATH_BUF];
                             snprintf(name, sizeof(name), "%s", data.cFileName);
@@ -378,7 +380,7 @@ static char *build_command_line(const char *program, char **argv, int argc, cons
 
 static int is_shell_script(const char *path) {
     const char *ext = path_ext(path);
-    if (str_ieq(ext, ".sh") || str_ieq(ext, ".fresh")) return 1;
+    if (str_ieq(ext, ".frsh") || str_ieq(ext, ".sh") || str_ieq(ext, ".fresh")) return 1;
     if (*ext) return 0;
 
     FILE *f = fopen(path, "rb");

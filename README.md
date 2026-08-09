@@ -6,6 +6,10 @@ and brings its own unix commands.
 
 ![FreSH](./assets/FreSH_tui.png)
 
+**Docs:** [scripting](docs/scripting.md) with `.frsh` files,
+[configuration](docs/configuration.md), [themes](docs/themes.md),
+[plugins](docs/plugins.md), [command reference](docs/commands.md).
+
 ## What you get
 
 **A real shell**
@@ -18,7 +22,7 @@ and brings its own unix commands.
 - `if / elif / else / fi`, `while`, `until`, `for x in ...`, `case ... esac`,
   `{ ...; }`, `!`
 - shell functions, `return`, `break`, `continue`, `shift`
-- `.sh` scripts run natively, FreSH is the interpreter
+- `.frsh` and `.sh` scripts run natively, FreSH is the interpreter
 
 **zsh style line editing**
 
@@ -164,9 +168,10 @@ return  set     shift   source  test  [   theme   true    type    unalias
 unset   which   .
 ```
 
-External programs are resolved through `PATH` using `PATHEXT`, plus `.ps1` and
-`.sh`. `.ps1` files are handed to PowerShell, `.bat` and `.cmd` to cmd.exe,
-`.sh` files are executed by FreSH itself.
+External programs are resolved through `PATH` using `PATHEXT`, plus `.frsh`,
+`.ps1` and `.sh`. `.ps1` files are handed to PowerShell, `.bat` and `.cmd` to
+cmd.exe, `.frsh` and `.sh` files are executed by FreSH itself. Full details in
+the [command reference](docs/commands.md).
 
 ## Installation
 
@@ -186,7 +191,7 @@ registered:
 - registers under **App Paths**, so `FreSH` works from the Run dialog
 - adds it to **PATH**
 - adds **Open FreSH here** to the Explorer folder context menu
-- registers FreSH as a handler for `.sh` and `.fresh` scripts
+- registers FreSH as a handler for `.frsh` and `.sh` scripts
 - creates Start Menu and Desktop shortcuts
 - adds an entry to **Apps & Features** with a working uninstaller
 
