@@ -598,6 +598,38 @@ static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out)
     return status;
 }
 
+static int stage_runs_in_process(Node *node) {
+    if (node->kind != N_SIMPLE) return 1;
+    if (node->words.len == 0) return 1;
+
+    const char *word = node->words.items[0];
+    if (strpbrk(word, "$`\"'\\*?")) return 0;
+    if (function_find(word) || builtin_lookup(word)) return 1;
+
+    char path[PATH_BUF];
+    if (resolve_command(word, path, sizeof(path))) return is_shell_script(path);
+    return coreutil_lookup(word) != NULL;
+}
+
+static HANDLE open_spool(char *path, size_t path_size) {
+    char directory[PATH_BUF];
+    if (!GetTempPathA(sizeof(directory), directory)) return INVALID_HANDLE_VALUE;
+
+    char file[PATH_BUF];
+    if (!GetTempFileNameA(directory, "frsp", 0, file)) return INVALID_HANDLE_VALUE;
+    snprintf(path, path_size, "%s", file);
+
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    return CreateFileA(file, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS,
+                       FILE_ATTRIBUTE_TEMPORARY, NULL);
+}
+
+static HANDLE reopen_spool(const char *path) {
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    return CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING,
+                       FILE_ATTRIBUTE_TEMPORARY, NULL);
+}
+
 static int flatten_pipeline(Node *node, Node **stages, int max) {
     if (node->kind != N_PIPE) {
         stages[0] = node;
@@ -615,44 +647,74 @@ static int exec_pipeline(Node *node, int background) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     HANDLE processes[MAX_STAGES];
     int process_count = 0;
-    HANDLE previous_read = NULL;
+    char spools[MAX_STAGES][PATH_BUF];
+    int spool_count = 0;
+    HANDLE stage_input = NULL;
     int mark = tracked_count;
+    int last_stage_spawned = 0;
     int status = 0;
 
     for (int i = 0; i < count; i++) {
         IoSet io = io_default();
         HANDLE read_end = NULL;
         HANDLE write_end = NULL;
+        HANDLE spool = INVALID_HANDLE_VALUE;
+        char spool_path[PATH_BUF] = "";
 
-        if (previous_read) io.in = previous_read;
+        if (stage_input) io.in = stage_input;
+
         if (i < count - 1) {
-            if (!CreatePipe(&read_end, &write_end, &sa, 0)) {
-                shell_error("cannot create pipe");
-                break;
+            if (stage_runs_in_process(stages[i])) {
+                spool = open_spool(spool_path, sizeof(spool_path));
+                if (spool == INVALID_HANDLE_VALUE) {
+                    shell_error("cannot create pipeline buffer");
+                    break;
+                }
+                track_handle(spool);
+                io.out = spool;
+            } else {
+                if (!CreatePipe(&read_end, &write_end, &sa, 0)) {
+                    shell_error("cannot create pipe");
+                    break;
+                }
+                track_handle(read_end);
+                track_handle(write_end);
+                io.out = write_end;
             }
-            track_handle(read_end);
-            track_handle(write_end);
-            io.out = write_end;
         }
 
         HANDLE spawned = NULL;
         status = exec_command(stages[i], io, 0, &spawned);
-        if (spawned) processes[process_count++] = spawned;
+        if (spawned) {
+            processes[process_count++] = spawned;
+            if (i == count - 1) last_stage_spawned = 1;
+        }
 
         if (write_end) {
             untrack_handle(write_end);
             CloseHandle(write_end);
         }
-        if (previous_read) {
-            untrack_handle(previous_read);
-            CloseHandle(previous_read);
+        if (stage_input) {
+            untrack_handle(stage_input);
+            CloseHandle(stage_input);
+            stage_input = NULL;
         }
-        previous_read = read_end;
+
+        if (spool != INVALID_HANDLE_VALUE) {
+            untrack_handle(spool);
+            CloseHandle(spool);
+            snprintf(spools[spool_count++], PATH_BUF, "%s", spool_path);
+            stage_input = reopen_spool(spool_path);
+            if (stage_input == INVALID_HANDLE_VALUE) stage_input = NULL;
+            else track_handle(stage_input);
+        } else {
+            stage_input = read_end;
+        }
     }
 
-    if (previous_read) {
-        untrack_handle(previous_read);
-        CloseHandle(previous_read);
+    if (stage_input) {
+        untrack_handle(stage_input);
+        CloseHandle(stage_input);
     }
 
     for (int i = 0; i < process_count; i++) {
@@ -663,9 +725,11 @@ static int exec_pipeline(Node *node, int background) {
         WaitForSingleObject(processes[i], INFINITE);
         DWORD exit_code = 0;
         GetExitCodeProcess(processes[i], &exit_code);
-        if (i == process_count - 1) status = (int)exit_code;
+        if (i == process_count - 1 && last_stage_spawned) status = (int)exit_code;
         CloseHandle(processes[i]);
     }
+
+    for (int i = 0; i < spool_count; i++) DeleteFileA(spools[i]);
 
     release_tracked(mark);
     return status;
