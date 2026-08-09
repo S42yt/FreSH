@@ -1,98 +1,148 @@
-# FreSH - First-Run Experience Shell
+# FreSH — First-Run Experience Shell
 
-# Dawg i dont have windows even anymore i think im gonna rewrite this for mac lmao
-
-A fast bash-like shell written in C for Windows.
+A fast, zsh-flavoured shell for Windows, written in C with no runtime dependencies.
+No Git Bash, no WSL, no MSYS2 — FreSH runs shell scripts itself.
 
 ![TUI](./assets/FreSH_tui.png)
 
-## Installation
+## What you get
 
+**A real shell**
+
+- pipelines, `&&`, `||`, `;`, background `&`
+- redirection: `>`, `>>`, `<`, `2>`, `2>&1`
+- quoting, `\` escapes, globs (`*.c`, `src/?.h`)
+- variables, `export`, `$?`, `$#`, `$@`, `$1`, `${VAR:-default}`, `${#VAR}`
+- command substitution `$(...)` and `` `...` ``, arithmetic `$((1 + 2))`
+- `if / elif / else / fi`, `while`, `until`, `for x in ...`, `{ ...; }`, `!`
+- shell functions, `return`, `break`, `continue`, `shift`, `local` positional parameters
+- `.sh` scripts run natively — FreSH is the interpreter, no external shell involved
+
+**zsh-style line editing**
+
+| Key | Action |
+| --- | --- |
+| `Tab` | complete commands, files, directories and `$variables` |
+| `Tab` again | cycle through the candidates |
+| `Up` / `Down` | history, filtered by what you have already typed |
+| `Right` / `End` | accept the greyed-out suggestion from history |
+| `Ctrl+R` | search history |
+| `Ctrl+A` / `Ctrl+E` | start / end of line |
+| `Ctrl+W` / `Ctrl+U` / `Ctrl+K` | delete word / cut to start / cut to end |
+| `Ctrl+←` / `Ctrl+→` | move by word |
+| `Ctrl+L` | clear screen |
+| `Ctrl+C` | abandon the line |
+| `Ctrl+D` | exit on an empty line |
+
+Commands are colour-highlighted as you type: known commands green, unknown red,
+strings yellow, variables cyan, operators magenta.
+
+**JOSH prompt**
+
+```
+FreSH (master!) λ 1 ↵
+```
+
+Path, git branch, a `!` when the tree is dirty, `λ`, and the exit code of the
+last failed command right-aligned. Same look as the oh-my-zsh `josh` theme.
+
+## Installation
 
 ![WIZARD](./assets/FreSH_wizard.png)
 
-### Wizard Installation
+1. Download `FreSH-Setup.exe` from the releases page
+2. Run it and pick **Just for me** (no admin) or **For all users**
+3. Open a new terminal and type `FreSH`
 
-1. Download the latest `FreSH-Setup.exe` from the releases page
-2. Double-click `FreSH-Setup.exe`
-3. Follow the installation wizard:
-   - Choose **"Install for current user only"** (recommended)
-   - Or **"Install globally for all users"** (requires admin rights)
-4. After installation, open any terminal and type `FreSH`
+The installer registers FreSH the way Windows expects a shell to be registered:
 
-## Building from Source
+- adds a **Windows Terminal profile**, so FreSH sits next to PowerShell in the dropdown
+- registers under **App Paths**, so `FreSH` works from the Run dialog and from any app
+- adds it to **PATH**
+- adds **Open FreSH here** to the Explorer folder context menu
+- registers FreSH as a handler for `.sh` and `.fresh` scripts
+- creates Start Menu and Desktop shortcuts
+- adds an entry to **Apps & Features** with a working uninstaller
 
-### Prerequisites
-- [GCC Compiler](https://gcc.gnu.org/)
-- [Astyle](http://astyle.sourceforge.net/) (for formatting)
-- Any IDE with proper C support
+Uninstall from *Settings → Apps → FreSH*, or run `Uninstall-FreSH.exe` from the
+install folder.
 
-### Development
+## Configuration
 
-There are 2 versions to build FreSH:
+FreSH sources `~/.freshrc` at startup and creates it on first run:
 
-- [Powershell File(.ps1)](./build.ps1)
-- [Shell File(.sh)](./build.sh)
-
-Both can be used on Windows.
-(For .sh you may need a bash compiling terminal like WSL or Git Bash)
-
-Format code:
 ```sh
-astyle --style=google --indent=spaces=4 --suffix=none *.c *.h
+FRESH_PROMPT_CHAR="λ"     # character before the cursor
+FRESH_PATH_DEPTH=3        # trailing path components to show
+FRESH_SHOW_GIT=1          # git branch in the prompt
+FRESH_SHOW_GIT_DIRTY=1    # ! marker when the tree is dirty
+FRESH_SHOW_USER=0         # user name in the prompt
+FRESH_SHOW_RPROMPT=1      # right-aligned exit code
+HISTSIZE=5000
+
+alias ll='ls -l'
+alias gs='git status'
 ```
 
-Build FreSH:
+History lives in `~/.fresh_history`.
+
+## Builtins
+
+```
+alias      break      cd         clear      continue   echo
+eval       exit       export     false      gitinfo    help
+history    ls         pwd        read       rehash     return
+set        shift      source     test  [    true       type
+unalias    unset      which      .
+```
+
+External programs are resolved through `PATH` using `PATHEXT`, plus `.ps1` and
+`.sh`. `.ps1` files are handed to PowerShell, `.bat`/`.cmd` to cmd.exe, `.sh`
+files are executed by FreSH itself.
+
+## Building from source
+
+Requires GCC (MinGW-w64 / MSYS2). No other dependencies.
+
 ```sh
 ./build.sh
 ```
 
-Start the Shell (after building):
-```sh
-./build/FreSH.exe
+or, in PowerShell:
+
+```powershell
+.\build.ps1
 ```
 
+Both produce `build/FreSH.exe` and `build/FreSH-Setup.exe`. The installer embeds
+`FreSH.exe` as a byte array generated by `tools/bin2c.c`, so the setup binary is
+self-contained.
 
-### Native Commands
+CMake works too:
 
 ```sh
-help            Show the help message
-exit/quit       Exit the shell
-cd [dir]        Change directory
-pwd             Print working directory
-ls              List directory contents 
-clear           Clear the screen completely
-history         Show command history
-binlist         Show registered bin commands
-which <cmd>     Show path to command
-echo <text>     Print text to screen
-shinfo          Show shell script support info
-gitinfo         Show git repository information
-gitconfig       Configure git display 
+cmake -B build && cmake --build build
 ```
 
-## Features
+Format before committing:
 
-- **Cross-platform**: Built for Windows with full CMD/PowerShell compatibility
-- **Git Integration**: Shows current branch, user, and repository info automatically
-- **Command History**: Navigate through previous commands with arrow keys
-- **Bin Commands**: Automatically detects and registers executables in user bin folders
-- **Script Support**: Supports .exe, .bat, .cmd, .ps1, .sh, and other executable types
-- **Easy Installation**: One-click installer with user and global installation options
-- **Self-contained**: Bundled installer includes everything needed
-- **Uninstaller**: Clean removal through Control Panel or dedicated uninstaller
+```sh
+astyle --style=google --indent=spaces=4 --suffix=none src/*.c src/*.h
+```
 
-## Uninstalling
+## Usage outside the prompt
 
-To uninstall FreSH:
-1. Go to **Control Panel > Programs and Features**
-2. Find **"FreSH - First-Run Experience Shell"** and click **Uninstall**
-
-Or run the uninstaller directly from the installation directory.
+```sh
+FreSH script.sh arg1 arg2   # run a script
+FreSH -c "echo hello"       # run one command
+FreSH C:\some\folder        # start in a folder
+FreSH --version
+```
 
 ## License
 
-This project is Licensed under a [MIT LICENSE](LICENSE)
+GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
 ## Contributing
-_Soon_
+
+Issues and pull requests welcome.

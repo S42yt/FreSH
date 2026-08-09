@@ -1,65 +1,47 @@
 /*
- * Copyright (c) 2025 Musa/S42
- * FreSH Installation Wizard
- * MIT License - See LICENSE file for details
+ * Copyright (c) 2025-2026 Musa Bostanci
+ * FreSH - First-Run Experience Shell
+ * GNU General Public License v3.0 - See LICENSE file for details
  */
 
-#ifndef INSTALLER_H
-#define INSTALLER_H
+#ifndef FRESH_INSTALLER_H
+#define FRESH_INSTALLER_H
 
-#include <windows.h>
+#include <shlobj.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <shlobj.h>
-#include <direct.h>
-
+#include <windows.h>
 
 #define MAX_PATH_LEN 1024
-#define MAX_INPUT_LEN 512
-#define FRESH_VERSION "1.0.0"
-
+#define FRESH_VERSION "2.0.0"
+#define FRESH_TERMINAL_GUID "{4f3e2c10-9a7b-4d55-8c21-2f6b9d0e7a31}"
 
 typedef enum {
     INSTALL_USER,
     INSTALL_SYSTEM
-} install_type_t;
-
+} InstallScope;
 
 typedef struct {
+    InstallScope scope;
     char install_dir[MAX_PATH_LEN];
     char exe_path[MAX_PATH_LEN];
-    char temp_dir[MAX_PATH_LEN];
-} install_paths_t;
+    int add_to_path;
+    int start_menu_shortcut;
+    int desktop_shortcut;
+    int terminal_profile;
+    int context_menu;
+    int script_association;
+} InstallOptions;
 
+typedef void (*StepLogger)(int ok, const char *message);
 
-void installer_init();
-void show_welcome_screen();
-int show_license_agreement();
-install_type_t choose_installation_type();
-void choose_installation_path(install_paths_t *paths, install_type_t type);
-int confirm_installation(install_paths_t *paths, install_type_t type);
-int perform_installation(install_paths_t *paths, install_type_t type);
-void show_completion_screen(int success);
-void cleanup_installer();
-
-
-void clear_screen();
-void set_console_color(int color);
-void draw_box(int x, int y, int width, int height);
-void print_centered(const char *text, int width);
-void show_progress_bar(int progress, int total);
-int get_user_choice(const char *options[], int count);
-void wait_for_keypress();
-
-
-int copy_fresh_executable(install_paths_t *paths);
-int register_shell_in_registry(install_paths_t *paths, install_type_t type);
-int add_to_path(install_paths_t *paths, install_type_t type);
-int create_start_menu_shortcut(install_paths_t *paths);
-int create_desktop_shortcut(install_paths_t *paths);
-
-
-int create_uninstaller(install_paths_t *paths);
+void installer_init(void);
+int installer_is_admin(void);
+int installer_relaunch_elevated(void);
+void installer_default_options(InstallOptions *options, InstallScope scope);
+int installer_perform(const InstallOptions *options, StepLogger log);
+int installer_uninstall(StepLogger log);
+int installer_step_count(const InstallOptions *options);
 
 #endif

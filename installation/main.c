@@ -1,190 +1,172 @@
 /*
- * Copyright (c) 2025 Musa/S42
- * FreSH Installation Wizard - Main Entry Point
- * MIT License - See LICENSE file for details
+ * Copyright (c) 2025-2026 Musa Bostanci
+ * FreSH - First-Run Experience Shell
+ * GNU General Public License v3.0 - See LICENSE file for details
  */
+
+#include <conio.h>
 
 #include "installer.h"
 #include "tui.h"
-#include <conio.h>
 
+static int step_index = 0;
+static int step_total = 1;
 
-int perform_uninstall();
-int remove_from_registry();
-int remove_from_path();
-int remove_shortcuts();
+static void log_step(int ok, const char *message) {
+    step_index++;
+    tui_step(ok, message);
+    tui_progress(step_index, step_total);
+    printf("\n");
+}
+
+static void show_welcome(void) {
+    tui_screen("Setup");
+    tui_text("FreSH is a fast, zsh-flavoured shell for Windows.");
+    tui_blank();
+    tui_text("This installer will:");
+    tui_text("  - install FreSH.exe and an uninstaller");
+    tui_text("  - register FreSH as a Windows application and add it to PATH");
+    tui_text("  - add a Windows Terminal profile, like PowerShell has");
+    tui_text("  - add 'Open FreSH here' to the Explorer context menu");
+    tui_text("  - register FreSH as a handler for .sh scripts");
+    tui_wait_key();
+}
+
+static int show_license(void) {
+    tui_screen("License");
+    tui_text("FreSH is free software under the GNU General Public License v3.");
+    tui_blank();
+    tui_text("You may use, study, share and modify it. Derivative works must");
+    tui_text("stay under the same license and ship their source code.");
+    tui_text("There is no warranty, to the extent permitted by law.");
+    tui_blank();
+    tui_text("Full text: https://www.gnu.org/licenses/gpl-3.0.html");
+    tui_blank();
+
+    const char *options[] = {"Accept and continue", "Cancel"};
+    return tui_menu(options, 2) == 0;
+}
+
+static int choose_scope(InstallScope *scope) {
+    tui_screen("Installation type");
+    tui_text("Where should FreSH be installed?");
+    tui_blank();
+
+    const char *options[] = {"Just for me  (no administrator rights needed)",
+                             "For all users  (requires administrator rights)"};
+    int choice = tui_menu(options, 2);
+    if (choice < 0) return 0;
+
+    *scope = choice == 0 ? INSTALL_USER : INSTALL_SYSTEM;
+    if (*scope == INSTALL_SYSTEM && !installer_is_admin()) {
+        tui_blank();
+        tui_text("A system-wide install needs administrator rights.");
+        tui_blank();
+        const char *elevate[] = {"Restart the installer as administrator",
+                                 "Install just for me instead", "Cancel"};
+        int answer = tui_menu(elevate, 3);
+        if (answer == 0) {
+            if (installer_relaunch_elevated()) return -1;
+            tui_blank();
+            tui_text("Could not restart with administrator rights.");
+            tui_wait_key();
+            return 0;
+        }
+        if (answer == 1) *scope = INSTALL_USER;
+        else return 0;
+    }
+    return 1;
+}
+
+static int confirm(const InstallOptions *options) {
+    tui_screen("Confirm");
+    tui_text(options->scope == INSTALL_USER ? "Installing for the current user"
+                                            : "Installing for all users");
+    printf("  Location: %s\n", options->install_dir);
+    tui_blank();
+
+    const char *choices[] = {"Install now", "Cancel"};
+    return tui_menu(choices, 2) == 0;
+}
+
+static void show_done(const InstallOptions *options) {
+    tui_screen("Done");
+    tui_text("FreSH is installed.");
+    tui_blank();
+    tui_text("Start it from Windows Terminal, the Start Menu, or by running");
+    tui_text("  FreSH");
+    tui_blank();
+    tui_text("Open terminals keep the old PATH, so open a new one first.");
+    printf("  Config file: %%USERPROFILE%%\\.freshrc\n");
+    printf("  Installed to: %s\n", options->install_dir);
+    tui_wait_key();
+}
+
+static int run_uninstall(void) {
+    tui_screen("Uninstall");
+    tui_text("Remove FreSH from this computer?");
+    tui_blank();
+
+    const char *options[] = {"Remove FreSH", "Keep it"};
+    if (tui_menu(options, 2) != 0) return 0;
+
+    tui_blank();
+    step_total = 7;
+    int removed = installer_uninstall(log_step);
+    tui_blank();
+    tui_text(removed ? "FreSH has been removed." : "Nothing to remove.");
+    tui_wait_key();
+    return removed ? 0 : 1;
+}
 
 int main(int argc, char *argv[]) {
     installer_init();
+    tui_init();
 
-
-    if (argc > 1 && strcmp(argv[1], "/uninstall") == 0) {
-        clear_screen();
-
-        printf("FreSH Uninstaller\n");
-        printf("================\n\n");
-
-        printf("This will completely remove FreSH from your system.\n");
-        printf("Are you sure you want to continue? (y/n): ");
-
-        char response;
-        scanf(" %c", &response);
-
-        if (response == 'y' || response == 'Y') {
-            printf("\nUninstalling FreSH...\n\n");
-
-            if (perform_uninstall()) {
-                printf("\n✓ FreSH has been successfully uninstalled!\n");
-                printf("Thank you for using FreSH.\n");
-            } else {
-                printf("\n❌ Uninstall completed with some warnings.\n");
-                printf("You may need to manually remove some files.\n");
-            }
-        } else {
-            printf("Uninstall cancelled.\n");
-        }
-
-        printf("\nPress any key to exit...");
-        _getch();
-        return 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "/uninstall") == 0 || strcmp(argv[i], "--uninstall") == 0)
+            return run_uninstall();
     }
 
-
-    show_welcome_screen();
-
-    if (!show_license_agreement()) {
-        clear_screen();
-        printf("Installation cancelled by user.\n");
-        return 0;
+    show_welcome();
+    if (!show_license()) {
+        tui_screen("Cancelled");
+        tui_text("Installation cancelled.");
+        tui_wait_key();
+        return 1;
     }
 
-    install_type_t install_type = choose_installation_type();
-
-    install_paths_t paths;
-    choose_installation_path(&paths, install_type);
-
-    int confirm = confirm_installation(&paths, install_type);
-    if (confirm == 1) {
-        clear_screen();
-        printf("Going back to previous step not implemented in this version.\n");
-        printf("Please restart the installer.\n");
-        wait_for_keypress();
-        return 0;
-    } else if (confirm == 2) {
-        clear_screen();
-        printf("Installation cancelled by user.\n");
-        return 0;
+    InstallScope scope = INSTALL_USER;
+    int decision = choose_scope(&scope);
+    if (decision <= 0) {
+        tui_screen("Cancelled");
+        tui_text(decision == -1 ? "Continuing in the elevated installer."
+                                : "Installation cancelled.");
+        tui_wait_key();
+        return decision == -1 ? 0 : 1;
     }
 
-    int success = perform_installation(&paths, install_type);
-    show_completion_screen(success);
-    cleanup_installer();
+    InstallOptions options;
+    installer_default_options(&options, scope);
 
-    return success ? 0 : 1;
-}
-
-int perform_uninstall() {
-    char install_dir[MAX_PATH_LEN];
-    char exe_path[MAX_PATH_LEN];
-
-
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH_LEN);
-    strcpy(install_dir, exe_path);
-
-    char *last_slash = strrchr(install_dir, '\\');
-    if (last_slash) {
-        *last_slash = '\0';
+    if (!confirm(&options)) {
+        tui_screen("Cancelled");
+        tui_text("Installation cancelled.");
+        tui_wait_key();
+        return 1;
     }
 
-    printf("Removing FreSH from PATH...\n");
-    remove_from_path();
+    tui_screen("Installing");
+    step_index = 0;
+    step_total = installer_step_count(&options);
 
-    printf("Removing registry entries...\n");
-    remove_from_registry();
-
-    printf("Removing shortcuts...\n");
-    remove_shortcuts();
-
-    printf("Removing installation files...\n");
-
-
-    char fresh_path[MAX_PATH_LEN];
-    snprintf(fresh_path, MAX_PATH_LEN, "%s\\FreSH.exe", install_dir);
-    DeleteFileA(fresh_path);
-
-
-    printf("Note: Installation directory will be removed after uninstaller exits.\n");
-
-    return 1;
-}
-
-int remove_from_registry() {
-
-    HKEY roots[] = {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
-    const char *shell_key = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\AlternateShells";
-
-    for (int i = 0; i < 2; i++) {
-        HKEY hkey;
-        if (RegOpenKeyExA(roots[i], shell_key, 0, KEY_WRITE, &hkey) == ERROR_SUCCESS) {
-            RegDeleteKeyA(hkey, "FreSH");
-            RegCloseKey(hkey);
-        }
-    }
-    return 1;
-}
-
-int remove_from_path() {
-
-    HKEY roots[] = {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
-    const char *env_keys[] = {
-        "Environment",
-        "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"
-    };
-
-    for (int i = 0; i < 2; i++) {
-        HKEY hkey;
-        if (RegOpenKeyExA(roots[i], env_keys[i], 0, KEY_READ | KEY_WRITE, &hkey) == ERROR_SUCCESS) {
-            char path[8192];
-            DWORD path_size = sizeof(path);
-
-            if (RegQueryValueExA(hkey, "PATH", NULL, NULL, (BYTE*)path, &path_size) == ERROR_SUCCESS) {
-
-                char new_path[8192] = {0};
-                char *token = strtok(path, ";");
-
-                while (token != NULL) {
-                    if (strstr(token, "FreSH") == NULL) {
-                        if (strlen(new_path) > 0) strcat(new_path, ";");
-                        strcat(new_path, token);
-                    }
-                    token = strtok(NULL, ";");
-                }
-
-                RegSetValueExA(hkey, "PATH", 0, REG_EXPAND_SZ,
-                               (BYTE*)new_path, strlen(new_path) + 1);
-            }
-            RegCloseKey(hkey);
-        }
-    }
-    return 1;
-}
-
-int remove_shortcuts() {
-    char shortcut_path[MAX_PATH_LEN];
-
-
-    char start_menu[MAX_PATH_LEN];
-    if (SHGetFolderPathA(NULL, CSIDL_PROGRAMS, NULL, 0, start_menu) == S_OK) {
-        snprintf(shortcut_path, MAX_PATH_LEN, "%s\\FreSH.lnk", start_menu);
-        DeleteFileA(shortcut_path);
+    if (!installer_perform(&options, log_step)) {
+        tui_blank();
+        tui_text("Installation failed. Try running the installer as administrator.");
+        tui_wait_key();
+        return 1;
     }
 
-
-    char desktop[MAX_PATH_LEN];
-    if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop) == S_OK) {
-        snprintf(shortcut_path, MAX_PATH_LEN, "%s\\FreSH.lnk", desktop);
-        DeleteFileA(shortcut_path);
-    }
-
-    return 1;
+    show_done(&options);
+    return 0;
 }

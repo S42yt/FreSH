@@ -1,0 +1,578 @@
+/*
+ * Copyright (c) 2025-2026 Musa Bostanci
+ * FreSH - First-Run Experience Shell
+ * GNU General Public License v3.0 - See LICENSE file for details
+ */
+
+#include "expand.h"
+
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <windows.h>
+
+#include "exec.h"
+#include "shell.h"
+#include "vars.h"
+
+typedef struct {
+    StrBuf field;
+    int has_content;
+    int quoted;
+    StrList *out;
+    int split;
+    int glob;
+} Expander;
+
+static const char *param_get(int index) {
+    if (index < 0 || (size_t)index >= shell.params.len) return NULL;
+    return shell.params.items[index];
+}
+
+static void field_flush(Expander *ex) {
+    if (!ex->has_content) return;
+    char *value = xstrdup(ex->field.data);
+    if (ex->glob && !ex->quoted && (strchr(value, '*') || strchr(value, '?'))) {
+        if (glob_expand(value, ex->out)) {
+            free(value);
+        } else {
+            sl_push(ex->out, value);
+        }
+    } else {
+        sl_push(ex->out, value);
+    }
+    sb_clear(&ex->field);
+    ex->has_content = 0;
+    ex->quoted = 0;
+}
+
+static void field_add(Expander *ex, const char *text, size_t len) {
+    sb_putn(&ex->field, text, len);
+    ex->has_content = 1;
+}
+
+static void field_add_split(Expander *ex, const char *text) {
+    if (!text) return;
+    if (!ex->split) {
+        field_add(ex, text, strlen(text));
+        return;
+    }
+    const char *p = text;
+    while (*p) {
+        if (*p == ' ' || *p == '\t' || *p == '\n') {
+            if (ex->has_content) field_flush(ex);
+            p++;
+            continue;
+        }
+        const char *start = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        field_add(ex, start, (size_t)(p - start));
+    }
+}
+
+static char *read_name(const char **p) {
+    const char *start = *p;
+    if (!isalpha((unsigned char)**p) && **p != '_') return NULL;
+    while (isalnum((unsigned char)**p) || **p == '_') (*p)++;
+    return xstrndup(start, (size_t)(*p - start));
+}
+
+static char *special_value(char c) {
+    StrBuf sb;
+    sb_init(&sb);
+    switch (c) {
+    case '?':
+        sb_printf(&sb, "%d", shell.last_status);
+        break;
+    case '$':
+        sb_printf(&sb, "%lu", (unsigned long)GetCurrentProcessId());
+        break;
+    case '#':
+        sb_printf(&sb, "%d", shell.params.len > 0 ? (int)shell.params.len - 1 : 0);
+        break;
+    case '*':
+    case '@':
+        for (size_t i = 1; i < shell.params.len; i++) {
+            if (i > 1) sb_putc(&sb, ' ');
+            sb_puts(&sb, shell.params.items[i]);
+        }
+        break;
+    default:
+        if (isdigit((unsigned char)c)) {
+            const char *value = param_get(c - '0');
+            sb_puts(&sb, value ? value : "");
+        }
+        break;
+    }
+    return sb_take(&sb);
+}
+
+static char *brace_expand(const char *body) {
+    if (*body == '#') {
+        const char *name = body + 1;
+        const char *value = var_get(name);
+        StrBuf sb;
+        sb_init(&sb);
+        sb_printf(&sb, "%d", value ? (int)strlen(value) : 0);
+        return sb_take(&sb);
+    }
+
+    const char *colon = strpbrk(body, ":-+=?");
+    if (!colon) {
+        if (isdigit((unsigned char)body[0])) return special_value(body[0]);
+        if (!body[1] && !isalpha((unsigned char)body[0]) && body[0] != '_')
+            return special_value(body[0]);
+        const char *value = var_get(body);
+        return xstrdup(value ? value : "");
+    }
+
+    char *name = xstrndup(body, (size_t)(colon - body));
+    const char *rest = colon;
+    int has_colon = 0;
+    if (*rest == ':') {
+        has_colon = 1;
+        rest++;
+    }
+    char op = *rest ? *rest++ : '\0';
+    const char *value = var_get(name);
+    int empty = !value || (has_colon && !*value);
+
+    char *result = NULL;
+    if (op == '-') {
+        result = empty ? expand_single(rest) : xstrdup(value);
+    } else if (op == '+') {
+        result = empty ? xstrdup("") : expand_single(rest);
+    } else if (op == '=') {
+        if (empty) {
+            char *fallback = expand_single(rest);
+            var_set(name, fallback);
+            result = fallback;
+        } else {
+            result = xstrdup(value);
+        }
+    } else {
+        result = xstrdup(value ? value : "");
+    }
+    free(name);
+    return result;
+}
+
+static char *capture_trimmed(const char *command) {
+    StrBuf out;
+    sb_init(&out);
+    capture_command(command, &out);
+    while (out.len > 0 && (out.data[out.len - 1] == '\n' || out.data[out.len - 1] == '\r'))
+        out.data[--out.len] = '\0';
+    return sb_take(&out);
+}
+
+static const char *scan_balanced(const char *p, char open, char close, StrBuf *inner) {
+    int depth = 0;
+    for (; *p; p++) {
+        if (*p == open) {
+            depth++;
+            if (depth == 1) continue;
+        } else if (*p == close) {
+            depth--;
+            if (depth == 0) return p + 1;
+        }
+        if (depth >= 1) sb_putc(inner, *p);
+    }
+    return p;
+}
+
+static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
+    (*p)++;
+    char c = **p;
+
+    if (c == '(' && (*p)[1] == '(') {
+        StrBuf inner;
+        sb_init(&inner);
+        const char *after = scan_balanced(*p + 1, '(', ')', &inner);
+        if (*after == ')') after++;
+        *p = after;
+        int ok = 1;
+        long value = eval_arith(inner.data, &ok);
+        sb_free(&inner);
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%ld", value);
+        field_add(ex, buffer, strlen(buffer));
+        return;
+    }
+    if (c == '(') {
+        StrBuf inner;
+        sb_init(&inner);
+        *p = scan_balanced(*p, '(', ')', &inner);
+        char *result = capture_trimmed(inner.data);
+        sb_free(&inner);
+        if (in_quotes) field_add(ex, result, strlen(result));
+        else field_add_split(ex, result);
+        free(result);
+        return;
+    }
+    if (c == '{') {
+        StrBuf inner;
+        sb_init(&inner);
+        *p = scan_balanced(*p, '{', '}', &inner);
+        char *result = brace_expand(inner.data);
+        sb_free(&inner);
+        if (in_quotes) field_add(ex, result, strlen(result));
+        else field_add_split(ex, result);
+        free(result);
+        return;
+    }
+    if (c == '@' && in_quotes) {
+        (*p)++;
+        for (size_t i = 1; i < shell.params.len; i++) {
+            if (i > 1) field_flush(ex);
+            field_add(ex, shell.params.items[i], strlen(shell.params.items[i]));
+            ex->quoted = 1;
+        }
+        if (shell.params.len <= 1) ex->has_content = 1;
+        return;
+    }
+    if (isalpha((unsigned char)c) || c == '_') {
+        char *name = read_name(p);
+        const char *value = var_get(name);
+        free(name);
+        if (in_quotes) field_add(ex, value ? value : "", value ? strlen(value) : 0);
+        else field_add_split(ex, value);
+        return;
+    }
+    if (c && strchr("?$#*@0123456789", c)) {
+        (*p)++;
+        char *value = special_value(c);
+        if (in_quotes) field_add(ex, value, strlen(value));
+        else field_add_split(ex, value);
+        free(value);
+        return;
+    }
+    field_add(ex, "$", 1);
+}
+
+static void expand_tilde(Expander *ex, const char **p) {
+    const char *next = *p + 1;
+    if (*next && *next != '/' && *next != '\\') {
+        field_add(ex, "~", 1);
+        (*p)++;
+        return;
+    }
+    const char *home = var_get("HOME");
+    if (!home) home = home_dir();
+    field_add(ex, home, strlen(home));
+    (*p)++;
+}
+
+static void expand_into(const char *word, Expander *ex) {
+    const char *p = word;
+    int at_start = 1;
+
+    while (*p) {
+        char c = *p;
+        if (c == '~' && at_start) {
+            expand_tilde(ex, &p);
+            at_start = 0;
+            continue;
+        }
+        at_start = 0;
+
+        if (c == '\\') {
+            p++;
+            if (*p) {
+                field_add(ex, p, 1);
+                ex->quoted = 1;
+                p++;
+            }
+            continue;
+        }
+        if (c == '\'') {
+            p++;
+            ex->quoted = 1;
+            ex->has_content = 1;
+            while (*p && *p != '\'') {
+                field_add(ex, p, 1);
+                p++;
+            }
+            if (*p) p++;
+            continue;
+        }
+        if (c == '"') {
+            p++;
+            ex->quoted = 1;
+            ex->has_content = 1;
+            while (*p && *p != '"') {
+                if (*p == '\\' && p[1] && strchr("\"\\$`", p[1])) {
+                    field_add(ex, p + 1, 1);
+                    p += 2;
+                    continue;
+                }
+                if (*p == '$') {
+                    expand_dollar(ex, &p, 1);
+                    continue;
+                }
+                if (*p == '`') {
+                    const char *end = strchr(p + 1, '`');
+                    if (!end) end = p + strlen(p);
+                    char *command = xstrndup(p + 1, (size_t)(end - p - 1));
+                    char *result = capture_trimmed(command);
+                    free(command);
+                    field_add(ex, result, strlen(result));
+                    free(result);
+                    p = *end ? end + 1 : end;
+                    continue;
+                }
+                field_add(ex, p, 1);
+                p++;
+            }
+            if (*p) p++;
+            continue;
+        }
+        if (c == '`') {
+            const char *end = strchr(p + 1, '`');
+            if (!end) end = p + strlen(p);
+            char *command = xstrndup(p + 1, (size_t)(end - p - 1));
+            char *result = capture_trimmed(command);
+            free(command);
+            field_add_split(ex, result);
+            free(result);
+            p = *end ? end + 1 : end;
+            continue;
+        }
+        if (c == '$') {
+            expand_dollar(ex, &p, 0);
+            continue;
+        }
+        field_add(ex, p, 1);
+        p++;
+    }
+}
+
+void expand_words(const StrList *in, StrList *out) {
+    for (size_t i = 0; i < in->len; i++) {
+        Expander ex;
+        sb_init(&ex.field);
+        ex.has_content = 0;
+        ex.quoted = 0;
+        ex.out = out;
+        ex.split = 1;
+        ex.glob = 1;
+        expand_into(in->items[i], &ex);
+        field_flush(&ex);
+        sb_free(&ex.field);
+    }
+}
+
+char *expand_single(const char *word) {
+    StrList fields;
+    sl_init(&fields);
+    Expander ex;
+    sb_init(&ex.field);
+    ex.has_content = 0;
+    ex.quoted = 0;
+    ex.out = &fields;
+    ex.split = 0;
+    ex.glob = 0;
+    expand_into(word, &ex);
+    field_flush(&ex);
+    sb_free(&ex.field);
+
+    StrBuf joined;
+    sb_init(&joined);
+    for (size_t i = 0; i < fields.len; i++) {
+        if (i > 0) sb_putc(&joined, ' ');
+        sb_puts(&joined, fields.items[i]);
+    }
+    sl_free(&fields);
+    return sb_take(&joined);
+}
+
+int glob_expand(const char *pattern, StrList *out) {
+    char normalized[PATH_BUF];
+    snprintf(normalized, sizeof(normalized), "%s", pattern);
+    path_to_backslashes(normalized);
+
+    char *slash = strrchr(normalized, '\\');
+    char dir[PATH_BUF] = "";
+    if (slash) {
+        size_t dir_len = (size_t)(slash - normalized) + 1;
+        memcpy(dir, normalized, dir_len);
+        dir[dir_len] = '\0';
+    }
+
+    WIN32_FIND_DATAA data;
+    HANDLE find = FindFirstFileA(normalized, &data);
+    if (find == INVALID_HANDLE_VALUE) return 0;
+
+    StrList matches;
+    sl_init(&matches);
+    do {
+        if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
+        if (data.cFileName[0] == '.' && !strchr(pattern, '.')) continue;
+        StrBuf sb;
+        sb_init(&sb);
+        sb_puts(&sb, dir);
+        sb_puts(&sb, data.cFileName);
+        if (strchr(pattern, '/')) path_to_slashes(sb.data);
+        sl_push(&matches, sb_take(&sb));
+    } while (FindNextFileA(find, &data));
+    FindClose(find);
+
+    if (matches.len == 0) {
+        sl_free(&matches);
+        return 0;
+    }
+    sl_sort(&matches);
+    for (size_t i = 0; i < matches.len; i++) sl_push(out, matches.items[i]);
+    free(matches.items);
+    return 1;
+}
+
+typedef struct {
+    const char *p;
+    int ok;
+} Arith;
+
+static long arith_expr(Arith *a);
+
+static void arith_space(Arith *a) {
+    while (*a->p == ' ' || *a->p == '\t') a->p++;
+}
+
+static long arith_primary(Arith *a) {
+    arith_space(a);
+    if (*a->p == '(') {
+        a->p++;
+        long value = arith_expr(a);
+        arith_space(a);
+        if (*a->p == ')') a->p++;
+        return value;
+    }
+    if (*a->p == '-') {
+        a->p++;
+        return -arith_primary(a);
+    }
+    if (*a->p == '+') {
+        a->p++;
+        return arith_primary(a);
+    }
+    if (*a->p == '!') {
+        a->p++;
+        return !arith_primary(a);
+    }
+    if (*a->p == '$') {
+        a->p++;
+        return arith_primary(a);
+    }
+    if (isdigit((unsigned char)*a->p)) {
+        char *end;
+        long value = strtol(a->p, &end, 0);
+        a->p = end;
+        return value;
+    }
+    if (isalpha((unsigned char)*a->p) || *a->p == '_') {
+        char *name = read_name(&a->p);
+        const char *value = var_get(name);
+        free(name);
+        return value ? atol(value) : 0;
+    }
+    a->ok = 0;
+    return 0;
+}
+
+static long arith_mul(Arith *a) {
+    long left = arith_primary(a);
+    while (1) {
+        arith_space(a);
+        char op = *a->p;
+        if (op != '*' && op != '/' && op != '%') return left;
+        a->p++;
+        long right = arith_primary(a);
+        if ((op == '/' || op == '%') && right == 0) {
+            a->ok = 0;
+            return 0;
+        }
+        if (op == '*') left *= right;
+        else if (op == '/') left /= right;
+        else left %= right;
+    }
+}
+
+static long arith_add(Arith *a) {
+    long left = arith_mul(a);
+    while (1) {
+        arith_space(a);
+        char op = *a->p;
+        if (op != '+' && op != '-') return left;
+        a->p++;
+        long right = arith_mul(a);
+        left = op == '+' ? left + right : left - right;
+    }
+}
+
+static long arith_compare(Arith *a) {
+    long left = arith_add(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '<' && a->p[1] == '=') {
+            a->p += 2;
+            left = left <= arith_add(a);
+        } else if (a->p[0] == '>' && a->p[1] == '=') {
+            a->p += 2;
+            left = left >= arith_add(a);
+        } else if (a->p[0] == '<') {
+            a->p++;
+            left = left < arith_add(a);
+        } else if (a->p[0] == '>') {
+            a->p++;
+            left = left > arith_add(a);
+        } else {
+            return left;
+        }
+    }
+}
+
+static long arith_equality(Arith *a) {
+    long left = arith_compare(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '=' && a->p[1] == '=') {
+            a->p += 2;
+            left = left == arith_compare(a);
+        } else if (a->p[0] == '!' && a->p[1] == '=') {
+            a->p += 2;
+            left = left != arith_compare(a);
+        } else {
+            return left;
+        }
+    }
+}
+
+static long arith_expr(Arith *a) {
+    long left = arith_equality(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '&' && a->p[1] == '&') {
+            a->p += 2;
+            long right = arith_equality(a);
+            left = left && right;
+        } else if (a->p[0] == '|' && a->p[1] == '|') {
+            a->p += 2;
+            long right = arith_equality(a);
+            left = left || right;
+        } else {
+            return left;
+        }
+    }
+}
+
+long eval_arith(const char *expr, int *ok) {
+    char *expanded = expand_single(expr);
+    Arith a = {expanded, 1};
+    long value = arith_expr(&a);
+    arith_space(&a);
+    if (*a.p) a.ok = 0;
+    if (ok) *ok = a.ok;
+    free(expanded);
+    return value;
+}

@@ -1,39 +1,27 @@
 #!/bin/bash
+set -e
 
-echo -e "\e[32mBuilding FreSH with GCC...\e[0m"
+CC=${CC:-gcc}
+CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
+BUILD=build
 
-# Create build directory if it doesn't exist
-if [ ! -d "build" ]; then
-    mkdir -p build
-    echo -e "\e[33mCreated build directory\e[0m"
-fi
+green() { printf '\033[32m%s\033[0m\n' "$1"; }
+info() { printf '\033[36m%s\033[0m\n' "$1"; }
 
-# Create o directory if it doesn't exist
-if [ ! -d "build/o" ]; then
-    mkdir -p build/o
-    echo -e "\e[33mCreated o directory\e[0m"
-fi
+mkdir -p "$BUILD"
 
-# Compile source files
-echo -e "\e[36mCompiling source files...\e[0m"
-gcc -c main.c -o build/o/main.o
-gcc -c shell_core.c -o build/o/shell_core.o
-gcc -c shell_prompt.c -o build/o/shell_prompt.o
-gcc -c command_parser.c -o build/o/command_parser.o
-gcc -c error_handler.c -o build/o/error_handler.o
-gcc -c history.c -o build/o/history.o
-gcc -c builtins.c -o build/o/builtins.o
-gcc -c git_branch.c -o build/o/git_branch.o
-gcc -c bin_register.c -o build/o/bin_register.o
+info "Building FreSH..."
+$CC $CFLAGS src/*.c -o "$BUILD/FreSH.exe" -ladvapi32
+green "  $BUILD/FreSH.exe"
 
-# Link object files
-echo -e "\e[36mLinking...\e[0m"
-gcc build/o/main.o build/o/shell_core.o build/o/shell_prompt.o build/o/command_parser.o build/o/error_handler.o build/o/history.o build/o/builtins.o build/o/git_branch.o build/o/bin_register.o -o build/FreSH.exe
+info "Building payload generator..."
+$CC -O2 -o "$BUILD/bin2c.exe" tools/bin2c.c
 
-# Check if build was successful
-if [ $? -eq 0 ]; then
-    # Make the executable file executable
-    chmod +x build/FreSH.exe
-else
-    echo -e "\e[31mBuild failed!\e[0m"
-fi
+info "Embedding FreSH.exe into the installer..."
+"./$BUILD/bin2c.exe" "$BUILD/FreSH.exe" installation/payload.h FRESH_PAYLOAD
+
+info "Building installer..."
+$CC $CFLAGS installation/*.c -o "$BUILD/FreSH-Setup.exe" -lole32 -luuid -lshell32 -ladvapi32 -luser32
+green "  $BUILD/FreSH-Setup.exe"
+
+green "Build complete."

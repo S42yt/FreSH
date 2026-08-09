@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2025-2026 Musa Bostanci
+ * FreSH - First-Run Experience Shell
+ * GNU General Public License v3.0 - See LICENSE file for details
+ */
+
+#ifndef FRESH_EXEC_H
+#define FRESH_EXEC_H
+
+#include "parser.h"
+#include "util.h"
+
+void exec_init(void);
+void exec_cleanup(void);
+
+int exec_line(const char *line);
+int exec_text(const char *text);
+int exec_node(Node *node);
+int exec_script_file(const char *path, const StrList *args);
+int capture_command(const char *command, StrBuf *out);
+
+int resolve_command(const char *name, char *out, size_t out_size);
+void path_commands(StrList *out);
+int path_command_exists(const char *name);
+void path_rehash(void);
+
+void function_define(const char *name, Node *body);
+int function_defined(const char *name);
+void function_names(StrList *out);
+
+char *apply_aliases(const char *line);
+
+#endif

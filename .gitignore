@@ -54,6 +54,9 @@ dkms.conf
 # Build directories
 build/
 
+# Generated installer payload
+installation/payload.h
+
 # CMake
 cmake-build-debug
 
