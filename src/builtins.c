@@ -23,6 +23,7 @@
 #include "shell.h"
 #include "style.h"
 #include "term.h"
+#include "theme.h"
 #include "vars.h"
 
 static void sync_cwd(void) {
@@ -718,7 +719,8 @@ static const Builtin BUILTINS[] = {
     {"read", builtin_read},         {"rehash", builtin_rehash},
     {"return", builtin_return},     {"set", builtin_set},
     {"shift", builtin_shift},       {"source", builtin_source},
-    {"test", builtin_test},         {"true", builtin_true},
+    {"test", builtin_test},         {"theme", builtin_theme},
+    {"plugin", builtin_plugin},     {"true", builtin_true},
     {"type", builtin_type},         {"unalias", builtin_unalias},
     {"unset", builtin_unset},       {"which", builtin_which},
     {"[", builtin_test},            {".", builtin_source},

@@ -12,6 +12,7 @@
 void prompt_build(StrBuf *out);
 void prompt_set_title(void);
 void prompt_build_continuation(StrBuf *out);
+void prompt_expand(const char *format, StrBuf *out);
 int display_width(const char *text);
 
 #endif

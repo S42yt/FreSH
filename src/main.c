@@ -18,6 +18,7 @@
 #include "shell.h"
 #include "style.h"
 #include "term.h"
+#include "theme.h"
 #include "util.h"
 #include "vars.h"
 
@@ -39,7 +40,25 @@ static const char *DEFAULT_RC =
     "# uncomment to start every shell in one place\n"
     "# cd ~\n"
     "\n"
+    "# ---- theme and plugins ------------------------------------------------\n"
+    "\n"
+    "# themes live in ~/.fresh/themes, run 'theme' to see them\n"
+    "# josh minimal classic powerline lambda full, or none to keep your own\n"
+    "FRESH_THEME=josh\n"
+    "# plugins live in ~/.fresh/plugins, run 'plugin' to see them\n"
+    "FRESH_PLUGINS=\"git dirs sys\"\n"
+    "\n"
     "# ---- prompt -----------------------------------------------------------\n"
+    "\n"
+    "# The theme sets FRESH_PROMPT and FRESH_RPROMPT. Override them here to\n"
+    "# build your own, or set FRESH_THEME=none and write it from scratch.\n"
+    "#   %n user   %m host   %~ short path   %d full path\n"
+    "#   %g git segment   %b branch   %t time   %D date\n"
+    "#   %? exit code   %e exit code only when it failed   %# prompt character\n"
+    "#   %F{green} colour on   %f colour off   %K{blue} background   %k off\n"
+    "#   %S bold on   %s bold off   \\n new line\n"
+    "# FRESH_PROMPT='%F{cyan}%~%f%g\\n%# '\n"
+    "# FRESH_RPROMPT='%t'\n"
     "\n"
     "# character on the second prompt line\n"
     "FRESH_PROMPT_CHAR=\"\xce\xbb\"\n"
@@ -133,6 +152,10 @@ static void load_rc(void) {
     }
     if (path_is_file(rc)) exec_script_file(rc, NULL);
     free(rc);
+
+    fresh_home_init();
+    theme_load_configured();
+    plugins_load_configured();
 }
 
 void shell_init(int interactive) {
