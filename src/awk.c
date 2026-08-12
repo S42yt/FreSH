@@ -180,7 +180,7 @@ static Variable *variable_find(Awk *awk, const char *name) {
 
 static const char *variable_get(Awk *awk, const char *name) {
     Variable *v = variable_find(awk, name);
-    return v ? v->value : "";
+    return v && v->value ? v->value : "";
 }
 
 static Variable *variable_create(Awk *awk, const char *name) {
@@ -476,11 +476,22 @@ static Expr *parse_primary(Lexer *lx) {
     return e;
 }
 
+static int is_keyword(Lexer *lx) {
+    static const char *WORDS[] = {"in", "else", "while", "do", "print", "printf", "delete",
+                                  "return", "next", "exit", "function", NULL};
+    if (lx->type != T_NAME) return 0;
+    for (int i = 0; WORDS[i]; i++) {
+        if (strcmp(lx->token, WORDS[i]) == 0) return 1;
+    }
+    return 0;
+}
+
 static Expr *parse_concat(Lexer *lx) {
     Expr *left = parse_primary(lx);
 
-    while (lx->type == T_STRING || lx->type == T_NUMBER || lx->type == T_NAME ||
-           is_token(lx, "$") || is_token(lx, "(")) {
+    while ((lx->type == T_STRING || lx->type == T_NUMBER ||
+            (lx->type == T_NAME && !is_keyword(lx)) || is_token(lx, "$") || is_token(lx, "(")) &&
+           !is_token(lx, ")")) {
         Expr *right = parse_primary(lx);
         Expr *concat = expr_new(E_CONCAT);
         concat->left = left;
