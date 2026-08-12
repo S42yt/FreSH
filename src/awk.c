@@ -30,7 +30,10 @@ typedef enum {
     E_CONCAT,
     E_MATCH,
     E_CALL,
-    E_INCREMENT
+    E_INCREMENT,
+    E_SUBSCRIPT,
+    E_IN,
+    E_GETLINE
 } ExprKind;
 
 typedef enum {
@@ -42,7 +45,10 @@ typedef enum {
     S_FOR,
     S_BLOCK,
     S_NEXT,
-    S_EXIT
+    S_EXIT,
+    S_FOR_IN,
+    S_DELETE,
+    S_RETURN
 } StmtKind;
 
 typedef struct Expr {
@@ -58,6 +64,8 @@ typedef struct Expr {
 
 typedef struct Stmt {
     StmtKind kind;
+    char *name;
+    char *name2;
     Expr *expr;
     Expr *second;
     Expr *third;
@@ -76,9 +84,24 @@ typedef struct {
 } Rule;
 
 typedef struct {
+    char *key;
+    char *value;
+} Element;
+
+typedef struct {
     char *name;
     char *value;
+    Element *elements;
+    size_t count;
+    size_t cap;
+    int is_array;
 } Variable;
+
+typedef struct Function {
+    char *name;
+    StrList params;
+    struct Stmt *body;
+} Function;
 
 typedef struct {
     const char *source;
@@ -91,9 +114,16 @@ typedef struct {
     Rule *rules;
     int rule_count;
 
+    Function *functions;
+    size_t function_count;
+    size_t function_cap;
+
     Variable *variables;
     size_t variable_count;
     size_t variable_cap;
+
+    int returning;
+    const char *return_value;
 
     char *fields[AWK_FIELDS];
     int field_count;
@@ -153,19 +183,81 @@ static const char *variable_get(Awk *awk, const char *name) {
     return v ? v->value : "";
 }
 
-static void variable_set(Awk *awk, const char *name, const char *value) {
+static Variable *variable_create(Awk *awk, const char *name) {
     Variable *v = variable_find(awk, name);
-    if (!v) {
-        if (awk->variable_count + 1 >= awk->variable_cap) {
-            awk->variable_cap = awk->variable_cap ? awk->variable_cap * 2 : 16;
-            awk->variables = xrealloc(awk->variables, awk->variable_cap * sizeof(Variable));
-        }
-        v = &awk->variables[awk->variable_count++];
-        v->name = xstrdup(name);
-        v->value = NULL;
+    if (v) return v;
+
+    if (awk->variable_count + 1 >= awk->variable_cap) {
+        awk->variable_cap = awk->variable_cap ? awk->variable_cap * 2 : 16;
+        awk->variables = xrealloc(awk->variables, awk->variable_cap * sizeof(Variable));
     }
+    v = &awk->variables[awk->variable_count++];
+    memset(v, 0, sizeof(Variable));
+    v->name = xstrdup(name);
+    return v;
+}
+
+static void variable_set(Awk *awk, const char *name, const char *value) {
+    Variable *v = variable_create(awk, name);
     free(v->value);
     v->value = xstrdup(value ? value : "");
+}
+
+static Element *element_find(Variable *v, const char *key) {
+    for (size_t i = 0; i < v->count; i++) {
+        if (strcmp(v->elements[i].key, key) == 0) return &v->elements[i];
+    }
+    return NULL;
+}
+
+static void element_set(Awk *awk, const char *name, const char *key, const char *value) {
+    Variable *v = variable_create(awk, name);
+    v->is_array = 1;
+
+    Element *e = element_find(v, key);
+    if (!e) {
+        if (v->count + 1 >= v->cap) {
+            v->cap = v->cap ? v->cap * 2 : 8;
+            v->elements = xrealloc(v->elements, v->cap * sizeof(Element));
+        }
+        e = &v->elements[v->count++];
+        e->key = xstrdup(key);
+        e->value = NULL;
+    }
+    free(e->value);
+    e->value = xstrdup(value ? value : "");
+}
+
+static const char *element_get(Awk *awk, const char *name, const char *key) {
+    Variable *v = variable_find(awk, name);
+    if (!v) return "";
+    Element *e = element_find(v, key);
+    return e ? e->value : "";
+}
+
+static void element_delete(Awk *awk, const char *name, const char *key) {
+    Variable *v = variable_find(awk, name);
+    if (!v) return;
+    Element *e = element_find(v, key);
+    if (!e) return;
+
+    size_t index = (size_t)(e - v->elements);
+    free(e->key);
+    free(e->value);
+    memmove(v->elements + index, v->elements + index + 1,
+            (v->count - index - 1) * sizeof(Element));
+    v->count--;
+}
+
+static void array_clear(Awk *awk, const char *name) {
+    Variable *v = variable_find(awk, name);
+    if (!v) return;
+    for (size_t i = 0; i < v->count; i++) {
+        free(v->elements[i].key);
+        free(v->elements[i].value);
+    }
+    v->count = 0;
+    v->is_array = 1;
 }
 
 static void lex_next(Lexer *lx) {
@@ -323,10 +415,33 @@ static Expr *parse_primary(Lexer *lx) {
         accept(lx, ")");
         return e;
     }
+    if (lx->type == T_NAME && strcmp(lx->token, "getline") == 0) {
+        lex_next(lx);
+        Expr *e = expr_new(E_GETLINE);
+        if (lx->type == T_NAME && strcmp(lx->token, "in") != 0 && !is_token(lx, "<")) {
+            e->text = xstrdup(lx->token);
+            lex_next(lx);
+        }
+        if (is_token(lx, "<")) {
+            lex_next(lx);
+            e->left = parse_primary(lx);
+        }
+        return e;
+    }
+
     if (lx->type == T_NAME) {
         char name[256];
         snprintf(name, sizeof(name), "%s", lx->token);
         lex_next(lx);
+
+        if (is_token(lx, "[")) {
+            lex_next(lx);
+            Expr *e = expr_new(E_SUBSCRIPT);
+            e->text = xstrdup(name);
+            e->left = parse_expression(lx);
+            accept(lx, "]");
+            return e;
+        }
 
         if (is_token(lx, "(")) {
             lex_next(lx);
@@ -403,6 +518,15 @@ static Expr *parse_sum(Lexer *lx) {
 
 static Expr *parse_compare(Lexer *lx) {
     Expr *left = parse_sum(lx);
+
+    if (lx->type == T_NAME && strcmp(lx->token, "in") == 0) {
+        lex_next(lx);
+        Expr *e = expr_new(E_IN);
+        e->left = left;
+        e->text = xstrdup(lx->token);
+        lex_next(lx);
+        return e;
+    }
 
     if (is_token(lx, "~") || is_token(lx, "!~")) {
         Expr *e = expr_new(E_MATCH);
@@ -553,7 +677,51 @@ static Stmt *parse_statement(Lexer *lx) {
         return s;
     }
 
+    if (lx->type == T_NAME && strcmp(lx->token, "delete") == 0) {
+        lex_next(lx);
+        Stmt *s = stmt_new(S_DELETE);
+        s->name = xstrdup(lx->token);
+        lex_next(lx);
+        if (is_token(lx, "[")) {
+            lex_next(lx);
+            s->expr = parse_expression(lx);
+            accept(lx, "]");
+        }
+        return s;
+    }
+
+    if (lx->type == T_NAME && strcmp(lx->token, "return") == 0) {
+        lex_next(lx);
+        Stmt *s = stmt_new(S_RETURN);
+        if (lx->type != T_END && !is_token(lx, ";") && !is_token(lx, "}") && !is_token(lx, "\n"))
+            s->expr = parse_expression(lx);
+        return s;
+    }
+
     if (lx->type == T_NAME && strcmp(lx->token, "for") == 0) {
+        Lexer probe = *lx;
+        lex_next(&probe);
+        if (is_token(&probe, "(")) {
+            lex_next(&probe);
+            if (probe.type == T_NAME) {
+                char candidate[256];
+                snprintf(candidate, sizeof(candidate), "%s", probe.token);
+                lex_next(&probe);
+                if (probe.type == T_NAME && strcmp(probe.token, "in") == 0) {
+                    lex_next(&probe);
+                    Stmt *s = stmt_new(S_FOR_IN);
+                    s->name = xstrdup(candidate);
+                    s->name2 = xstrdup(probe.token);
+                    lex_next(&probe);
+                    accept(&probe, ")");
+                    *lx = probe;
+                    skip_separators(lx);
+                    s->body = parse_statement(lx);
+                    return s;
+                }
+            }
+        }
+
         lex_next(lx);
         accept(lx, "(");
         Stmt *s = stmt_new(S_FOR);
@@ -602,6 +770,13 @@ static void assign_to(Awk *awk, Expr *target, const char *value) {
         variable_set(awk, target->text, value);
         return;
     }
+    if (target->kind == E_SUBSCRIPT) {
+        const char *key = evaluate(awk, target->left);
+        char *copy = xstrdup(key);
+        element_set(awk, target->text, copy, value);
+        free(copy);
+        return;
+    }
     if (target->kind == E_FIELD) {
         int index = (int)evaluate_number(awk, target->left);
         if (index >= 1 && index <= AWK_FIELDS) {
@@ -619,8 +794,150 @@ static void assign_to(Awk *awk, Expr *target, const char *value) {
     }
 }
 
+static void execute(Awk *awk, Stmt *s);
+static void split_record(Awk *awk, const char *line);
+
+static Function *function_find(Awk *awk, const char *name) {
+    for (size_t i = 0; i < awk->function_count; i++) {
+        if (strcmp(awk->functions[i].name, name) == 0) return &awk->functions[i];
+    }
+    return NULL;
+}
+
+static const char *call_user(Awk *awk, Function *f, Expr *e) {
+    Expr *arguments[3] = {e->left, e->right, e->third};
+
+    StrList saved_names;
+    StrList saved_values;
+    sl_init(&saved_names);
+    sl_init(&saved_values);
+
+    for (size_t i = 0; i < f->params.len; i++) {
+        const char *name = f->params.items[i];
+        Variable *existing = variable_find(awk, name);
+        sl_push_copy(&saved_names, name);
+        sl_push_copy(&saved_values, existing && existing->value ? existing->value : "");
+
+        const char *value = i < 3 && arguments[i] ? evaluate(awk, arguments[i]) : "";
+        variable_set(awk, name, value);
+    }
+
+    awk->returning = 0;
+    awk->return_value = "";
+    execute(awk, f->body);
+    const char *result = awk->return_value ? awk->return_value : "";
+    awk->returning = 0;
+
+    for (size_t i = 0; i < saved_names.len; i++)
+        variable_set(awk, saved_names.items[i], saved_values.items[i]);
+
+    sl_free(&saved_names);
+    sl_free(&saved_values);
+    return result;
+}
+
+static int split_into(Awk *awk, const char *text, const char *array, const char *separator) {
+    array_clear(awk, array);
+
+    int index = 0;
+    const char *p = text;
+
+    if (!separator || !*separator || strcmp(separator, " ") == 0) {
+        while (*p) {
+            while (*p == ' ' || *p == '\t') p++;
+            if (!*p) break;
+            const char *start = p;
+            while (*p && *p != ' ' && *p != '\t') p++;
+            char key[32];
+            snprintf(key, sizeof(key), "%d", ++index);
+            char *piece = xstrndup(start, (size_t)(p - start));
+            element_set(awk, array, key, piece);
+            free(piece);
+        }
+        return index;
+    }
+
+    char sep = separator[0];
+    while (1) {
+        const char *hit = strchr(p, sep);
+        char key[32];
+        snprintf(key, sizeof(key), "%d", ++index);
+        if (!hit) {
+            element_set(awk, array, key, p);
+            break;
+        }
+        char *piece = xstrndup(p, (size_t)(hit - p));
+        element_set(awk, array, key, piece);
+        free(piece);
+        p = hit + 1;
+    }
+    return index;
+}
+
+static FILE *readers[8];
+static char *reader_names[8];
+
+static FILE *reader_for(const char *path) {
+    for (int i = 0; i < 8; i++) {
+        if (reader_names[i] && strcmp(reader_names[i], path) == 0) return readers[i];
+    }
+    for (int i = 0; i < 8; i++) {
+        if (reader_names[i]) continue;
+        FILE *f = fopen(path, "rb");
+        if (!f) return NULL;
+        reader_names[i] = xstrdup(path);
+        readers[i] = f;
+        return f;
+    }
+    return NULL;
+}
+
+static void readers_close(void) {
+    for (int i = 0; i < 8; i++) {
+        if (readers[i]) fclose(readers[i]);
+        free(reader_names[i]);
+        readers[i] = NULL;
+        reader_names[i] = NULL;
+    }
+}
+
+static const char *run_getline(Awk *awk, Expr *e) {
+    FILE *source = stdin;
+    if (e->left) {
+        const char *path = evaluate(awk, e->left);
+        source = reader_for(path);
+        if (!source) return "-1";
+    }
+
+    char line[8192];
+    if (!fgets(line, sizeof(line), source)) return "0";
+    line[strcspn(line, "\r\n")] = '\0';
+
+    if (e->text) {
+        variable_set(awk, e->text, line);
+    } else {
+        split_record(awk, line);
+        double number = to_number(variable_get(awk, "NR")) + 1;
+        variable_set(awk, "NR", number_text(awk, number));
+    }
+    return "1";
+}
+
 static const char *call_builtin(Awk *awk, Expr *e) {
     const char *name = e->text;
+
+    Function *user = function_find(awk, name);
+    if (user) return call_user(awk, user, e);
+
+    if (strcmp(name, "split") == 0) {
+        const char *text = evaluate(awk, e->left);
+        char *copy = xstrdup(text);
+        const char *array = e->right && e->right->text ? e->right->text : "";
+        const char *separator = e->third ? evaluate(awk, e->third) : variable_get(awk, "FS");
+        int count = split_into(awk, copy, array, separator);
+        free(copy);
+        return number_text(awk, count);
+    }
 
     if (strcmp(name, "length") == 0) {
         const char *text = e->left ? evaluate(awk, e->left) : field_value(awk, 0);
@@ -710,6 +1027,22 @@ static const char *evaluate(Awk *awk, Expr *e) {
 
     case E_CALL: return call_builtin(awk, e);
 
+    case E_SUBSCRIPT: {
+        const char *key = evaluate(awk, e->left);
+        char *copy = xstrdup(key);
+        const char *value = element_get(awk, e->text, copy);
+        free(copy);
+        return value;
+    }
+
+    case E_IN: {
+        const char *key = evaluate(awk, e->left);
+        Variable *v = variable_find(awk, e->text);
+        return v && element_find(v, key) ? "1" : "0";
+    }
+
+    case E_GETLINE: return run_getline(awk, e);
+
     case E_BINARY: {
         if (strcmp(e->op, "&&") == 0)
             return evaluate_number(awk, e->left) != 0 && evaluate_number(awk, e->right) != 0 ? "1"
@@ -797,8 +1130,40 @@ static void run_printf(Awk *awk, Stmt *s) {
 }
 
 static void execute(Awk *awk, Stmt *s) {
-    for (; s && !awk->exiting && !awk->skipping; s = s->next) {
+    for (; s && !awk->exiting && !awk->skipping && !awk->returning; s = s->next) {
         switch (s->kind) {
+        case S_RETURN:
+            awk->return_value = s->expr ? evaluate(awk, s->expr) : "";
+            awk->returning = 1;
+            break;
+
+        case S_DELETE:
+            if (s->expr) {
+                const char *key = evaluate(awk, s->expr);
+                char *copy = xstrdup(key);
+                element_delete(awk, s->name, copy);
+                free(copy);
+            } else {
+                array_clear(awk, s->name);
+            }
+            break;
+
+        case S_FOR_IN: {
+            Variable *v = variable_find(awk, s->name2);
+            if (!v) break;
+
+            StrList keys;
+            sl_init(&keys);
+            for (size_t i = 0; i < v->count; i++) sl_push_copy(&keys, v->elements[i].key);
+
+            for (size_t i = 0; i < keys.len && !awk->exiting && !awk->returning; i++) {
+                variable_set(awk, s->name, keys.items[i]);
+                execute(awk, s->body);
+            }
+            sl_free(&keys);
+            break;
+        }
+
         case S_BLOCK:
             execute(awk, s->body);
             break;
@@ -921,6 +1286,33 @@ static void parse_program(Awk *awk, const char *program) {
         while (is_token(&lx, ";") || is_token(&lx, "\n")) lex_next(&lx);
         if (lx.type == T_END) break;
 
+        if (lx.type == T_NAME && strcmp(lx.token, "function") == 0) {
+            lex_next(&lx);
+            if (awk->function_count + 1 >= awk->function_cap) {
+                awk->function_cap = awk->function_cap ? awk->function_cap * 2 : 8;
+                awk->functions = xrealloc(awk->functions, awk->function_cap * sizeof(Function));
+            }
+            Function *f = &awk->functions[awk->function_count++];
+            memset(f, 0, sizeof(Function));
+            f->name = xstrdup(lx.token);
+            sl_init(&f->params);
+            lex_next(&lx);
+
+            accept(&lx, "(");
+            while (lx.type == T_NAME) {
+                sl_push_copy(&f->params, lx.token);
+                lex_next(&lx);
+                if (!accept(&lx, ",")) break;
+            }
+            accept(&lx, ")");
+            skip_separators(&lx);
+
+            accept(&lx, "{");
+            f->body = parse_block(&lx);
+            accept(&lx, "}");
+            continue;
+        }
+
         awk->rules = xrealloc(awk->rules, (size_t)(awk->rule_count + 1) * sizeof(Rule));
         Rule *rule = &awk->rules[awk->rule_count++];
         memset(rule, 0, sizeof(Rule));
@@ -1022,12 +1414,23 @@ int awk_main(int argc, char **argv) {
     run_rules(&awk, 0, 1);
     arena_reset(&awk);
 
+    readers_close();
     for (int i = 0; i < awk.field_count; i++) free(awk.fields[i]);
     free(awk.record);
     for (size_t i = 0; i < awk.variable_count; i++) {
         free(awk.variables[i].name);
         free(awk.variables[i].value);
+        for (size_t e = 0; e < awk.variables[i].count; e++) {
+            free(awk.variables[i].elements[e].key);
+            free(awk.variables[i].elements[e].value);
+        }
+        free(awk.variables[i].elements);
     }
+    for (size_t i = 0; i < awk.function_count; i++) {
+        free(awk.functions[i].name);
+        sl_free(&awk.functions[i].params);
+    }
+    free(awk.functions);
     free(awk.variables);
     free(awk.rules);
     sl_free(&awk.arena);
