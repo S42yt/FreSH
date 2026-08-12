@@ -7,7 +7,13 @@ variables. There is no manifest, no metadata and no install step.
 ```sh
 plugin                 # list what is installed, loaded ones are marked
 plugin load git        # load one right now, for this session
+rehash                 # reload the theme and every plugin after editing a file
 ```
+
+`rehash` re-sources whatever `FRESH_THEME` and `FRESH_PLUGINS` name, so editing
+a plugin and running `rehash` applies it without opening a new shell. It adds
+and replaces: an alias you deleted from the file stays until the shell
+restarts, because sourcing a file cannot know what used to be in it.
 
 Load them on every start with:
 

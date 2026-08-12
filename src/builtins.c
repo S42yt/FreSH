@@ -462,8 +462,12 @@ static int builtin_clear(int argc, char **argv) {
 static int builtin_rehash(int argc, char **argv) {
     (void)argc;
     (void)argv;
+
     path_rehash();
     foreign_forget();
+    fresh_home_init();
+    theme_load_configured();
+    plugins_load_configured();
     return 0;
 }
 
