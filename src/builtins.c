@@ -17,6 +17,7 @@
 #include "coreutils.h"
 #include "exec.h"
 #include "expand.h"
+#include "foreign.h"
 #include "gitinfo.h"
 #include "history.h"
 #include "prompt.h"
@@ -350,6 +351,7 @@ static int builtin_rehash(int argc, char **argv) {
     (void)argc;
     (void)argv;
     path_rehash();
+    foreign_forget();
     return 0;
 }
 
@@ -763,6 +765,7 @@ typedef struct {
 static const Builtin BUILTINS[] = {
     {"alias", builtin_alias},       {"break", builtin_break},
     {"cd", builtin_cd},             {"clear", builtin_clear},
+    {"cmd", builtin_cmd},           {"ps1", builtin_ps1},
     {"continue", builtin_continue}, {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},
     {"exit", builtin_exit},         {"have", builtin_have},

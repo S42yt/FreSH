@@ -18,6 +18,7 @@
 #include "builtins.h"
 #include "coreutils.h"
 #include "expand.h"
+#include "foreign.h"
 #include "shell.h"
 #include "vars.h"
 
@@ -987,6 +988,12 @@ char *apply_aliases(const char *line) {
 }
 
 int exec_text(const char *text) {
+    int foreign_status = 0;
+    if (foreign_route(text, &foreign_status)) {
+        shell.last_status = foreign_status;
+        return foreign_status;
+    }
+
     int incomplete = 0;
     char *error = NULL;
     char *aliased = apply_aliases(text);

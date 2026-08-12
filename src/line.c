@@ -15,6 +15,7 @@
 #include "complete.h"
 #include "coreutils.h"
 #include "exec.h"
+#include "foreign.h"
 #include "history.h"
 #include "prompt.h"
 #include "shell.h"
@@ -82,7 +83,8 @@ static size_t word_right(const char *text, size_t index) {
 
 static int command_known(const char *name) {
     if (!*name) return 0;
-    if (builtin_lookup(name) || coreutil_lookup(name) || function_defined(name) || alias_get(name))
+    if (builtin_lookup(name) || coreutil_lookup(name) || function_defined(name) ||
+        alias_get(name) || foreign_known(name))
         return 1;
     if (strpbrk(name, "/\\")) {
         char resolved[PATH_BUF];
