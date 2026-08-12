@@ -20,7 +20,7 @@ cp build/fresh.ico installation/fresh.ico
 
 say "shell"
 $WINDRES src/fresh.rc -O coff -o build/fresh.res
-$CC $CFLAGS src/*.c build/fresh.res -o build/FreSH.exe -ladvapi32 -lshell32 -lole32
+$CC $CFLAGS src/*.c build/fresh.res -o build/FreSH.exe -ladvapi32 -lshell32 -lole32 -lwininet
 ok "build/FreSH.exe"
 
 say "installer"

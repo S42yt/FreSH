@@ -19,7 +19,7 @@ cp "$BUILD/fresh.ico" installation/fresh.ico
 
 info "Building FreSH..."
 $WINDRES src/fresh.rc -O coff -o "$BUILD/fresh.res"
-$CC $CFLAGS src/*.c "$BUILD/fresh.res" -o "$BUILD/FreSH.exe" -ladvapi32 -lshell32 -lole32
+$CC $CFLAGS src/*.c "$BUILD/fresh.res" -o "$BUILD/FreSH.exe" -ladvapi32 -lshell32 -lole32 -lwininet
 green "  $BUILD/FreSH.exe"
 
 info "Building payload generator..."

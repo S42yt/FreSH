@@ -25,6 +25,7 @@
 #include "style.h"
 #include "term.h"
 #include "theme.h"
+#include "update.h"
 #include "vars.h"
 
 static void sync_cwd(void) {
@@ -771,7 +772,7 @@ static const Builtin BUILTINS[] = {
     {"exit", builtin_exit},         {"have", builtin_have},
     {"ok", builtin_ok},             {"say", builtin_say},
     {"warn", builtin_warn},
-    {"export", builtin_export},     {"false", builtin_false},
+    {"export", builtin_export},     {"false", builtin_false},       {"fresh", builtin_fresh},
     {"gitinfo", builtin_gitinfo},   {"help", builtin_help},
     {"history", builtin_history},   {"ls", builtin_ls},
     {"pwd", builtin_pwd},           {"quit", builtin_exit},

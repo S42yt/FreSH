@@ -19,7 +19,7 @@ Write-Host 'Building FreSH...' -ForegroundColor Cyan
 & $windres 'src\fresh.rc' -O coff -o "$build\fresh.res"
 if ($LASTEXITCODE -ne 0) { throw 'resource build failed' }
 & $cc @cflags (Get-ChildItem src\*.c).FullName "$build\fresh.res" -o "$build\FreSH.exe" `
-    -ladvapi32 -lshell32 -lole32
+    -ladvapi32 -lshell32 -lole32 -lwininet
 if ($LASTEXITCODE -ne 0) { throw 'FreSH build failed' }
 
 Write-Host 'Building payload generator...' -ForegroundColor Cyan
