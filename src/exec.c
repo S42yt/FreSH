@@ -9,12 +9,13 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <io.h>
-#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <windows.h>
+
+#include <tlhelp32.h>
 
 #include "builtins.h"
 #include "coreutils.h"
