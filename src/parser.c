@@ -412,9 +412,11 @@ static int is_reserved(Token *t, const char *word) {
 }
 
 static int is_any_reserved(Token *t) {
+    static const char *TERMINATORS[] = {"then", "else", "elif", "fi",  "do", "done",
+                                        "esac", "in",   "}",    "]]", NULL};
     if (t->type != T_WORD || t->quoted || !t->text) return 0;
-    for (int i = 0; RESERVED[i]; i++) {
-        if (strcmp(t->text, RESERVED[i]) == 0) return 1;
+    for (int i = 0; TERMINATORS[i]; i++) {
+        if (strcmp(t->text, TERMINATORS[i]) == 0) return 1;
     }
     return 0;
 }
@@ -873,9 +875,11 @@ static Node *parse_list(Parser *ps, const char **stop) {
             node_free(list);
             return NULL;
         }
+        int separated = 0;
         if (peek(ps)->type == T_AMP) {
             cmd->background = 1;
             advance(ps);
+            separated = 1;
         }
         if (!list) {
             list = cmd;
@@ -886,7 +890,7 @@ static Node *parse_list(Parser *ps, const char **stop) {
             list = seq;
         }
         Token *t = peek(ps);
-        if (t->type != T_SEMI && t->type != T_NEWLINE && t->type != T_AMP) break;
+        if (!separated && t->type != T_SEMI && t->type != T_NEWLINE && t->type != T_AMP) break;
     }
     return list;
 }

@@ -327,6 +327,28 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
             continue;
         }
 
+        if (strncmp(r->target, "<(", 2) == 0 && r->target[strlen(r->target) - 1] == ')') {
+            char directory[PATH_BUF];
+            char file[PATH_BUF];
+            if (GetTempPathA(sizeof(directory), directory) &&
+                GetTempFileNameA(directory, "frps", 0, file)) {
+                char *command = xstrndup(r->target + 2, strlen(r->target) - 3);
+                StrBuf script;
+                sb_init(&script);
+                sb_printf(&script, "%s > \"%s\"", command, file);
+                exec_text(script.data);
+                sb_free(&script);
+                free(command);
+
+                HANDLE handle = CreateFileA(file, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                            &sa, OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY, NULL);
+                if (handle == INVALID_HANDLE_VALUE) return 0;
+                track_handle(handle);
+                io->in = handle;
+                continue;
+            }
+        }
+
         char *target = expand_single(r->target);
 
         if (r->type == R_DUP) {
@@ -340,25 +362,7 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
         }
 
         char native[PATH_BUF];
-        if (strncmp(target, "<(", 2) == 0 && target[strlen(target) - 1] == ')') {
-            char directory[PATH_BUF];
-            char file[PATH_BUF];
-            if (GetTempPathA(sizeof(directory), directory) &&
-                GetTempFileNameA(directory, "frps", 0, file)) {
-                char *command = xstrndup(target + 2, strlen(target) - 3);
-                StrBuf script;
-                sb_init(&script);
-                sb_printf(&script, "%s > \"%s\"", command, file);
-                exec_text(script.data);
-                sb_free(&script);
-                free(command);
-                snprintf(native, sizeof(native), "%s", file);
-            } else {
-                snprintf(native, sizeof(native), "%s", target);
-            }
-        } else {
-            snprintf(native, sizeof(native), "%s", target);
-        }
+        snprintf(native, sizeof(native), "%s", target);
         free(target);
         path_to_backslashes(native);
 
