@@ -26,9 +26,12 @@ than rejected, so check this page when a script behaves oddly.
 | `set` | `-e` `-x` `-u` | no arguments lists variables |
 | `local name[=value]` | | function scoped variable |
 | `declare` / `typeset` | `-a` `-A` | declare an indexed or associative array |
-| `trap command EXIT\|INT\|ERR` | | `trap -` removes one |
-| `jobs` | | background jobs still running |
+| `trap command SIGNAL...` | | EXIT HUP INT QUIT TERM ERR DEBUG RETURN, `trap -` removes |
+| `jobs` | | background jobs, running or stopped |
 | `wait [id]` | | wait for one job or all of them |
+| `fg [id]` | | resume if stopped and wait for it |
+| `bg [id]` | | resume a stopped job in the background |
+| `stop [id]` | | suspend a job, the FreSH stand in for Ctrl+Z |
 | `alias [name=value]` | | no arguments lists aliases |
 | `unalias name` | | |
 | `source file` / `. file` | | runs in the current shell |
@@ -206,8 +209,18 @@ assignment including `+=`, `++`, `if`/`else`, `while`, `for`, `next`, `exit`,
 `toupper`, `tolower` and `int`. `-F` sets the separator, `-v` presets a
 variable.
 
-Not supported: arrays and `split`, user defined functions, `getline`,
-multiple `-f` program files.
+Arrays, `split`, `in`, `delete`, `for (key in array)`, user defined functions
+with `return`, and `getline` all work:
+
+```sh
+awk '{ total[$1] += $2 } END { for (k in total) print k, total[k] }' data.txt
+awk 'BEGIN { n = split("a:b:c", parts, ":"); print n, parts[2] }'
+awk 'function double(x) { return x * 2 } { print double($2) }' data.txt
+awk 'BEGIN { while ((getline line < "notes.txt") > 0) n++; print n }'
+```
+
+Not supported: `cmd | getline`, `printf` into a file, `ENVIRON`, and multiple
+`-f` program files.
 
 ## Not bundled
 

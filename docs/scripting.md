@@ -427,21 +427,55 @@ tee >(grep ERROR > errors.txt) < build.log
 `<(...)` gives the command's output as a file, `>(...)` collects what is
 written and feeds it in afterwards.
 
+## Trimming and replacing in a variable
+
+```sh
+path=/home/me/project/main.tar.gz
+
+${path##*/}        # main.tar.gz     longest prefix removed
+${path%/*}         # /home/me/project
+${path%.gz}        # ...main.tar     shortest suffix removed
+${path%%.*}        # ...main         longest suffix removed
+
+${name/old/new}    # first match replaced
+${name//old/new}   # every match
+${name/#old/new}   # only at the start
+${name/%old/new}   # only at the end
+
+${name:6}          # from offset 6
+${name:0:5}        # 5 characters from 0
+${name^} ${name^^} # capitalise first, capitalise all
+${name,} ${name,,} # lowercase first, lowercase all
+```
+
+Patterns are shell patterns, the same ones `case` uses.
+
 ## Traps and jobs
 
 ```sh
 trap 'echo "cleaning up"' EXIT
 trap 'echo "that failed"' ERR
+trap 'echo "closing"' HUP TERM
 trap - ERR                        # remove it
 
 long-running-thing &
 jobs                              # what is still going
+fg                                # bring the last one to the foreground
+fg 2                              # or a numbered one
+stop 2                            # suspend it
+bg 2                              # let it carry on in the background
 wait                              # for all of them
 wait 2                            # for job 2, or a process id
 ```
 
-EXIT runs when the shell closes, ERR after any command that fails outside a
-condition, INT when Ctrl+C is pressed at the prompt.
+`trap` takes EXIT, HUP, INT, QUIT, TERM, ERR, DEBUG and RETURN, by name or by
+number, with or without the `SIG` prefix. DEBUG runs before every command,
+RETURN when a function returns, ERR after any command that fails outside a
+condition, HUP and TERM when the window is closed.
+
+`stop` is a FreSH addition: Windows has no Ctrl+Z, so suspending a job is a
+command rather than a keystroke. It suspends every thread in the process, and
+`bg` or `fg` resumes them.
 
 Only external programs become jobs. A bundled command with `&` runs in the
 foreground, because it runs inside the shell itself.
@@ -457,12 +491,14 @@ done
 
 ## What FreSH does not support
 
-- `fg` and `bg`. Windows consoles have no job control to hand a process back
-  and forth, so a background job runs to completion or you `wait` for it.
-- `awk`, `tar`, `curl` and friends are not bundled. Install them, put them on
-  `PATH`, run `rehash`, and FreSH will find them.
-- Signals other than EXIT, INT and ERR in `trap`.
-- `${var/pattern/replacement}` and the other substring operators. Use `sed`.
+- Backgrounding a bundled command. `&` only makes a job out of an external
+  program, because bundled commands run inside the shell process.
+- Signals beyond EXIT, HUP, INT, QUIT, TERM, ERR, DEBUG and RETURN. Windows
+  has no others to deliver.
+- `coproc`, `shopt`, `${!prefix*}`, and `$'ansi strings'`.
+- `tar`, `curl`, `zip`, `ssh` and friends are not bundled, though Windows
+  ships `tar` and `curl` itself. Anything else: install it, put it on `PATH`,
+  run `rehash`.
 
 ## Debugging
 
