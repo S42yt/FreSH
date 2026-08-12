@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <windows.h>
 
+#include "shell.h"
+
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 #endif
@@ -19,7 +21,19 @@ static UINT saved_output_cp = 0;
 static UINT saved_input_cp = 0;
 
 static BOOL WINAPI ctrl_handler(DWORD type) {
-    return type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT;
+    if (type == CTRL_C_EVENT) {
+        shell_handle_signal(SIGNAL_INT);
+        return TRUE;
+    }
+    if (type == CTRL_BREAK_EVENT) {
+        shell_handle_signal(SIGNAL_QUIT);
+        return TRUE;
+    }
+    if (type == CTRL_CLOSE_EVENT || type == CTRL_LOGOFF_EVENT || type == CTRL_SHUTDOWN_EVENT) {
+        shell_handle_signal(SIGNAL_CLOSE);
+        return FALSE;
+    }
+    return FALSE;
 }
 
 void term_init(void) {

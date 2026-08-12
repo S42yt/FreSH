@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <io.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -539,6 +540,13 @@ static int call_function(Function *f, const StrList *args) {
     int status = exec_node(f->body);
     shell.depth--;
     scope_pop();
+
+    if (shell.trap_return) {
+        char *handler = shell.trap_return;
+        shell.trap_return = NULL;
+        run_trap(handler);
+        shell.trap_return = handler;
+    }
     if (shell.returning) {
         shell.returning = 0;
         status = shell.last_status;
@@ -700,6 +708,13 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         for (int i = 0; i < argc; i++) fprintf(stderr, "%s%s", i > 0 ? " " : "", argv[i]);
         fprintf(stderr, "\n");
         fflush(stderr);
+    }
+
+    if (shell.trap_debug) {
+        char *handler = shell.trap_debug;
+        shell.trap_debug = NULL;
+        run_trap(handler);
+        shell.trap_debug = handler;
     }
 
     Function *f = function_find(argv[0]);
@@ -916,6 +931,7 @@ typedef struct {
     DWORD pid;
     HANDLE process;
     char *command;
+    int stopped;
 } Job;
 
 static Job jobs[MAX_STAGES];
@@ -952,7 +968,8 @@ void jobs_list(StrList *out) {
         }
         StrBuf sb;
         sb_init(&sb);
-        sb_printf(&sb, "[%d] %lu  running  %s", jobs[i].id, jobs[i].pid, jobs[i].command);
+        sb_printf(&sb, "[%d] %lu  %s  %s", jobs[i].id, jobs[i].pid,
+                  jobs[i].stopped ? "stopped" : "running", jobs[i].command);
         sl_push(out, sb_take(&sb));
     }
     sl_sort(out);
@@ -968,6 +985,87 @@ int jobs_wait(int id) {
         return (int)code;
     }
     return 127;
+}
+
+static int job_index(int id) {
+    if (job_count == 0) return -1;
+    if (id == 0) return job_count - 1;
+    for (int i = 0; i < job_count; i++) {
+        if (jobs[i].id == id || (int)jobs[i].pid == id) return i;
+    }
+    return -1;
+}
+
+static int walk_threads(DWORD pid, int suspend) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return 0;
+
+    THREADENTRY32 entry;
+    entry.dwSize = sizeof(entry);
+    int touched = 0;
+
+    if (Thread32First(snapshot, &entry)) {
+        do {
+            if (entry.th32OwnerProcessID != pid) continue;
+            HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, entry.th32ThreadID);
+            if (!thread) continue;
+            if (suspend) SuspendThread(thread);
+            else ResumeThread(thread);
+            CloseHandle(thread);
+            touched++;
+        } while (Thread32Next(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return touched;
+}
+
+int jobs_suspend(int id) {
+    int index = job_index(id);
+    if (index < 0) {
+        shell_error("stop: no such job");
+        return 1;
+    }
+    if (jobs[index].stopped) return 0;
+    if (!walk_threads(jobs[index].pid, 1)) {
+        shell_error("stop: cannot suspend %lu", jobs[index].pid);
+        return 1;
+    }
+    jobs[index].stopped = 1;
+    printf("[%d] stopped  %s\n", jobs[index].id, jobs[index].command);
+    return 0;
+}
+
+int jobs_resume(int id) {
+    int index = job_index(id);
+    if (index < 0) {
+        shell_error("bg: no such job");
+        return 1;
+    }
+    if (jobs[index].stopped) {
+        walk_threads(jobs[index].pid, 0);
+        jobs[index].stopped = 0;
+    }
+    printf("[%d] %s &\n", jobs[index].id, jobs[index].command);
+    return 0;
+}
+
+int jobs_foreground(int id) {
+    int index = job_index(id);
+    if (index < 0) {
+        shell_error("fg: no such job");
+        return 1;
+    }
+    if (jobs[index].stopped) {
+        walk_threads(jobs[index].pid, 0);
+        jobs[index].stopped = 0;
+    }
+    printf("%s\n", jobs[index].command);
+
+    WaitForSingleObject(jobs[index].process, INFINITE);
+    DWORD code = 0;
+    GetExitCodeProcess(jobs[index].process, &code);
+    job_remove(index);
+    return (int)code;
 }
 
 int jobs_wait_all(void) {

@@ -34,6 +34,9 @@ int pattern_match(const char *pattern, const char *text);
 void jobs_list(StrList *out);
 int jobs_wait(int id);
 int jobs_wait_all(void);
+int jobs_foreground(int id);
+int jobs_resume(int id);
+int jobs_suspend(int id);
 void jobs_cleanup(void);
 void run_trap(const char *command);
 

@@ -243,30 +243,76 @@ static int builtin_declare(int argc, char **argv) {
     return 0;
 }
 
+typedef struct {
+    const char *name;
+    const char *number;
+    char **slot;
+} TrapSlot;
+
+static int trap_table(TrapSlot *slots) {
+    int count = 0;
+    slots[count++] = (TrapSlot){"EXIT", "0", &shell.trap_exit};
+    slots[count++] = (TrapSlot){"HUP", "1", &shell.trap_hup};
+    slots[count++] = (TrapSlot){"INT", "2", &shell.trap_int};
+    slots[count++] = (TrapSlot){"QUIT", "3", &shell.trap_quit};
+    slots[count++] = (TrapSlot){"TERM", "15", &shell.trap_term};
+    slots[count++] = (TrapSlot){"ERR", NULL, &shell.trap_err};
+    slots[count++] = (TrapSlot){"DEBUG", NULL, &shell.trap_debug};
+    slots[count++] = (TrapSlot){"RETURN", NULL, &shell.trap_return};
+    return count;
+}
+
 static int builtin_trap(int argc, char **argv) {
+    TrapSlot slots[8];
+    int count = trap_table(slots);
+
     if (argc < 2) {
-        if (shell.trap_exit) printf("trap '%s' EXIT\n", shell.trap_exit);
-        if (shell.trap_int) printf("trap '%s' INT\n", shell.trap_int);
-        if (shell.trap_err) printf("trap '%s' ERR\n", shell.trap_err);
+        for (int i = 0; i < count; i++)
+            if (*slots[i].slot) printf("trap '%s' %s\n", *slots[i].slot, slots[i].name);
         return 0;
     }
 
     const char *command = argv[1];
     int clearing = strcmp(command, "-") == 0 || !*command;
 
+    if (argc == 2) {
+        shell_error("trap: usage: trap command SIGNAL...");
+        return 2;
+    }
+
     for (int i = 2; i < argc; i++) {
+        const char *given = argv[i];
+        if (str_has_prefix(given, "SIG") || str_has_prefix(given, "sig")) given += 3;
+
         char **slot = NULL;
-        if (str_ieq(argv[i], "EXIT") || strcmp(argv[i], "0") == 0) slot = &shell.trap_exit;
-        else if (str_ieq(argv[i], "INT") || strcmp(argv[i], "2") == 0) slot = &shell.trap_int;
-        else if (str_ieq(argv[i], "ERR")) slot = &shell.trap_err;
-        else {
-            shell_error("trap: %s: unsupported signal, use EXIT, INT or ERR", argv[i]);
+        for (int s = 0; s < count; s++) {
+            if (str_ieq(given, slots[s].name) ||
+                (slots[s].number && strcmp(given, slots[s].number) == 0))
+                slot = slots[s].slot;
+        }
+        if (!slot) {
+            shell_error("trap: %s: use EXIT HUP INT QUIT TERM ERR DEBUG or RETURN", argv[i]);
             return 1;
         }
         free(*slot);
         *slot = clearing ? NULL : xstrdup(command);
     }
     return 0;
+}
+
+static int builtin_fg(int argc, char **argv) {
+    int id = argc > 1 ? atoi(argv[1]) : 0;
+    return jobs_foreground(id);
+}
+
+static int builtin_bg(int argc, char **argv) {
+    int id = argc > 1 ? atoi(argv[1]) : 0;
+    return jobs_resume(id);
+}
+
+static int builtin_stop(int argc, char **argv) {
+    int id = argc > 1 ? atoi(argv[1]) : 0;
+    return jobs_suspend(id);
 }
 
 static int builtin_jobs(int argc, char **argv) {
@@ -897,7 +943,8 @@ static const Builtin BUILTINS[] = {
     {"return", builtin_return},     {"set", builtin_set},
     {"shift", builtin_shift},       {"source", builtin_source},
     {"trap", builtin_trap},         {"jobs", builtin_jobs},
-    {"wait", builtin_wait},
+    {"wait", builtin_wait},         {"fg", builtin_fg},
+    {"bg", builtin_bg},             {"stop", builtin_stop},
     {"test", builtin_test},         {"theme", builtin_theme},
     {"plugin", builtin_plugin},     {"true", builtin_true},
     {"type", builtin_type},         {"unalias", builtin_unalias},

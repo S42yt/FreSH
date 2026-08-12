@@ -122,6 +122,25 @@ void shell_error(const char *fmt, ...) {
     fflush(stderr);
 }
 
+void shell_handle_signal(int which) {
+    if (which == SIGNAL_INT) return;
+
+    if (which == SIGNAL_QUIT) {
+        if (shell.trap_quit) run_trap(shell.trap_quit);
+        return;
+    }
+
+    const char *handler = shell.trap_hup ? shell.trap_hup : shell.trap_term;
+    if (handler) run_trap(handler);
+    if (shell.trap_exit) {
+        char *exit_handler = shell.trap_exit;
+        shell.trap_exit = NULL;
+        run_trap(exit_handler);
+        free(exit_handler);
+    }
+    history_save();
+}
+
 static void prepend_user_bins(void) {
     const char *directories[] = {"bin", ".local\\bin", "AppData\\Local\\bin", "scoop\\shims",
                                  "AppData\\Roaming\\npm"};

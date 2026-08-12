@@ -145,6 +145,87 @@ static int expand_array_body(const char *body, StrList *out) {
     return 1;
 }
 
+static int match_at(const char *pattern, const char *text, size_t start, size_t limit,
+                    int longest, size_t *length) {
+    int found = 0;
+    size_t best = 0;
+    size_t available = strlen(text) - start;
+    if (limit < available) available = limit;
+
+    for (size_t take = 0; take <= available; take++) {
+        char *piece = xstrndup(text + start, take);
+        int matched = pattern_match(pattern, piece);
+        free(piece);
+        if (!matched) continue;
+        found = 1;
+        best = take;
+        if (!longest) break;
+    }
+    if (found) *length = best;
+    return found;
+}
+
+static char *strip_prefix(const char *text, const char *pattern, int longest) {
+    size_t length = 0;
+    if (match_at(pattern, text, 0, strlen(text), longest, &length)) return xstrdup(text + length);
+    return xstrdup(text);
+}
+
+static char *strip_suffix(const char *text, const char *pattern, int longest) {
+    size_t total = strlen(text);
+    size_t best = total;
+    int found = 0;
+
+    for (size_t start = 0; start <= total; start++) {
+        size_t length = 0;
+        if (!match_at(pattern, text, start, total - start, 1, &length)) continue;
+        if (start + length != total) continue;
+        found = 1;
+        best = start;
+        if (longest) break;
+    }
+    if (!found) return xstrdup(text);
+    return xstrndup(text, best);
+}
+
+static char *replace_pattern(const char *text, const char *pattern, const char *replacement,
+                             int all, int anchor_start, int anchor_end) {
+    StrBuf out;
+    sb_init(&out);
+    size_t total = strlen(text);
+    size_t cursor = 0;
+    int replaced = 0;
+
+    while (cursor <= total) {
+        size_t length = 0;
+        int matched = 0;
+
+        if (!(replaced && !all) && !(anchor_start && cursor > 0))
+            matched = match_at(pattern, text, cursor, total - cursor, 1, &length);
+        if (matched && anchor_end && cursor + length != total) matched = 0;
+
+        if (matched && length > 0) {
+            sb_puts(&out, replacement);
+            cursor += length;
+            replaced = 1;
+            continue;
+        }
+        if (cursor == total) break;
+        sb_putc(&out, text[cursor]);
+        cursor++;
+    }
+    return sb_take(&out);
+}
+
+static char *change_case(const char *text, int upper, int all) {
+    char *copy = xstrdup(text);
+    for (char *p = copy; *p; p++) {
+        *p = upper ? (char)toupper((unsigned char)*p) : (char)tolower((unsigned char)*p);
+        if (!all) break;
+    }
+    return copy;
+}
+
 static char *brace_expand(const char *body) {
     char name[128];
     char index[128];
@@ -185,6 +266,94 @@ static char *brace_expand(const char *body) {
         sb_init(&sb);
         sb_printf(&sb, "%d", value ? (int)strlen(value) : 0);
         return sb_take(&sb);
+    }
+
+    size_t name_length = 0;
+    while (body[name_length] && (isalnum((unsigned char)body[name_length]) ||
+                                 body[name_length] == '_'))
+        name_length++;
+
+    if (name_length > 0 && name_length < sizeof(name) && body[name_length]) {
+        char operator = body[name_length];
+        const char *rest = body + name_length + 1;
+
+        if (strchr("#%/^,:", operator)) {
+            memcpy(name, body, name_length);
+            name[name_length] = '\0';
+            const char *value = var_get(name);
+            char *text = xstrdup(value ? value : "");
+
+            if (operator == '#' || operator == '%') {
+                int longest = *rest == operator;
+                if (longest) rest++;
+                char *pattern = expand_single(rest);
+                char *result = operator == '#' ? strip_prefix(text, pattern, longest)
+                                               : strip_suffix(text, pattern, longest);
+                free(pattern);
+                free(text);
+                return result;
+            }
+
+            if (operator == '/') {
+                int all = *rest == '/';
+                int anchor_start = 0;
+                int anchor_end = 0;
+                if (all) rest++;
+                else if (*rest == '#') {
+                    anchor_start = 1;
+                    rest++;
+                } else if (*rest == '%') {
+                    anchor_end = 1;
+                    rest++;
+                }
+
+                const char *slash = rest;
+                int depth = 0;
+                while (*slash && (*slash != '/' || depth)) {
+                    if (*slash == '\\' && slash[1]) slash++;
+                    slash++;
+                }
+                char *pattern_source = xstrndup(rest, (size_t)(slash - rest));
+                char *pattern = expand_single(pattern_source);
+                char *replacement = *slash ? expand_single(slash + 1) : xstrdup("");
+
+                char *result = replace_pattern(text, pattern, replacement, all, anchor_start,
+                                               anchor_end);
+                free(pattern_source);
+                free(pattern);
+                free(replacement);
+                free(text);
+                return result;
+            }
+
+            if (operator == '^' || operator == ',') {
+                int all = *rest == operator;
+                char *result = change_case(text, operator == '^', all);
+                free(text);
+                return result;
+            }
+
+            if (operator == ':' && (isdigit((unsigned char)*rest) || *rest == ' ')) {
+                char *spec = expand_single(rest);
+                long offset = atol(spec);
+                const char *comma = strchr(spec, ':');
+                long total = (long)strlen(text);
+                if (offset < 0) offset += total;
+                if (offset < 0) offset = 0;
+                if (offset > total) offset = total;
+
+                long length = comma ? atol(comma + 1) : total - offset;
+                if (length < 0) length = total - offset + length;
+                if (length < 0) length = 0;
+                if (offset + length > total) length = total - offset;
+
+                char *result = xstrndup(text + offset, (size_t)length);
+                free(spec);
+                free(text);
+                return result;
+            }
+            free(text);
+        }
     }
 
     const char *colon = strpbrk(body, ":-+=?");

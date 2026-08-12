@@ -28,13 +28,21 @@ typedef struct {
     char *trap_exit;
     char *trap_int;
     char *trap_err;
+    char *trap_term;
+    char *trap_hup;
+    char *trap_quit;
+    char *trap_debug;
+    char *trap_return;
     int interrupted;
 } ShellState;
 
 extern ShellState shell;
 
+enum { SIGNAL_INT, SIGNAL_QUIT, SIGNAL_CLOSE };
+
 void shell_init(int interactive);
 void shell_cleanup(void);
 void shell_error(const char *fmt, ...);
+void shell_handle_signal(int which);
 
 #endif
