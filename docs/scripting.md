@@ -334,20 +334,135 @@ ok "done"
 `build.frsh` in the repository root builds the whole project, installer
 included, and is worth comparing with `build.sh` next to it.
 
+## Arrays
+
+```sh
+fruits=(apple banana cherry)
+echo "${fruits[0]}"        # apple
+echo "${fruits[@]}"        # every element, one word each when quoted
+echo "${#fruits[@]}"       # how many
+fruits+=(date)             # append
+fruits[1]=blueberry        # replace one
+for f in "${fruits[@]}"; do echo "$f"; done
+```
+
+Associative arrays need declaring first:
+
+```sh
+declare -A colour
+colour[sky]=blue
+colour[grass]=green
+echo "${colour[sky]}"      # blue
+echo "${!colour[@]}"       # the keys
+echo "${#colour[@]}"       # how many
+```
+
+`declare -a` makes an indexed array explicitly, and `declare` on its own
+prints everything.
+
+## Local variables
+
+```sh
+counter=global
+
+work() {
+  local counter=inner
+  local scratch
+  echo "$counter"
+}
+
+work            # inner
+echo "$counter" # global
+```
+
+`local` saves whatever the name held and restores it when the function
+returns, so a helper cannot clobber its caller.
+
+## Here documents
+
+```sh
+cat <<EOF
+expanded: $HOME and $(date +%H:%M)
+EOF
+
+cat <<'EOF'
+literal $HOME, nothing is expanded
+EOF
+```
+
+Quoting the delimiter turns expansion off, exactly as in bash. `<<-` is
+accepted too.
+
+## Double brackets
+
+```sh
+[[ $name == fre* ]]           # pattern, not a literal
+[[ $name != other ]]
+[[ -f build.sh && -d src ]]
+[[ 5 -gt 3 || 1 -gt 9 ]]
+[[ ! -e missing ]]
+[[ $version =~ ^[0-9]+\.[0-9]+$ ]]
+```
+
+No word splitting happens inside, so unquoted variables with spaces are safe.
+`=~` takes an extended regular expression.
+
+## Brace expansion
+
+```sh
+echo {a,b,c}          # a b c
+echo item-{1..4}      # item-1 item-2 item-3 item-4
+echo {x,y}{1,2}       # x1 x2 y1 y2
+mkdir -p build/{bin,lib}
+```
+
+## Process substitution
+
+```sh
+comm <(sort left.txt) <(sort right.txt)
+wc -l < <(grep TODO -r src)
+tee >(grep ERROR > errors.txt) < build.log
+```
+
+`<(...)` gives the command's output as a file, `>(...)` collects what is
+written and feeds it in afterwards.
+
+## Traps and jobs
+
+```sh
+trap 'echo "cleaning up"' EXIT
+trap 'echo "that failed"' ERR
+trap - ERR                        # remove it
+
+long-running-thing &
+jobs                              # what is still going
+wait                              # for all of them
+wait 2                            # for job 2, or a process id
+```
+
+EXIT runs when the shell closes, ERR after any command that fails outside a
+condition, INT when Ctrl+C is pressed at the prompt.
+
+Only external programs become jobs. A bundled command with `&` runs in the
+foreground, because it runs inside the shell itself.
+
+## select
+
+```sh
+select choice in build test clean; do
+  echo "you picked $choice"
+  break
+done
+```
+
 ## What FreSH does not support
 
-Worth knowing before you port a large script:
-
-- no arrays, no associative arrays
-- no `local`, functions share the global variables
-- no process substitution `<(...)`, no here documents `<<EOF`
-- no `select`, no `trap`, no job control beyond a background `&`
-- no `[[ ... ]]`, use `test` or `[ ... ]`
-- no brace expansion `{a,b}`, no `~user`, only bare `~`
-- `set -e` and `set -u` are not implemented, `set` only lists variables
-- `sed` handles `s/pattern/replacement/[g]`, it is not a regex engine
-- `awk`, `tar`, `curl` and friends are not bundled, install them if you need
-  them and FreSH will find them on `PATH`
+- `fg` and `bg`. Windows consoles have no job control to hand a process back
+  and forth, so a background job runs to completion or you `wait` for it.
+- `awk`, `tar`, `curl` and friends are not bundled. Install them, put them on
+  `PATH`, run `rehash`, and FreSH will find them.
+- Signals other than EXIT, INT and ERR in `trap`.
+- `${var/pattern/replacement}` and the other substring operators. Use `sed`.
 
 ## Debugging
 

@@ -23,7 +23,12 @@ than rejected, so check this page when a script behaves oddly.
 | `echo [args]` | `-n` `-e` `-E` | `-e` enables `\n \t \r \e \\` |
 | `export [NAME=value]` | | no arguments lists the environment |
 | `unset NAME` | | |
-| `set` | | lists variables, does not set options |
+| `set` | `-e` `-x` `-u` | no arguments lists variables |
+| `local name[=value]` | | function scoped variable |
+| `declare` / `typeset` | `-a` `-A` | declare an indexed or associative array |
+| `trap command EXIT\|INT\|ERR` | | `trap -` removes one |
+| `jobs` | | background jobs still running |
+| `wait [id]` | | wait for one job or all of them |
 | `alias [name=value]` | | no arguments lists aliases |
 | `unalias name` | | |
 | `source file` / `. file` | | runs in the current shell |
@@ -80,7 +85,7 @@ than rejected, so check this page when a script behaves oddly.
 
 | Command | Flags | Notes |
 | --- | --- | --- |
-| `grep pattern [files]` | `-i` `-v` `-n` `-c` `-l` | substring match, not regex |
+| `grep pattern [files]` | `-i` `-v` `-n` `-c` `-l` `-E` `-F` | basic expressions by default, `-E` extended, `-F` fixed |
 | `head [files]` | `-n N` `-N` | default 10 lines |
 | `tail [files]` | `-n N` `-N` | default 10 lines |
 | `wc [files]` | `-l` `-w` `-c` | all three when no flag |
@@ -88,7 +93,7 @@ than rejected, so check this page when a script behaves oddly.
 | `uniq [files]` | `-c` | collapses adjacent duplicates, sort first |
 | `cut [files]` | `-d C` `-f N` | one field |
 | `tr SET1 [SET2]` | `-d` | reads stdin |
-| `sed script [files]` | `-n` | `s/pattern/replacement/[g]` and `d` only |
+| `sed script [files]` | `-n` `-E` | `s/pattern/replacement/[g]` and `d`, with `&` and `\1` |
 | `nl [files]` | | numbers lines |
 | `tac [files]` | | reverses line order |
 | `rev [files]` | | reverses each line |

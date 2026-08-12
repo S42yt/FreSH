@@ -19,9 +19,13 @@ and brings its own unix commands.
 - quoting, `\` escapes, globs (`*.c`, `src/?.h`)
 - variables, `export`, `$?`, `$#`, `$@`, `$1`, `${VAR:-default}`, `${#VAR}`
 - command substitution `$(...)` and `` `...` ``, arithmetic `$((1 + 2))`
-- `if / elif / else / fi`, `while`, `until`, `for x in ...`, `case ... esac`,
-  `{ ...; }`, `!`
-- shell functions, `return`, `break`, `continue`, `shift`
+- `if / elif / else / fi`, `while`, `until`, `for`, `select`, `case`,
+  `{ ...; }`, `[[ ... ]]`, `!`
+- indexed and associative arrays, `declare -a`, `declare -A`
+- shell functions with `local` scope, `return`, `break`, `continue`, `shift`
+- here documents, process substitution `<(...)` and `>(...)`
+- brace expansion, `set -e`, `set -u`, `set -x`, `trap`, `jobs`, `wait`
+- regular expressions in `grep`, `sed` and `[[ str =~ re ]]`
 - `.frsh` and `.sh` scripts run natively, FreSH is the interpreter
 
 **zsh style line editing**
