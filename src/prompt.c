@@ -300,6 +300,14 @@ void prompt_build(StrBuf *out) {
     char *first_break = strstr(body.data, "\r\n");
     if (right.len == 0) {
         sb_puts(out, body.data);
+    } else if (!first_break) {
+        int column = term_width() - display_width(right.data) - 1;
+        if (column > display_width(body.data)) {
+            for (int i = 0; i < column; i++) sb_putc(out, ' ');
+            sb_puts(out, right.data);
+            sb_puts(out, "\r");
+        }
+        sb_puts(out, body.data);
     } else {
         size_t head_length = first_break ? (size_t)(first_break - body.data) : body.len;
         char *head = xstrndup(body.data, head_length);

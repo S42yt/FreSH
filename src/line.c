@@ -164,10 +164,8 @@ static void prompt_metrics(Editor *editor) {
     const char *last = editor->prompt.data;
     int rows = 0;
     for (const char *p = editor->prompt.data; *p; p++) {
-        if (*p == '\n') {
-            rows++;
-            last = p + 1;
-        }
+        if (*p == '\n') rows++;
+        if (*p == '\n' || *p == '\r') last = p + 1;
     }
     editor->prompt_rows = rows;
     editor->prompt_width = display_width(last);
