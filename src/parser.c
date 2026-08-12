@@ -157,6 +157,24 @@ static char *scan_word(const char **p, int *quoted, int *incomplete) {
     return sb_take(&sb);
 }
 
+static char *scan_process_substitution(const char **p, int *incomplete) {
+    StrBuf sb;
+    sb_init(&sb);
+    sb_putc(&sb, **p);
+    (*p)++;
+
+    int depth = 0;
+    while (**p) {
+        if (**p == '(') depth++;
+        if (**p == ')') depth--;
+        sb_putc(&sb, **p);
+        (*p)++;
+        if (depth == 0) break;
+    }
+    if (depth != 0) *incomplete = 1;
+    return sb_take(&sb);
+}
+
 static void tokenize(const char *src, TokenList *out, int *incomplete) {
     const char *p = src;
     const char *heredoc_resume = NULL;
@@ -249,23 +267,8 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
         }
 
         if ((*p == '<' || *p == '>') && p[1] == '(') {
-            StrBuf sb;
-            sb_init(&sb);
-            sb_putc(&sb, *p);
-            p++;
-
-            int depth = 0;
-            while (*p) {
-                if (*p == '(') depth++;
-                if (*p == ')') depth--;
-                sb_putc(&sb, *p);
-                p++;
-                if (depth == 0) break;
-            }
-            if (depth != 0) *incomplete = 1;
-
             Token t = {T_WORD, NULL, 0, 0, R_IN};
-            t.text = sb_take(&sb);
+            t.text = scan_process_substitution(&p, incomplete);
             token_push(out, t);
             continue;
         }
@@ -342,8 +345,12 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
                 }
             }
             while (*p == ' ' || *p == '\t') p++;
-            int quoted = 0;
-            t.text = scan_word(&p, &quoted, incomplete);
+            if ((*p == '<' || *p == '>') && p[1] == '(') {
+                t.text = scan_process_substitution(&p, incomplete);
+            } else {
+                int quoted = 0;
+                t.text = scan_word(&p, &quoted, incomplete);
+            }
             token_push(out, t);
             continue;
         }

@@ -340,7 +340,25 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
         }
 
         char native[PATH_BUF];
-        snprintf(native, sizeof(native), "%s", target);
+        if (strncmp(target, "<(", 2) == 0 && target[strlen(target) - 1] == ')') {
+            char directory[PATH_BUF];
+            char file[PATH_BUF];
+            if (GetTempPathA(sizeof(directory), directory) &&
+                GetTempFileNameA(directory, "frps", 0, file)) {
+                char *command = xstrndup(target + 2, strlen(target) - 3);
+                StrBuf script;
+                sb_init(&script);
+                sb_printf(&script, "%s > \"%s\"", command, file);
+                exec_text(script.data);
+                sb_free(&script);
+                free(command);
+                snprintf(native, sizeof(native), "%s", file);
+            } else {
+                snprintf(native, sizeof(native), "%s", target);
+            }
+        } else {
+            snprintf(native, sizeof(native), "%s", target);
+        }
         free(target);
         path_to_backslashes(native);
 
