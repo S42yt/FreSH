@@ -49,6 +49,8 @@ than rejected, so check this page when a script behaves oddly.
 | `set -e` / `set -x` | | stop on failure, trace commands |
 | `plugin [list\|load name...]` | | see [plugins](plugins.md) |
 | `gitinfo` | | repository, branch, user, clean or dirty |
+| `fresh` | | version, paths, active theme and plugins |
+| `fresh update` | `--check` | fetch and install the newest release from github |
 
 ## Files and directories
 

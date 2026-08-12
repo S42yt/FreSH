@@ -222,6 +222,30 @@ FreSH-Setup.exe /silent /user /default
 Uninstall from *Settings > Apps > FreSH*, or run `Uninstall-FreSH.exe` from the
 install folder.
 
+## Updating
+
+FreSH updates itself:
+
+```sh
+fresh update           # check github, download and install the newest release
+fresh update --check   # only tell me whether there is one
+fresh                  # version, where things live, active theme and plugins
+```
+
+Installing closes the shell, because Windows will not replace a running
+executable. Open a new one when it is done.
+
+## Claude Code
+
+[fresh-claude](https://github.com/S42yt/fresh-claude) is a Claude Code plugin
+that makes Claude run its shell commands through FreSH instead of PowerShell:
+
+```
+/plugin marketplace add S42yt/fresh-claude
+/plugin install fresh-claude@fresh-claude
+/fresh on
+```
+
 ## Usage outside the prompt
 
 ```sh
