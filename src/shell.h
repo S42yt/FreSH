@@ -25,6 +25,10 @@ typedef struct {
     int condition_depth;
     StrList params;
     char *script_name;
+    char *trap_exit;
+    char *trap_int;
+    char *trap_err;
+    int interrupted;
 } ShellState;
 
 extern ShellState shell;

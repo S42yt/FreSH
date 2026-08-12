@@ -243,6 +243,53 @@ static int builtin_declare(int argc, char **argv) {
     return 0;
 }
 
+static int builtin_trap(int argc, char **argv) {
+    if (argc < 2) {
+        if (shell.trap_exit) printf("trap '%s' EXIT\n", shell.trap_exit);
+        if (shell.trap_int) printf("trap '%s' INT\n", shell.trap_int);
+        if (shell.trap_err) printf("trap '%s' ERR\n", shell.trap_err);
+        return 0;
+    }
+
+    const char *command = argv[1];
+    int clearing = strcmp(command, "-") == 0 || !*command;
+
+    for (int i = 2; i < argc; i++) {
+        char **slot = NULL;
+        if (str_ieq(argv[i], "EXIT") || strcmp(argv[i], "0") == 0) slot = &shell.trap_exit;
+        else if (str_ieq(argv[i], "INT") || strcmp(argv[i], "2") == 0) slot = &shell.trap_int;
+        else if (str_ieq(argv[i], "ERR")) slot = &shell.trap_err;
+        else {
+            shell_error("trap: %s: unsupported signal, use EXIT, INT or ERR", argv[i]);
+            return 1;
+        }
+        free(*slot);
+        *slot = clearing ? NULL : xstrdup(command);
+    }
+    return 0;
+}
+
+static int builtin_jobs(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    StrList lines;
+    sl_init(&lines);
+    jobs_list(&lines);
+
+    for (size_t i = 0; i < lines.len; i++)
+        printf("  %s%s%s\n", style(S_DIM), lines.items[i], style(S_RESET));
+    sl_free(&lines);
+    return 0;
+}
+
+static int builtin_wait(int argc, char **argv) {
+    if (argc < 2) return jobs_wait_all();
+
+    int status = 0;
+    for (int i = 1; i < argc; i++) status = jobs_wait(atoi(argv[i]));
+    return status;
+}
+
 static int builtin_die(int argc, char **argv) {
     fflush(stdout);
     fprintf(stderr, "%s", style(S_ERROR));
@@ -845,6 +892,8 @@ static const Builtin BUILTINS[] = {
     {"read", builtin_read},         {"rehash", builtin_rehash},
     {"return", builtin_return},     {"set", builtin_set},
     {"shift", builtin_shift},       {"source", builtin_source},
+    {"trap", builtin_trap},         {"jobs", builtin_jobs},
+    {"wait", builtin_wait},
     {"test", builtin_test},         {"theme", builtin_theme},
     {"plugin", builtin_plugin},     {"true", builtin_true},
     {"type", builtin_type},         {"unalias", builtin_unalias},

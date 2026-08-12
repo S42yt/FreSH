@@ -431,6 +431,29 @@ static int run(const char *pattern, const char *text, RegexMatch *match) {
     return 0;
 }
 
+void regex_bre_to_ere(const char *bre, StrBuf *out) {
+    for (const char *p = bre; *p; p++) {
+        if (*p == '\\' && p[1]) {
+            char next = p[1];
+            if (strchr("(){}|+?", next)) {
+                sb_putc(out, next);
+                p++;
+                continue;
+            }
+            sb_putc(out, *p);
+            sb_putc(out, next);
+            p++;
+            continue;
+        }
+        if (strchr("(){}|+?", *p)) {
+            sb_putc(out, '\\');
+            sb_putc(out, *p);
+            continue;
+        }
+        sb_putc(out, *p);
+    }
+}
+
 int regex_search(const char *pattern, const char *text, RegexMatch *match) {
     if (!pattern || !text) return 0;
     return run(pattern, text, match);

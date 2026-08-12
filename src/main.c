@@ -177,9 +177,19 @@ void shell_init(int interactive) {
 }
 
 void shell_cleanup(void) {
+    if (shell.trap_exit) {
+        char *handler = shell.trap_exit;
+        shell.trap_exit = NULL;
+        shell.running = 1;
+        run_trap(handler);
+        free(handler);
+    }
+    jobs_cleanup();
     exec_cleanup();
     vars_cleanup();
     sl_free(&shell.params);
+    free(shell.trap_int);
+    free(shell.trap_err);
 }
 
 static int needs_more_input(const char *text) {

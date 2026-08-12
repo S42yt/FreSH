@@ -417,7 +417,7 @@ char *line_read(int continuation) {
         if (key == KEY_CTRL_C) {
             finish_line(&editor);
             term_write("^C\r\n");
-            result = xstrdup("");
+            result = xstrdup(shell.trap_int ? shell.trap_int : "");
             shell.last_status = 130;
             break;
         }

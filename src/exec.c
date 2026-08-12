@@ -549,8 +549,14 @@ static int run_program(const char *path, char **argv, int argc, IoSet *io, int b
         return 0;
     }
     if (background) {
-        printf("[background] %lu\n", GetProcessId(process));
-        CloseHandle(process);
+        StrBuf label;
+        sb_init(&label);
+        for (int i = 0; i < argc; i++) {
+            if (i > 0) sb_putc(&label, ' ');
+            sb_puts(&label, argv[i]);
+        }
+        job_add(process, label.data);
+        sb_free(&label);
         return 0;
     }
 
@@ -561,10 +567,73 @@ static int run_program(const char *path, char **argv, int argc, IoSet *io, int b
     return (int)exit_code;
 }
 
+typedef struct {
+    char path[PATH_BUF];
+    char *command;
+} Substitution;
+
+static int substitute_processes(StrList *words, Substitution *pending, int max) {
+    int count = 0;
+
+    for (size_t i = 0; i < words->len; i++) {
+        char *word = words->items[i];
+        int output = strncmp(word, ">(", 2) == 0;
+        int input = strncmp(word, "<(", 2) == 0;
+        if ((!input && !output) || count >= max) continue;
+
+        size_t length = strlen(word);
+        if (length < 3 || word[length - 1] != ')') continue;
+
+        char *command = xstrndup(word + 2, length - 3);
+        char directory[PATH_BUF];
+        char file[PATH_BUF];
+        if (!GetTempPathA(sizeof(directory), directory) ||
+            !GetTempFileNameA(directory, "frps", 0, file)) {
+            free(command);
+            continue;
+        }
+
+        if (input) {
+            StrBuf script;
+            sb_init(&script);
+            sb_printf(&script, "%s > \"%s\"", command, file);
+            exec_text(script.data);
+            sb_free(&script);
+            free(command);
+            command = NULL;
+        }
+
+        snprintf(pending[count].path, PATH_BUF, "%s", file);
+        pending[count].command = command;
+        count++;
+
+        free(words->items[i]);
+        words->items[i] = xstrdup(file);
+    }
+    return count;
+}
+
+static void finish_substitutions(Substitution *pending, int count) {
+    for (int i = 0; i < count; i++) {
+        if (pending[i].command) {
+            StrBuf script;
+            sb_init(&script);
+            sb_printf(&script, "%s < \"%s\"", pending[i].command, pending[i].path);
+            exec_text(script.data);
+            sb_free(&script);
+            free(pending[i].command);
+        }
+        DeleteFileA(pending[i].path);
+    }
+}
+
 static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) {
     StrList words;
     sl_init(&words);
     expand_words(&node->words, &words);
+
+    Substitution pending[8];
+    int substitutions = substitute_processes(&words, pending, 8);
 
     if (!apply_redirs(node->redirs, &io)) {
         sl_free(&words);
@@ -663,6 +732,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     sl_free(&saved_names);
     sl_free(&saved_values);
     sl_free(&words);
+    finish_substitutions(pending, substitutions);
     return status;
 }
 
@@ -816,6 +886,90 @@ static int exec_pipeline(Node *node, int background) {
 
     release_tracked(mark);
     return status;
+}
+
+typedef struct {
+    int id;
+    DWORD pid;
+    HANDLE process;
+    char *command;
+} Job;
+
+static Job jobs[MAX_STAGES];
+static int job_count = 0;
+static int next_job_id = 1;
+
+static void job_add(HANDLE process, const char *command) {
+    if (job_count >= MAX_STAGES) {
+        CloseHandle(process);
+        return;
+    }
+    jobs[job_count].id = next_job_id++;
+    jobs[job_count].pid = GetProcessId(process);
+    jobs[job_count].process = process;
+    jobs[job_count].command = xstrdup(command);
+    printf("[%d] %lu\n", jobs[job_count].id, jobs[job_count].pid);
+    job_count++;
+}
+
+static void job_remove(int index) {
+    CloseHandle(jobs[index].process);
+    free(jobs[index].command);
+    memmove(jobs + index, jobs + index + 1, (size_t)(job_count - index - 1) * sizeof(Job));
+    job_count--;
+}
+
+void jobs_list(StrList *out) {
+    for (int i = job_count - 1; i >= 0; i--) {
+        DWORD code = 0;
+        int running = GetExitCodeProcess(jobs[i].process, &code) && code == STILL_ACTIVE;
+        if (!running) {
+            job_remove(i);
+            continue;
+        }
+        StrBuf sb;
+        sb_init(&sb);
+        sb_printf(&sb, "[%d] %lu  running  %s", jobs[i].id, jobs[i].pid, jobs[i].command);
+        sl_push(out, sb_take(&sb));
+    }
+    sl_sort(out);
+}
+
+int jobs_wait(int id) {
+    for (int i = 0; i < job_count; i++) {
+        if (jobs[i].id != id && (int)jobs[i].pid != id) continue;
+        WaitForSingleObject(jobs[i].process, INFINITE);
+        DWORD code = 0;
+        GetExitCodeProcess(jobs[i].process, &code);
+        job_remove(i);
+        return (int)code;
+    }
+    return 127;
+}
+
+int jobs_wait_all(void) {
+    int status = 0;
+    while (job_count > 0) {
+        WaitForSingleObject(jobs[0].process, INFINITE);
+        DWORD code = 0;
+        GetExitCodeProcess(jobs[0].process, &code);
+        status = (int)code;
+        job_remove(0);
+    }
+    return status;
+}
+
+void jobs_cleanup(void) {
+    while (job_count > 0) job_remove(0);
+}
+
+void run_trap(const char *command) {
+    if (!command || !*command) return;
+    char *copy = xstrdup(command);
+    int saved = shell.last_status;
+    exec_text(copy);
+    shell.last_status = saved;
+    free(copy);
 }
 
 static int truthy(int status) {
@@ -1012,6 +1166,14 @@ int exec_node(Node *node) {
 
     release_tracked(mark);
     shell.last_status = status;
+
+    if (status != 0 && shell.condition_depth == 0 && shell.trap_err &&
+        (node->kind == N_SIMPLE || node->kind == N_PIPE)) {
+        char *handler = shell.trap_err;
+        shell.trap_err = NULL;
+        run_trap(handler);
+        shell.trap_err = handler;
+    }
 
     if (shell.errexit && status != 0 && shell.condition_depth == 0 &&
         (node->kind == N_SIMPLE || node->kind == N_PIPE))

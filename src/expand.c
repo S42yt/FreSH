@@ -342,6 +342,26 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
 
 static void expand_tilde(Expander *ex, const char **p) {
     const char *next = *p + 1;
+
+    if (isalnum((unsigned char)*next)) {
+        const char *end = next;
+        while (*end && *end != '/' && *end != '\\') end++;
+
+        char *user = xstrndup(next, (size_t)(end - next));
+        char home[PATH_BUF];
+        const char *base = getenv("SystemDrive");
+        snprintf(home, sizeof(home), "%s\\Users\\%s", base ? base : "C:", user);
+
+        if (path_is_dir(home)) {
+            path_to_slashes(home);
+            field_add(ex, home, strlen(home));
+            free(user);
+            *p = end;
+            return;
+        }
+        free(user);
+    }
+
     if (*next && *next != '/' && *next != '\\') {
         field_add(ex, "~", 1);
         (*p)++;

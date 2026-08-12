@@ -239,7 +239,12 @@ static int core_grep(int argc, char **argv) {
         shell_error("grep: usage: grep [-ivncl] pattern [file...]");
         return 2;
     }
-    const char *pattern = argv[index++];
+    const char *given = argv[index++];
+    StrBuf expression;
+    sb_init(&expression);
+    if (fixed || flag_set(argc, argv, 'E')) sb_puts(&expression, given);
+    else regex_bre_to_ere(given, &expression);
+    const char *pattern = expression.data;
     int multiple = argc - index > 1;
     int found_any = 0;
     int status = 0;
@@ -278,6 +283,7 @@ static int core_grep(int argc, char **argv) {
         index++;
     } while (index < argc);
 
+    sb_free(&expression);
     return status ? status : (found_any ? 0 : 1);
 }
 

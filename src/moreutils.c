@@ -163,13 +163,19 @@ static int more_sed(int argc, char **argv) {
             global = strchr(end + 1, 'g') != NULL;
         }
 
+        StrBuf expression;
+        sb_init(&expression);
+        if (flag_set(argc, argv, 'E') || flag_set(argc, argv, 'r')) sb_puts(&expression, pattern);
+        else regex_bre_to_ere(pattern, &expression);
+
         for (size_t i = 0; i < lines.len; i++) {
             StrBuf out;
             sb_init(&out);
-            int replaced = regex_replace(pattern, replacement, lines.items[i], global, &out);
+            int replaced = regex_replace(expression.data, replacement, lines.items[i], global, &out);
             if (!quiet || replaced) printf("%s\n", out.data);
             sb_free(&out);
         }
+        sb_free(&expression);
     } else if (script[0] == 'd') {
         sl_free(&lines);
         return 0;

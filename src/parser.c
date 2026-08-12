@@ -248,6 +248,28 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             p = digits;
         }
 
+        if ((*p == '<' || *p == '>') && p[1] == '(') {
+            StrBuf sb;
+            sb_init(&sb);
+            sb_putc(&sb, *p);
+            p++;
+
+            int depth = 0;
+            while (*p) {
+                if (*p == '(') depth++;
+                if (*p == ')') depth--;
+                sb_putc(&sb, *p);
+                p++;
+                if (depth == 0) break;
+            }
+            if (depth != 0) *incomplete = 1;
+
+            Token t = {T_WORD, NULL, 0, 0, R_IN};
+            t.text = sb_take(&sb);
+            token_push(out, t);
+            continue;
+        }
+
         if (*p == '<' && p[1] == '<') {
             Token t = {T_REDIR, NULL, 0, 0, R_HEREDOC};
             t.fd = 0;

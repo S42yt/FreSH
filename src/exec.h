@@ -31,4 +31,10 @@ void function_names(StrList *out);
 char *apply_aliases(const char *line);
 int pattern_match(const char *pattern, const char *text);
 
+void jobs_list(StrList *out);
+int jobs_wait(int id);
+int jobs_wait_all(void);
+void jobs_cleanup(void);
+void run_trap(const char *command);
+
 #endif
