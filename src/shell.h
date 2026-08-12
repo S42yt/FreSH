@@ -19,6 +19,9 @@ typedef struct {
     int continue_level;
     int returning;
     int depth;
+    int errexit;
+    int xtrace;
+    int condition_depth;
     StrList params;
     char *script_name;
 } ShellState;

@@ -43,8 +43,8 @@ static const char *DEFAULT_RC =
     "# ---- theme and plugins ------------------------------------------------\n"
     "\n"
     "# themes live in ~/.fresh/themes, run 'theme' to see them\n"
-    "# josh minimal classic powerline lambda full, or none to keep your own\n"
-    "FRESH_THEME=josh\n"
+    "# fresh minimal classic powerline lambda full, or none to keep your own\n"
+    "FRESH_THEME=fresh\n"
     "# plugins live in ~/.fresh/plugins, run 'plugin' to see them\n"
     "FRESH_PLUGINS=\"git dirs sys\"\n"
     "\n"
@@ -225,6 +225,7 @@ static void interactive_loop(void) {
         char *trimmed = str_trim(command.data);
         if (*trimmed) {
             history_add(trimmed);
+            history_save();
             exec_text(trimmed);
         }
         sb_free(&command);

@@ -224,6 +224,7 @@ static void editor_set_text(Editor *editor, const char *text) {
 }
 
 static void insert_text(Editor *editor, const char *text, size_t length) {
+    editor->history_index = -1;
     sb_reserve(&editor->buffer, length);
     memmove(editor->buffer.data + editor->cursor + length, editor->buffer.data + editor->cursor,
             editor->buffer.len - editor->cursor + 1);
@@ -234,6 +235,7 @@ static void insert_text(Editor *editor, const char *text, size_t length) {
 
 static void delete_range(Editor *editor, size_t from, size_t to) {
     if (to <= from) return;
+    editor->history_index = -1;
     memmove(editor->buffer.data + from, editor->buffer.data + to, editor->buffer.len - to + 1);
     editor->buffer.len -= to - from;
     if (editor->cursor > editor->buffer.len) editor->cursor = editor->buffer.len;

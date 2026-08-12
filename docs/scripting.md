@@ -253,6 +253,87 @@ git tag -a "$tag" -m "$tag" && git push origin "$tag"
 echo "pushed $tag at $(date +%H:%M)"
 ```
 
+## FreSH extensions
+
+Everything above is bash syntax and runs in bash unchanged. These are the
+parts FreSH adds, and the reason a `.frsh` script is usually shorter than the
+`.sh` that does the same job.
+
+### Stop on the first failure
+
+```sh
+set -e          # abort the script when a command fails
+set -x          # print each command before running it, on stderr
+set +e          # back off again
+```
+
+Conditions are exempt, exactly as in bash: the left of `&&` and `||`, the
+test in `if`, `while` and `until`, and anything after `!` may fail without
+ending the script. So `grep -q x file || echo missing` is safe under `set -e`.
+
+### Failing on purpose
+
+```sh
+die "no compiler found"          # message in red, script exits with 1
+```
+
+`die` replaces the `echo ... >&2; exit 1` pair that appears in every build
+script.
+
+### Checking a command exists
+
+```sh
+have gcc || die "install a compiler"
+have git docker node && say "all present"
+```
+
+`have` succeeds when every name given is a function, alias, builtin, bundled
+command or program on `PATH`. It prints nothing, so there is no
+`> /dev/null 2>&1` to write, which on Windows would be `> nul 2>&1` anyway.
+
+### Saying things
+
+```sh
+say "compiling"      # a dim bullet and your message
+ok "done"            # a green tick
+warn "no tests"      # a yellow bang
+```
+
+These write to stdout with colour when the terminal supports it and plain
+text when the output is redirected, so a build log stays readable.
+
+### Side by side
+
+The bash way:
+
+```sh
+GREEN='\033[32m'
+RESET='\033[0m'
+info() { printf "${GREEN}%s${RESET}\n" "$1"; }
+
+if ! command -v gcc > /dev/null 2>&1; then
+  echo "gcc not found" >&2
+  exit 1
+fi
+
+info "compiling"
+gcc -O2 -o build/app src/*.c || exit 1
+info "done"
+```
+
+The same thing in FreSH:
+
+```sh
+set -e
+have gcc || die "gcc not found"
+say "compiling"
+gcc -O2 -o build/app src/*.c
+ok "done"
+```
+
+`build.frsh` in the repository root builds the whole project, installer
+included, and is worth comparing with `build.sh` next to it.
+
 ## What FreSH does not support
 
 Worth knowing before you port a large script:

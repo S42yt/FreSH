@@ -157,14 +157,67 @@ static int builtin_unset(int argc, char **argv) {
 }
 
 static int builtin_set(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-    StrList list;
-    sl_init(&list);
-    vars_list(&list);
-    for (size_t i = 0; i < list.len; i++) printf("%s\n", list.items[i]);
-    sl_free(&list);
+    if (argc < 2) {
+        StrList list;
+        sl_init(&list);
+        vars_list(&list);
+        for (size_t i = 0; i < list.len; i++) printf("%s\n", list.items[i]);
+        sl_free(&list);
+        return 0;
+    }
+
+    for (int i = 1; i < argc; i++) {
+        char sign = argv[i][0];
+        if (sign != '-' && sign != '+') continue;
+        for (const char *flag = argv[i] + 1; *flag; flag++) {
+            if (*flag == 'e') shell.errexit = sign == '-';
+            else if (*flag == 'x') shell.xtrace = sign == '-';
+        }
+    }
     return 0;
+}
+
+static int builtin_die(int argc, char **argv) {
+    fflush(stdout);
+    fprintf(stderr, "%s", style(S_ERROR));
+    for (int i = 1; i < argc; i++) fprintf(stderr, "%s%s", i > 1 ? " " : "", argv[i]);
+    if (argc < 2) fprintf(stderr, "aborted");
+    fprintf(stderr, "%s\n", style(S_RESET));
+    fflush(stderr);
+
+    shell.running = 0;
+    return 1;
+}
+
+static int builtin_have(int argc, char **argv) {
+    if (argc < 2) return 1;
+    for (int i = 1; i < argc; i++) {
+        if (builtin_lookup(argv[i]) || coreutil_lookup(argv[i]) || function_defined(argv[i]) ||
+            alias_get(argv[i]))
+            continue;
+        char path[PATH_BUF];
+        if (!resolve_command(argv[i], path, sizeof(path))) return 1;
+    }
+    return 0;
+}
+
+static int print_styled(int argc, char **argv, const char *marker, const char *colour) {
+    printf("%s%s%s ", style(colour), marker, style(S_RESET));
+    for (int i = 1; i < argc; i++) printf("%s%s", i > 1 ? " " : "", argv[i]);
+    printf("\n");
+    return 0;
+}
+
+static int builtin_say(int argc, char **argv) {
+    return print_styled(argc, argv, "\xe2\x80\xa2", S_LABEL);
+}
+
+static int builtin_ok(int argc, char **argv) {
+    return print_styled(argc, argv, "\xe2\x9c\x93", S_ACCENT);
+}
+
+static int builtin_warn(int argc, char **argv) {
+    return print_styled(argc, argv, "!", S_WARN);
 }
 
 static int builtin_alias(int argc, char **argv) {
@@ -710,8 +763,11 @@ typedef struct {
 static const Builtin BUILTINS[] = {
     {"alias", builtin_alias},       {"break", builtin_break},
     {"cd", builtin_cd},             {"clear", builtin_clear},
-    {"continue", builtin_continue}, {"echo", builtin_echo},
-    {"eval", builtin_eval},         {"exit", builtin_exit},
+    {"continue", builtin_continue}, {"die", builtin_die},
+    {"echo", builtin_echo},         {"eval", builtin_eval},
+    {"exit", builtin_exit},         {"have", builtin_have},
+    {"ok", builtin_ok},             {"say", builtin_say},
+    {"warn", builtin_warn},
     {"export", builtin_export},     {"false", builtin_false},
     {"gitinfo", builtin_gitinfo},   {"help", builtin_help},
     {"history", builtin_history},   {"ls", builtin_ls},

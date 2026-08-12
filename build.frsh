@@ -1,0 +1,32 @@
+#!/usr/bin/env fresh
+# Build FreSH with FreSH. The bash version of this is build.sh.
+
+set -e
+
+CC=${CC:-gcc}
+WINDRES=${WINDRES:-windres}
+CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
+
+have $CC || die "$CC not found, install MinGW-w64 or set CC"
+have $WINDRES || die "$WINDRES not found, it ships with MinGW-w64"
+
+mkdir -p build
+
+say "icon"
+$CC -O2 -o build/makeicon.exe tools/makeicon.c -lm
+./build/makeicon.exe build/fresh.ico
+cp build/fresh.ico src/fresh.ico
+cp build/fresh.ico installation/fresh.ico
+
+say "shell"
+$WINDRES src/fresh.rc -O coff -o build/fresh.res
+$CC $CFLAGS src/*.c build/fresh.res -o build/FreSH.exe -ladvapi32 -lshell32 -lole32
+ok "build/FreSH.exe"
+
+say "installer"
+$CC -O2 -o build/bin2c.exe tools/bin2c.c
+./build/bin2c.exe build/FreSH.exe installation/payload.h FRESH_PAYLOAD
+$WINDRES installation/setup.rc -O coff -o build/setup.res
+$CC $CFLAGS installation/*.c build/setup.res -o build/FreSH-Setup.exe \
+    -lole32 -luuid -lshell32 -ladvapi32 -luser32
+ok "build/FreSH-Setup.exe"

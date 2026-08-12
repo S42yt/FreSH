@@ -536,6 +536,14 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     char **argv = argv_from_list(&args);
     int status = 0;
 
+    if (shell.xtrace) {
+        fflush(stdout);
+        fprintf(stderr, "+ ");
+        for (int i = 0; i < argc; i++) fprintf(stderr, "%s%s", i > 0 ? " " : "", argv[i]);
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    }
+
     Function *f = function_find(argv[0]);
     BuiltinFn builtin = f ? NULL : builtin_lookup(argv[0]);
 
@@ -804,6 +812,18 @@ int exec_node(Node *node) {
 
     release_tracked(mark);
     shell.last_status = status;
+
+    if (shell.errexit && status != 0 && shell.condition_depth == 0 &&
+        (node->kind == N_SIMPLE || node->kind == N_PIPE))
+        shell.running = 0;
+
+    return status;
+}
+
+static int exec_condition(Node *node) {
+    shell.condition_depth++;
+    int status = exec_node(node);
+    shell.condition_depth--;
     return status;
 }
 
@@ -829,23 +849,23 @@ static int exec_switch(Node *node) {
         break;
 
     case N_AND:
-        status = exec_node(node->left);
+        status = exec_condition(node->left);
         shell.last_status = status;
         if (truthy(status)) status = exec_node(node->right);
         break;
 
     case N_OR:
-        status = exec_node(node->left);
+        status = exec_condition(node->left);
         shell.last_status = status;
         if (!truthy(status)) status = exec_node(node->right);
         break;
 
     case N_NOT:
-        status = exec_node(node->right) == 0 ? 1 : 0;
+        status = exec_condition(node->right) == 0 ? 1 : 0;
         break;
 
     case N_IF:
-        status = exec_node(node->left);
+        status = exec_condition(node->left);
         shell.last_status = status;
         if (truthy(status)) status = exec_node(node->right);
         else if (node->extra) status = exec_node(node->extra);
@@ -855,7 +875,7 @@ static int exec_switch(Node *node) {
     case N_WHILE:
     case N_UNTIL:
         while (shell.running && !shell.returning) {
-            int condition = exec_node(node->left);
+            int condition = exec_condition(node->left);
             shell.last_status = condition;
             int keep_going = node->kind == N_WHILE ? truthy(condition) : !truthy(condition);
             if (!keep_going) break;

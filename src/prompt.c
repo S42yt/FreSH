@@ -146,10 +146,36 @@ void prompt_expand(const char *format, StrBuf *out) {
     for (const char *p = format; *p; p++) {
         if (*p == '\\' && p[1]) {
             p++;
-            if (*p == 'n') sb_puts(out, "\r\n");
-            else if (*p == 't') sb_putc(out, '\t');
-            else if (*p == 'e') sb_putc(out, '\x1b');
-            else sb_putc(out, *p);
+            if (*p == 'n') {
+                sb_puts(out, "\r\n");
+            } else if (*p == 't') {
+                sb_putc(out, '\t');
+            } else if (*p == 'e') {
+                sb_putc(out, '\x1b');
+            } else if (*p == 'u' && isxdigit((unsigned char)p[1])) {
+                unsigned int code = 0;
+                int digits = 0;
+                while (digits < 4 && isxdigit((unsigned char)p[1])) {
+                    char digit = *++p;
+                    code = code * 16 +
+                           (unsigned int)(isdigit((unsigned char)digit)
+                                              ? digit - '0'
+                                              : tolower((unsigned char)digit) - 'a' + 10);
+                    digits++;
+                }
+                if (code < 0x80) {
+                    sb_putc(out, (char)code);
+                } else if (code < 0x800) {
+                    sb_putc(out, (char)(0xc0 | (code >> 6)));
+                    sb_putc(out, (char)(0x80 | (code & 0x3f)));
+                } else {
+                    sb_putc(out, (char)(0xe0 | (code >> 12)));
+                    sb_putc(out, (char)(0x80 | ((code >> 6) & 0x3f)));
+                    sb_putc(out, (char)(0x80 | (code & 0x3f)));
+                }
+            } else {
+                sb_putc(out, *p);
+            }
             continue;
         }
         if (*p != '%') {

@@ -23,8 +23,8 @@ typedef struct {
 } BundledFile;
 
 static const BundledFile THEMES[] = {
-    {"josh",
-     "# josh, the FreSH default. Two lines, lambda, git branch.\n"
+    {"fresh",
+     "# fresh, the default. Two lines, lambda, git branch.\n"
      "FRESH_PROMPT='%F{green}%n%f %F{cyan}%~%f%g\\n%F{brightwhite}%#%f '\n"
      "FRESH_RPROMPT='%e'\n"},
 
@@ -39,12 +39,12 @@ static const BundledFile THEMES[] = {
      "FRESH_RPROMPT=''\n"},
 
     {"powerline",
-     "# Block segments. Needs a font with powerline glyphs.\n"
-     "FRESH_PROMPT='%K{blue}%F{black} %~ %k%f%F{blue}\\ue0b0%f%g\\n%F{brightwhite}%#%f '\n"
-     "FRESH_RPROMPT='%t'\n"},
+     "# Block segments. Needs a font with powerline glyphs, such as Cascadia Code PL.\n"
+     "FRESH_PROMPT='%K{blue}%F{black} %~ %f%k%F{blue}\\ue0b0%f%g\\n%F{brightwhite}%#%f '\n"
+     "FRESH_RPROMPT='%F{grey}%t%f'\n"},
 
     {"lambda",
-     "# Just the lambda, and the branch when there is one.\n"
+     "# Just the lambda, path and branch on the right.\n"
      "FRESH_PROMPT='%F{magenta}%#%f '\n"
      "FRESH_RPROMPT='%F{grey}%~%f%g'\n"},
 
@@ -114,13 +114,13 @@ static char *bundle_directory(const char *kind) {
     return directory;
 }
 
-static void write_missing(const char *directory, const BundledFile *files, size_t count,
-                          const char *extension) {
+static void write_bundle(const char *directory, const BundledFile *files, size_t count,
+                         const char *extension, int overwrite) {
     for (size_t i = 0; i < count; i++) {
         char name[PATH_BUF];
         snprintf(name, sizeof(name), "%s%s", files[i].name, extension);
         char *target = path_join(directory, name);
-        if (!path_is_file(target)) {
+        if (overwrite || !path_is_file(target)) {
             FILE *f = fopen(target, "wb");
             if (f) {
                 fputs(files[i].body, f);
@@ -131,17 +131,21 @@ static void write_missing(const char *directory, const BundledFile *files, size_
     }
 }
 
-void fresh_home_init(void) {
+static void install_bundles(int overwrite) {
     char *themes = bundle_directory("themes");
     char *plugins = bundle_directory("plugins");
 
     path_mkdirs(themes);
     path_mkdirs(plugins);
-    write_missing(themes, THEMES, sizeof(THEMES) / sizeof(THEMES[0]), ".theme");
-    write_missing(plugins, PLUGINS, sizeof(PLUGINS) / sizeof(PLUGINS[0]), ".plugin");
+    write_bundle(themes, THEMES, sizeof(THEMES) / sizeof(THEMES[0]), ".theme", overwrite);
+    write_bundle(plugins, PLUGINS, sizeof(PLUGINS) / sizeof(PLUGINS[0]), ".plugin", overwrite);
 
     free(themes);
     free(plugins);
+}
+
+void fresh_home_init(void) {
+    install_bundles(0);
 }
 
 static int source_bundle(const char *kind, const char *name, const char *extension) {
@@ -159,7 +163,7 @@ static int source_bundle(const char *kind, const char *name, const char *extensi
 
 void theme_load_configured(void) {
     const char *name = var_get("FRESH_THEME");
-    if (!name || !*name) name = "josh";
+    if (!name || !*name) name = "fresh";
     if (str_ieq(name, "none")) return;
     if (!source_bundle("themes", name, ".theme"))
         shell_error("theme %s not found in ~/.fresh/themes", name);
@@ -214,8 +218,14 @@ int builtin_theme(int argc, char **argv) {
     const char *current = var_get("FRESH_THEME");
     if (argc < 2) {
         printf("  %sthemes%s\n", style(S_LABEL), style(S_RESET));
-        list_bundle("themes", ".theme", current ? current : "josh");
+        list_bundle("themes", ".theme", current ? current : "fresh");
         printf("  %sset FRESH_THEME in ~/.freshrc to keep one%s\n", style(S_DIM), style(S_RESET));
+        return 0;
+    }
+
+    if (strcmp(argv[1], "reset") == 0) {
+        install_bundles(1);
+        printf("  %sbundled themes and plugins rewritten%s\n", style(S_DIM), style(S_RESET));
         return 0;
     }
 
