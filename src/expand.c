@@ -195,7 +195,7 @@ static char *brace_expand(const char *body) {
         return xstrdup(value ? value : "");
     }
 
-    char *name = xstrndup(body, (size_t)(colon - body));
+    char *var_name = xstrndup(body, (size_t)(colon - body));
     const char *rest = colon;
     int has_colon = 0;
     if (*rest == ':') {
@@ -203,7 +203,7 @@ static char *brace_expand(const char *body) {
         rest++;
     }
     char op = *rest ? *rest++ : '\0';
-    const char *value = var_get(name);
+    const char *value = var_get(var_name);
     int empty = !value || (has_colon && !*value);
 
     char *result = NULL;
@@ -214,7 +214,7 @@ static char *brace_expand(const char *body) {
     } else if (op == '=') {
         if (empty) {
             char *fallback = expand_single(rest);
-            var_set(name, fallback);
+            var_set(var_name, fallback);
             result = fallback;
         } else {
             result = xstrdup(value);
@@ -222,7 +222,7 @@ static char *brace_expand(const char *body) {
     } else {
         result = xstrdup(value ? value : "");
     }
-    free(name);
+    free(var_name);
     return result;
 }
 
