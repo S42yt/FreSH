@@ -17,6 +17,7 @@
 
 #include "exec.h"
 #include "moreutils.h"
+#include "regex.h"
 #include "shell.h"
 #include "util.h"
 #include "vars.h"
@@ -204,13 +205,25 @@ static int core_wc(int argc, char **argv) {
     return status;
 }
 
-static int line_matches(const char *line, const char *pattern, int ignore_case) {
-    if (!ignore_case) return strstr(line, pattern) != NULL;
-    size_t pattern_length = strlen(pattern);
-    for (const char *p = line; *p; p++) {
-        if (_strnicmp(p, pattern, pattern_length) == 0) return 1;
+static int line_matches(const char *line, const char *pattern, int ignore_case, int fixed) {
+    if (fixed) {
+        if (!ignore_case) return strstr(line, pattern) != NULL;
+        size_t pattern_length = strlen(pattern);
+        for (const char *p = line; *p; p++) {
+            if (_strnicmp(p, pattern, pattern_length) == 0) return 1;
+        }
+        return 0;
     }
-    return 0;
+
+    if (!ignore_case) return regex_search(pattern, line, NULL);
+
+    char lowered_line[LINE_MAX_LEN];
+    char lowered_pattern[LINE_MAX_LEN];
+    snprintf(lowered_line, sizeof(lowered_line), "%s", line);
+    snprintf(lowered_pattern, sizeof(lowered_pattern), "%s", pattern);
+    for (char *p = lowered_line; *p; p++) *p = (char)tolower((unsigned char)*p);
+    for (char *p = lowered_pattern; *p; p++) *p = (char)tolower((unsigned char)*p);
+    return regex_search(lowered_pattern, lowered_line, NULL);
 }
 
 static int core_grep(int argc, char **argv) {
@@ -219,6 +232,7 @@ static int core_grep(int argc, char **argv) {
     int numbered = flag_set(argc, argv, 'n');
     int count_only = flag_set(argc, argv, 'c');
     int list_files = flag_set(argc, argv, 'l');
+    int fixed = flag_set(argc, argv, 'F');
 
     int index = first_operand(argc, argv);
     if (index >= argc) {
@@ -244,7 +258,7 @@ static int core_grep(int argc, char **argv) {
         while (fgets(line, sizeof(line), f)) {
             number++;
             strip_newline(line);
-            int matched = line_matches(line, pattern, ignore_case);
+            int matched = line_matches(line, pattern, ignore_case, fixed);
             if (invert) matched = !matched;
             if (!matched) continue;
             matches++;

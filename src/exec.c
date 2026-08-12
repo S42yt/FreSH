@@ -19,6 +19,7 @@
 #include "coreutils.h"
 #include "expand.h"
 #include "foreign.h"
+#include "regex.h"
 #include "shell.h"
 #include "vars.h"
 
@@ -303,6 +304,28 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
 
     for (Redir *r = redirs; r; r = r->next) {
+        if (r->type == R_HEREDOC || r->type == R_HEREDOC_RAW) {
+            char directory[PATH_BUF];
+            char file[PATH_BUF];
+            if (!GetTempPathA(sizeof(directory), directory)) return 0;
+            if (!GetTempFileNameA(directory, "frhd", 0, file)) return 0;
+
+            char *body = r->type == R_HEREDOC ? expand_heredoc(r->target) : xstrdup(r->target);
+            FILE *f = fopen(file, "wb");
+            if (f) {
+                fputs(body, f);
+                fclose(f);
+            }
+            free(body);
+
+            HANDLE handle = CreateFileA(file, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                                        OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY, NULL);
+            if (handle == INVALID_HANDLE_VALUE) return 0;
+            track_handle(handle);
+            io->in = handle;
+            continue;
+        }
+
         char *target = expand_single(r->target);
 
         if (r->type == R_DUP) {
@@ -443,9 +466,11 @@ static int call_function(Function *f, const StrList *args) {
     sl_init(&shell.params);
     for (size_t i = 0; i < args->len; i++) sl_push_copy(&shell.params, args->items[i]);
 
+    scope_push();
     shell.depth++;
     int status = exec_node(f->body);
     shell.depth--;
+    scope_pop();
     if (shell.returning) {
         shell.returning = 0;
         status = shell.last_status;
@@ -757,6 +782,140 @@ static int truthy(int status) {
     return status == 0;
 }
 
+typedef struct {
+    StrList words;
+    size_t pos;
+} Bracket;
+
+static int bracket_or(Bracket *b);
+
+static const char *bracket_peek(Bracket *b) {
+    return b->pos < b->words.len ? b->words.items[b->pos] : NULL;
+}
+
+static int file_check(char flag, const char *path) {
+    DWORD attributes = GetFileAttributesA(path);
+    int exists = attributes != INVALID_FILE_ATTRIBUTES;
+
+    switch (flag) {
+    case 'e': return exists;
+    case 'f': return exists && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+    case 'd': return exists && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+    case 'r':
+    case 'x': return exists;
+    case 'w': return exists && !(attributes & FILE_ATTRIBUTE_READONLY);
+    case 's': {
+        WIN32_FILE_ATTRIBUTE_DATA info;
+        if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) return 0;
+        return info.nFileSizeLow > 0 || info.nFileSizeHigh > 0;
+    }
+    default: return 0;
+    }
+}
+
+static int bracket_primary(Bracket *b) {
+    const char *word = bracket_peek(b);
+    if (!word) return 0;
+
+    if (strcmp(word, "!") == 0) {
+        b->pos++;
+        return !bracket_primary(b);
+    }
+    if (strcmp(word, "(") == 0) {
+        b->pos++;
+        int value = bracket_or(b);
+        if (bracket_peek(b) && strcmp(bracket_peek(b), ")") == 0) b->pos++;
+        return value;
+    }
+
+    if (word[0] == '-' && word[1] && !word[2] && strchr("efdrwxsznv", word[1])) {
+        char flag = word[1];
+        b->pos++;
+        const char *operand = bracket_peek(b);
+        if (!operand) return 0;
+        b->pos++;
+
+        if (flag == 'z') return *operand == '\0';
+        if (flag == 'n') return *operand != '\0';
+        if (flag == 'v') return var_exists(operand);
+        return file_check(flag, operand);
+    }
+
+    b->pos++;
+    const char *op = bracket_peek(b);
+    if (!op) return *word != '\0';
+
+    if (strcmp(op, "&&") == 0 || strcmp(op, "||") == 0 || strcmp(op, ")") == 0)
+        return *word != '\0';
+
+    b->pos++;
+    const char *right = bracket_peek(b);
+    if (!right) return *word != '\0';
+    b->pos++;
+
+    if (strcmp(op, "=") == 0 || strcmp(op, "==") == 0) return pattern_match(right, word);
+    if (strcmp(op, "!=") == 0) return !pattern_match(right, word);
+    if (strcmp(op, "=~") == 0) return regex_search(right, word, NULL);
+    if (strcmp(op, "<") == 0) return strcmp(word, right) < 0;
+    if (strcmp(op, ">") == 0) return strcmp(word, right) > 0;
+    if (strcmp(op, "-eq") == 0) return atol(word) == atol(right);
+    if (strcmp(op, "-ne") == 0) return atol(word) != atol(right);
+    if (strcmp(op, "-lt") == 0) return atol(word) < atol(right);
+    if (strcmp(op, "-le") == 0) return atol(word) <= atol(right);
+    if (strcmp(op, "-gt") == 0) return atol(word) > atol(right);
+    if (strcmp(op, "-ge") == 0) return atol(word) >= atol(right);
+    if (strcmp(op, "-nt") == 0 || strcmp(op, "-ot") == 0) {
+        WIN32_FILE_ATTRIBUTE_DATA left_info;
+        WIN32_FILE_ATTRIBUTE_DATA right_info;
+        if (!GetFileAttributesExA(word, GetFileExInfoStandard, &left_info)) return 0;
+        if (!GetFileAttributesExA(right, GetFileExInfoStandard, &right_info)) return 0;
+        LONG compared = CompareFileTime(&left_info.ftLastWriteTime, &right_info.ftLastWriteTime);
+        return strcmp(op, "-nt") == 0 ? compared > 0 : compared < 0;
+    }
+    return *word != '\0';
+}
+
+static int bracket_and(Bracket *b) {
+    int value = bracket_primary(b);
+    while (bracket_peek(b) && strcmp(bracket_peek(b), "&&") == 0) {
+        b->pos++;
+        int right = bracket_primary(b);
+        value = value && right;
+    }
+    return value;
+}
+
+static int bracket_or(Bracket *b) {
+    int value = bracket_and(b);
+    while (bracket_peek(b) && strcmp(bracket_peek(b), "||") == 0) {
+        b->pos++;
+        int right = bracket_and(b);
+        value = value || right;
+    }
+    return value;
+}
+
+static int evaluate_bracket(const StrList *words) {
+    Bracket b;
+    sl_init(&b.words);
+    b.pos = 0;
+
+    for (size_t i = 0; i < words->len; i++) {
+        const char *word = words->items[i];
+        if (strcmp(word, "&&") == 0 || strcmp(word, "||") == 0 || strcmp(word, "(") == 0 ||
+            strcmp(word, ")") == 0 || strcmp(word, "!") == 0) {
+            sl_push_copy(&b.words, word);
+            continue;
+        }
+        char *expanded = expand_single(word);
+        sl_push(&b.words, expanded);
+    }
+
+    int value = bracket_or(&b);
+    sl_free(&b.words);
+    return value ? 0 : 1;
+}
+
 int pattern_match(const char *pattern, const char *text) {
     while (*pattern) {
         if (*pattern == '*') {
@@ -926,6 +1085,60 @@ static int exec_switch(Node *node) {
 
     case N_CASE_ITEM:
         status = exec_node(node->right);
+        break;
+
+    case N_ASSIGN_ARRAY: {
+        StrList values;
+        sl_init(&values);
+        expand_words(&node->words, &values);
+
+        size_t length = strlen(node->name);
+        if (length > 0 && node->name[length - 1] == '+') {
+            char *name = xstrndup(node->name, length - 1);
+            for (size_t i = 0; i < values.len; i++) var_append(name, values.items[i]);
+            free(name);
+        } else {
+            VarKind kind = var_kind(node->name) == VAR_ASSOC ? VAR_ASSOC : VAR_INDEXED;
+            var_set_array(node->name, &values, kind);
+        }
+        sl_free(&values);
+        break;
+    }
+
+    case N_SELECT: {
+        StrList values;
+        sl_init(&values);
+        expand_words(&node->words, &values);
+
+        while (shell.running && !shell.returning) {
+            for (size_t i = 0; i < values.len; i++)
+                printf("%2zu) %s\n", i + 1, values.items[i]);
+            printf("#? ");
+            fflush(stdout);
+
+            char line[256];
+            if (!fgets(line, sizeof(line), stdin)) break;
+            line[strcspn(line, "\r\n")] = '\0';
+            if (!*line) continue;
+
+            int choice = atoi(line);
+            if (choice < 1 || (size_t)choice > values.len) continue;
+            var_set(node->name, values.items[choice - 1]);
+            var_set("REPLY", line);
+
+            status = exec_node(node->right);
+            if (shell.continue_level) shell.continue_level--;
+            if (shell.break_level) {
+                shell.break_level--;
+                break;
+            }
+        }
+        sl_free(&values);
+        break;
+    }
+
+    case N_TEST:
+        status = evaluate_bracket(&node->words);
         break;
 
     case N_FUNC:

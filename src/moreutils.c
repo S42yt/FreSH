@@ -20,6 +20,7 @@
 
 #include "exec.h"
 #include "expand.h"
+#include "regex.h"
 #include "shell.h"
 #include "style.h"
 #include "util.h"
@@ -165,7 +166,7 @@ static int more_sed(int argc, char **argv) {
         for (size_t i = 0; i < lines.len; i++) {
             StrBuf out;
             sb_init(&out);
-            int replaced = replace_once(lines.items[i], pattern, replacement, global, &out);
+            int replaced = regex_replace(pattern, replacement, lines.items[i], global, &out);
             if (!quiet || replaced) printf("%s\n", out.data);
             sb_free(&out);
         }

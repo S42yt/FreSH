@@ -13,7 +13,9 @@ typedef enum {
     R_IN,
     R_OUT,
     R_APPEND,
-    R_DUP
+    R_DUP,
+    R_HEREDOC,
+    R_HEREDOC_RAW
 } RedirType;
 
 typedef struct Redir {
@@ -37,7 +39,10 @@ typedef enum {
     N_CASE,
     N_CASE_ITEM,
     N_GROUP,
-    N_FUNC
+    N_FUNC,
+    N_ASSIGN_ARRAY,
+    N_SELECT,
+    N_TEST
 } NodeKind;
 
 typedef struct Node {

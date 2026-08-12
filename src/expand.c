@@ -108,7 +108,75 @@ static char *special_value(char c) {
     return sb_take(&sb);
 }
 
+static int split_subscript(const char *body, char *name, size_t name_size, char *index,
+                           size_t index_size) {
+    const char *open = strchr(body, '[');
+    size_t length = strlen(body);
+    if (!open || length == 0 || body[length - 1] != ']') return 0;
+
+    size_t name_length = (size_t)(open - body);
+    if (name_length == 0 || name_length >= name_size) return 0;
+    memcpy(name, body, name_length);
+    name[name_length] = '\0';
+
+    size_t index_length = length - name_length - 2;
+    if (index_length >= index_size) return 0;
+    memcpy(index, open + 1, index_length);
+    index[index_length] = '\0';
+    return 1;
+}
+
+static int expand_array_body(const char *body, StrList *out) {
+    char name[128];
+    char index[128];
+    const char *source = body;
+    int keys_wanted = 0;
+
+    if (*source == '!') {
+        keys_wanted = 1;
+        source++;
+    }
+    if (!split_subscript(source, name, sizeof(name), index, sizeof(index))) return 0;
+    if (strcmp(index, "@") != 0 && strcmp(index, "*") != 0) return 0;
+
+    if (keys_wanted) var_keys(name, out);
+    else var_values(name, out);
+    return 1;
+}
+
 static char *brace_expand(const char *body) {
+    char name[128];
+    char index[128];
+
+    if (*body == '#' && split_subscript(body + 1, name, sizeof(name), index, sizeof(index)) &&
+        (strcmp(index, "@") == 0 || strcmp(index, "*") == 0)) {
+        StrBuf sb;
+        sb_init(&sb);
+        sb_printf(&sb, "%d", var_count(name));
+        return sb_take(&sb);
+    }
+
+    if (split_subscript(body, name, sizeof(name), index, sizeof(index))) {
+        if (strcmp(index, "@") == 0 || strcmp(index, "*") == 0) {
+            StrList values;
+            sl_init(&values);
+            var_values(name, &values);
+
+            StrBuf sb;
+            sb_init(&sb);
+            for (size_t i = 0; i < values.len; i++) {
+                if (i > 0) sb_putc(&sb, ' ');
+                sb_puts(&sb, values.items[i]);
+            }
+            sl_free(&values);
+            return sb_take(&sb);
+        }
+        char *resolved = expand_single(index);
+        const char *value = var_get_element(name, resolved);
+        free(resolved);
+        return xstrdup(value ? value : "");
+    }
+
     if (*body == '#') {
         const char *name = body + 1;
         const char *value = var_get(name);
@@ -215,6 +283,22 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         StrBuf inner;
         sb_init(&inner);
         *p = scan_balanced(*p, '{', '}', &inner);
+
+        StrList elements;
+        sl_init(&elements);
+        if (expand_array_body(inner.data, &elements)) {
+            for (size_t i = 0; i < elements.len; i++) {
+                if (i > 0) field_flush(ex);
+                field_add(ex, elements.items[i], strlen(elements.items[i]));
+                if (in_quotes) ex->quoted = 1;
+            }
+            if (elements.len == 0 && in_quotes) ex->has_content = 0;
+            sl_free(&elements);
+            sb_free(&inner);
+            return;
+        }
+        sl_free(&elements);
+
         char *result = brace_expand(inner.data);
         sb_free(&inner);
         if (in_quotes) field_add(ex, result, strlen(result));
@@ -235,6 +319,10 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
     if (isalpha((unsigned char)c) || c == '_') {
         char *name = read_name(p);
         const char *value = var_get(name);
+        if (shell.nounset && !var_exists(name)) {
+            shell_error("%s: unbound variable", name);
+            shell.running = 0;
+        }
         free(name);
         if (in_quotes) field_add(ex, value ? value : "", value ? strlen(value) : 0);
         else field_add_split(ex, value);
@@ -348,19 +436,151 @@ static void expand_into(const char *word, Expander *ex) {
     }
 }
 
+static const char *find_brace_close(const char *start) {
+    int depth = 0;
+    for (const char *p = start; *p; p++) {
+        if (*p == '{') depth++;
+        else if (*p == '}' && --depth == 0) return p;
+    }
+    return NULL;
+}
+
+void brace_expand_word(const char *word, StrList *out) {
+    const char *open = NULL;
+    for (const char *p = word; *p; p++) {
+        if (*p == '\\' && p[1]) {
+            p++;
+            continue;
+        }
+        if (*p == '$' && p[1] == '{') {
+            p++;
+            const char *close = find_brace_close(p);
+            if (!close) break;
+            p = close;
+            continue;
+        }
+        if (*p == '{') {
+            open = p;
+            break;
+        }
+    }
+
+    const char *close = open ? find_brace_close(open) : NULL;
+    if (!close) {
+        sl_push_copy(out, word);
+        return;
+    }
+
+    char *prefix = xstrndup(word, (size_t)(open - word));
+    char *body = xstrndup(open + 1, (size_t)(close - open - 1));
+    const char *suffix = close + 1;
+
+    StrList pieces;
+    sl_init(&pieces);
+
+    int low = 0;
+    int high = 0;
+    char extra = 0;
+    if (sscanf(body, "%d..%d%c", &low, &high, &extra) == 2) {
+        int step = low <= high ? 1 : -1;
+        for (int value = low;; value += step) {
+            char number[32];
+            snprintf(number, sizeof(number), "%d", value);
+            sl_push_copy(&pieces, number);
+            if (value == high) break;
+        }
+    } else {
+        int depth = 0;
+        StrBuf current;
+        sb_init(&current);
+        for (const char *p = body; *p; p++) {
+            if (*p == '{') depth++;
+            if (*p == '}') depth--;
+            if (*p == ',' && depth == 0) {
+                sl_push(&pieces, sb_take(&current));
+                sb_init(&current);
+                continue;
+            }
+            sb_putc(&current, *p);
+        }
+        sl_push(&pieces, sb_take(&current));
+        if (pieces.len < 2) {
+            sl_free(&pieces);
+            free(prefix);
+            free(body);
+            sl_push_copy(out, word);
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < pieces.len; i++) {
+        StrBuf combined;
+        sb_init(&combined);
+        sb_puts(&combined, prefix);
+        sb_puts(&combined, pieces.items[i]);
+        sb_puts(&combined, suffix);
+        brace_expand_word(combined.data, out);
+        sb_free(&combined);
+    }
+
+    sl_free(&pieces);
+    free(prefix);
+    free(body);
+}
+
 void expand_words(const StrList *in, StrList *out) {
     for (size_t i = 0; i < in->len; i++) {
-        Expander ex;
-        sb_init(&ex.field);
-        ex.has_content = 0;
-        ex.quoted = 0;
-        ex.out = out;
-        ex.split = 1;
-        ex.glob = 1;
-        expand_into(in->items[i], &ex);
-        field_flush(&ex);
-        sb_free(&ex.field);
+        StrList braced;
+        sl_init(&braced);
+        brace_expand_word(in->items[i], &braced);
+
+        for (size_t b = 0; b < braced.len; b++) {
+            Expander ex;
+            sb_init(&ex.field);
+            ex.has_content = 0;
+            ex.quoted = 0;
+            ex.out = out;
+            ex.split = 1;
+            ex.glob = 1;
+            expand_into(braced.items[b], &ex);
+            field_flush(&ex);
+            sb_free(&ex.field);
+        }
+        sl_free(&braced);
     }
+}
+
+char *expand_heredoc(const char *body) {
+    StrList fields;
+    sl_init(&fields);
+
+    Expander ex;
+    sb_init(&ex.field);
+    ex.has_content = 0;
+    ex.quoted = 0;
+    ex.out = &fields;
+    ex.split = 0;
+    ex.glob = 0;
+
+    StrBuf quoted;
+    sb_init(&quoted);
+    sb_putc(&quoted, '"');
+    for (const char *p = body; *p; p++) {
+        if (*p == '"' || *p == '\\') sb_putc(&quoted, '\\');
+        sb_putc(&quoted, *p);
+    }
+    sb_putc(&quoted, '"');
+
+    expand_into(quoted.data, &ex);
+    field_flush(&ex);
+    sb_free(&ex.field);
+    sb_free(&quoted);
+
+    StrBuf joined;
+    sb_init(&joined);
+    for (size_t i = 0; i < fields.len; i++) sb_puts(&joined, fields.items[i]);
+    sl_free(&fields);
+    return sb_take(&joined);
 }
 
 char *expand_single(const char *word) {

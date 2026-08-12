@@ -21,6 +21,7 @@ typedef struct {
     int depth;
     int errexit;
     int xtrace;
+    int nounset;
     int condition_depth;
     StrList params;
     char *script_name;

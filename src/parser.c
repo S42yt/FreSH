@@ -47,9 +47,10 @@ typedef struct {
     char *error;
 } Parser;
 
-static const char *RESERVED[] = {"if",   "then",  "elif", "else",     "fi", "for",  "in",
-                                 "while", "until", "do",   "done",     "case", "esac",
-                                 "function", "{",  "}",    NULL};
+static const char *RESERVED[] = {"if",     "then",  "elif",     "else", "fi",   "for",
+                                 "select", "in",    "while",    "until", "do",   "done",
+                                 "case",   "esac",  "function", "{",     "}",    "[[",
+                                 "]]",     NULL};
 
 static void token_push(TokenList *list, Token token) {
     if (list->len + 1 >= list->cap) {
@@ -239,6 +240,55 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
         if (digits > p && (*digits == '>' || *digits == '<')) {
             fd = atoi(p);
             p = digits;
+        }
+
+        if (*p == '<' && p[1] == '<') {
+            Token t = {T_REDIR, NULL, 0, 0, R_HEREDOC};
+            t.fd = 0;
+            p += 2;
+            if (*p == '-') p++;
+            while (*p == ' ' || *p == '\t') p++;
+
+            int quoted = 0;
+            char *delimiter = scan_word(&p, &quoted, incomplete);
+            if (quoted) t.redir = R_HEREDOC_RAW;
+
+            char *plain = delimiter;
+            StrBuf clean;
+            sb_init(&clean);
+            for (char *c = plain; *c; c++) {
+                if (*c != '"' && *c != '\'' && *c != '\\') sb_putc(&clean, *c);
+            }
+            free(delimiter);
+
+            while (*p && *p != '\n') p++;
+            if (*p == '\n') p++;
+
+            StrBuf body;
+            sb_init(&body);
+            while (*p) {
+                const char *line_start = p;
+                while (*p && *p != '\n') p++;
+                size_t line_length = (size_t)(p - line_start);
+                char *line = xstrndup(line_start, line_length);
+                char *trimmed = str_trim(line);
+
+                if (strcmp(trimmed, clean.data) == 0) {
+                    free(line);
+                    if (*p == '\n') p++;
+                    break;
+                }
+                free(line);
+                sb_putn(&body, line_start, line_length);
+                sb_putc(&body, '\n');
+                if (*p == '\n') p++;
+                else *incomplete = 1;
+            }
+
+            sb_free(&clean);
+            t.text = sb_take(&body);
+            token_push(out, t);
+            continue;
         }
 
         if (*p == '>' || *p == '<') {
@@ -515,6 +565,70 @@ static Node *parse_case(Parser *ps) {
     return node;
 }
 
+static Node *parse_test(Parser *ps) {
+    advance(ps);
+    Node *node = node_new(N_TEST);
+
+    while (1) {
+        Token *t = peek(ps);
+        if (t->type == T_EOF) {
+            ps->incomplete = 1;
+            node_free(node);
+            return NULL;
+        }
+        if (t->type == T_WORD && t->text && strcmp(t->text, "]]") == 0) {
+            advance(ps);
+            break;
+        }
+
+        switch (t->type) {
+        case T_WORD: sl_push_copy(&node->words, t->text); break;
+        case T_AND_AND: sl_push_copy(&node->words, "&&"); break;
+        case T_OR_OR: sl_push_copy(&node->words, "||"); break;
+        case T_PIPE: sl_push_copy(&node->words, "|"); break;
+        case T_LPAREN: sl_push_copy(&node->words, "("); break;
+        case T_RPAREN: sl_push_copy(&node->words, ")"); break;
+        case T_REDIR:
+            sl_push_copy(&node->words, t->redir == R_IN ? "<" : ">");
+            if (t->text && *t->text) sl_push_copy(&node->words, t->text);
+            break;
+        default: break;
+        }
+        advance(ps);
+    }
+    return node;
+}
+
+static Node *parse_select(Parser *ps) {
+    advance(ps);
+    Token *name = peek(ps);
+    if (name->type != T_WORD) {
+        fail(ps, "syntax error: select requires a variable name");
+        return NULL;
+    }
+    Node *node = node_new(N_SELECT);
+    node->name = xstrdup(name->text);
+    advance(ps);
+
+    if (is_reserved(peek(ps), "in")) {
+        advance(ps);
+        while (peek(ps)->type == T_WORD && !is_reserved(peek(ps), "do")) {
+            sl_push_copy(&node->words, peek(ps)->text);
+            advance(ps);
+        }
+    } else {
+        sl_push_copy(&node->words, "\"$@\"");
+    }
+    skip_newlines(ps);
+
+    node->right = parse_body(ps, "do", "done");
+    if (!node->right) {
+        node_free(node);
+        return NULL;
+    }
+    return node;
+}
+
 static Node *parse_group(Parser *ps) {
     advance(ps);
     const char *stop[] = {"}", NULL};
@@ -557,6 +671,29 @@ static Node *parse_simple(Parser *ps) {
         }
         if (t->type != T_WORD) break;
         if (node->words.len > 0 && is_any_reserved(t)) break;
+
+        size_t text_length = t->text ? strlen(t->text) : 0;
+        if (text_length > 1 && t->text[text_length - 1] == '=' &&
+            ps->tokens.items[ps->pos + 1].type == T_LPAREN) {
+            Node *assign = node_new(N_ASSIGN_ARRAY);
+            assign->name = xstrndup(t->text, text_length - 1);
+            advance(ps);
+            advance(ps);
+
+            while (peek(ps)->type == T_WORD || peek(ps)->type == T_NEWLINE) {
+                if (peek(ps)->type == T_WORD) sl_push_copy(&assign->words, peek(ps)->text);
+                advance(ps);
+            }
+            if (peek(ps)->type != T_RPAREN) {
+                ps->incomplete = 1;
+                node_free(assign);
+                node_free(node);
+                return NULL;
+            }
+            advance(ps);
+            node_free(node);
+            return assign;
+        }
 
         if (node->words.len == 0 && ps->tokens.items[ps->pos + 1].type == T_LPAREN) {
             char *name = xstrdup(t->text);
@@ -605,7 +742,9 @@ static Node *parse_compound(Parser *ps) {
     if (is_reserved(t, "while")) return parse_loop(ps, N_WHILE);
     if (is_reserved(t, "until")) return parse_loop(ps, N_UNTIL);
     if (is_reserved(t, "for")) return parse_for(ps);
+    if (is_reserved(t, "select")) return parse_select(ps);
     if (is_reserved(t, "case")) return parse_case(ps);
+    if (is_reserved(t, "[[")) return parse_test(ps);
     if (is_reserved(t, "{")) return parse_group(ps);
     if (is_reserved(t, "function")) {
         advance(ps);

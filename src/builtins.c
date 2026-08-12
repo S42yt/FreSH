@@ -174,7 +174,71 @@ static int builtin_set(int argc, char **argv) {
         for (const char *flag = argv[i] + 1; *flag; flag++) {
             if (*flag == 'e') shell.errexit = sign == '-';
             else if (*flag == 'x') shell.xtrace = sign == '-';
+            else if (*flag == 'u') shell.nounset = sign == '-';
         }
+    }
+    return 0;
+}
+
+static void assign_word(char *word) {
+    char *eq = strchr(word, '=');
+    if (!eq) {
+        if (!var_exists(word)) var_set(word, "");
+        return;
+    }
+    *eq = '\0';
+    char *open = strchr(word, '[');
+    if (open && word[strlen(word) - 1] == ']') {
+        *open = '\0';
+        word[strlen(word) + strlen(open + 1)] = '\0';
+        char index[128];
+        snprintf(index, sizeof(index), "%s", open + 1);
+        index[strcspn(index, "]")] = '\0';
+        var_set_element(word, index, eq + 1);
+    } else {
+        var_set(word, eq + 1);
+    }
+    *eq = '=';
+}
+
+static int builtin_local(int argc, char **argv) {
+    for (int i = 1; i < argc; i++) {
+        char *eq = strchr(argv[i], '=');
+        char *name = eq ? xstrndup(argv[i], (size_t)(eq - argv[i])) : xstrdup(argv[i]);
+        var_make_local(name);
+        free(name);
+        if (eq) assign_word(argv[i]);
+    }
+    return 0;
+}
+
+static int builtin_declare(int argc, char **argv) {
+    VarKind kind = VAR_SCALAR;
+    int local_wanted = 0;
+    int index = 1;
+
+    for (; index < argc && argv[index][0] == '-'; index++) {
+        if (strchr(argv[index], 'A')) kind = VAR_ASSOC;
+        if (strchr(argv[index], 'a')) kind = VAR_INDEXED;
+        if (strchr(argv[index], 'g')) local_wanted = 0;
+    }
+
+    if (index >= argc) {
+        StrList list;
+        sl_init(&list);
+        vars_list(&list);
+        for (size_t i = 0; i < list.len; i++) printf("%s\n", list.items[i]);
+        sl_free(&list);
+        return 0;
+    }
+
+    for (; index < argc; index++) {
+        char *eq = strchr(argv[index], '=');
+        char *name = eq ? xstrndup(argv[index], (size_t)(eq - argv[index])) : xstrdup(argv[index]);
+        if (local_wanted) var_make_local(name);
+        if (kind != VAR_SCALAR) var_declare(name, kind);
+        free(name);
+        if (eq) assign_word(argv[index]);
     }
     return 0;
 }
@@ -767,7 +831,9 @@ static const Builtin BUILTINS[] = {
     {"alias", builtin_alias},       {"break", builtin_break},
     {"cd", builtin_cd},             {"clear", builtin_clear},
     {"cmd", builtin_cmd},           {"ps1", builtin_ps1},
-    {"continue", builtin_continue}, {"die", builtin_die},
+    {"continue", builtin_continue}, {"declare", builtin_declare},
+    {"local", builtin_local},       {"typeset", builtin_declare},
+    {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},
     {"exit", builtin_exit},         {"have", builtin_have},
     {"ok", builtin_ok},             {"say", builtin_say},
