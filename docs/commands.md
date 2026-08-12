@@ -106,6 +106,7 @@ than rejected, so check this page when a script behaves oddly.
 | `shuf [files]` | | |
 | `tee files` | `-a` | |
 | `printf format [args]` | | `%s %d %i %c %%`, `\n \t \r \\` |
+| `awk program [files]` | `-F sep` `-v n=v` | see below |
 | `yes [text]` | | bounded, safe in a pipe |
 
 ## System
@@ -129,6 +130,7 @@ than rejected, so check this page when a script behaves oddly.
 | `md5sum files` | | |
 | `sha1sum files` | | |
 | `sha256sum files` | | |
+| `wget url` | `-O file` | downloads over https |
 
 ## PowerShell and cmd
 
@@ -183,8 +185,33 @@ command. `PATH` lookup uses `PATHEXT` plus `.frsh`, `.ps1` and `.sh`.
 | `.frsh` `.sh` `.fresh` | by FreSH itself |
 | no extension, `#!` first line | by FreSH if the interpreter ends in `sh`, otherwise that interpreter |
 
+## awk
+
+A real interpreter, not a wrapper:
+
+```sh
+awk '{ print $1 }' file
+awk -F: '{ print $2, $1 }' /etc/passwd
+awk '$2 > 30 { print $1 " is " $2 }' people.txt
+awk '/error/ { count++ } END { print count " errors" }' build.log
+awk 'BEGIN { print "start" } { print NR ": " NF } END { print "rows " NR }' file
+awk '{ printf "%-10s %5d\n", $1, $2 }' file
+```
+
+Supported: `BEGIN` and `END`, regular expression and expression patterns,
+fields `$0` to `$NF`, the variables `NR`, `NF`, `FS`, `OFS`, `FILENAME`,
+arithmetic, string and numeric comparison, concatenation, `~` and `!~`,
+assignment including `+=`, `++`, `if`/`else`, `while`, `for`, `next`, `exit`,
+`print` and `printf`, and the functions `length`, `substr`, `index`,
+`toupper`, `tolower` and `int`. `-F` sets the separator, `-v` presets a
+variable.
+
+Not supported: arrays and `split`, user defined functions, `getline`,
+multiple `-f` program files.
+
 ## Not bundled
 
-`awk`, `tar`, `curl`, `wget`, `zip`, `less`, `ssh` and the rest are not
-included. Install them however you like, put them on `PATH`, run `rehash`,
-and FreSH will pick them up.
+`curl` and `tar` ship with Windows 10 and later, in System32, so they already
+work. `zip`, `less`, `ssh` and the rest are not included: install them, put
+them on `PATH`, run `rehash`, and FreSH will pick them up ahead of anything
+bundled.

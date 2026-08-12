@@ -163,29 +163,35 @@ Windows ships none of the tools a bash or zsh user expects, so FreSH carries
 its own:
 
 ```
-basename  cat     chmod   cmp     column  comm    cp      cut     date
-df        diff    dirname du      env     expr    file    find    fold
-groups    grep    head    hostname id     kill    ln      md5sum  mkdir
-mktemp    mv      nl      open    paste   pkill   printf  ps      realpath
-rev       rm      rmdir   sed     seq     sha1sum sha256sum shuf  sleep
-sort      stat    tac     tail    tee     touch   tr      uname   uniq
-wc        whoami  xargs   yes
+awk       basename  cat     chmod   cmp     column  comm    cp      cut
+date      df        diff    dirname du      env     expr    file    find
+fold      groups    grep    head    hostname id     kill    ln      md5sum
+mkdir     mktemp    mv      nl      open    paste   pkill   printf  ps
+realpath  rev       rm      rmdir   sed     seq     sha1sum sha256sum
+shuf      sleep     sort    stat    tac     tail    tee     touch   tr
+uname     uniq      wc      wget    whoami  xargs   yes
 ```
 
 These are fallbacks. If a real executable of the same name is on `PATH` it
-wins, so an installed GNU `grep` keeps its regexes. The exceptions are `find`
-and `sort`, where the Windows tools of that name do something entirely
+wins, so an installed GNU `grep` or `gawk` takes over. The exceptions are
+`find` and `sort`, where the Windows tools of that name do something entirely
 different, so FreSH always uses its own.
 
-`sed` supports `s/pattern/replacement/[g]`. It is not a regex engine.
+`grep` and `sed` take real regular expressions, basic by default and extended
+with `-E`. `awk` is a real interpreter with `BEGIN`/`END`, patterns, fields,
+`NR`/`NF`/`FS`, control flow and `printf`.
+
+`curl` and `tar` are not bundled because Windows 10 and later already ship
+both in System32.
 
 ## Builtins
 
 ```
-alias   break   cd      clear   continue  echo    eval    exit    export
-false   gitinfo help    history ls        plugin  pwd     read    rehash
-return  set     shift   source  test  [   theme   true    type    unalias
-unset   which   .
+alias   break   cd      clear   continue  declare  die     echo    eval
+exit    export  false   fresh   gitinfo   have     help    history jobs
+local   ls      ok      plugin  ps1       pwd      read    rehash  return
+say     set     shift   source  test  [   theme    trap    true    type
+typeset unalias unset   wait    warn      which    .
 ```
 
 External programs are resolved through `PATH` using `PATHEXT`, plus `.frsh`,
