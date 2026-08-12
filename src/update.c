@@ -68,6 +68,10 @@ static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
     return 1;
 }
 
+int http_download(const char *url, const char *path) {
+    return http_fetch(url, NULL, path);
+}
+
 static int read_latest_version(char *out, size_t out_size) {
     StrBuf body;
     sb_init(&body);

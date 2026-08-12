@@ -10,5 +10,6 @@
 #include "builtins.h"
 
 int builtin_fresh(int argc, char **argv);
+int http_download(const char *url, const char *path);
 
 #endif

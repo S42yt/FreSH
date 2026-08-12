@@ -18,10 +18,12 @@
 #include <tlhelp32.h>
 #include <wincrypt.h>
 
+#include "awk.h"
 #include "exec.h"
 #include "expand.h"
 #include "regex.h"
 #include "shell.h"
+#include "update.h"
 #include "style.h"
 #include "util.h"
 
@@ -756,6 +758,34 @@ static int more_file(int argc, char **argv) {
     return status;
 }
 
+static int more_wget(int argc, char **argv) {
+    int index = first_operand(argc, argv);
+    if (index >= argc) {
+        shell_error("wget: usage: wget [-O file] url");
+        return 2;
+    }
+
+    const char *output = NULL;
+    for (int i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "-O") == 0 || strcmp(argv[i], "-o") == 0) output = argv[i + 1];
+    }
+
+    const char *url = argv[argc - 1];
+    char derived[PATH_BUF];
+    if (!output) {
+        const char *slash = strrchr(url, '/');
+        snprintf(derived, sizeof(derived), "%s", slash && slash[1] ? slash + 1 : "index.html");
+        output = derived;
+    }
+
+    printf("%s%s%s -> %s\n", style(S_DIM), url, style(S_RESET), output);
+    if (!http_download(url, output)) {
+        shell_error("wget: could not fetch %s", url);
+        return 1;
+    }
+    return 0;
+}
+
 typedef struct {
     const char *name;
     BuiltinFn fn;
@@ -771,6 +801,7 @@ static const MoreUtil MOREUTILS[] = {
     {"ps", more_ps},         {"realpath", more_realpath}, {"rev", more_rev},
     {"sed", more_sed},       {"sha1sum", more_sha1sum}, {"sha256sum", more_sha256sum},
     {"shuf", more_shuf},     {"stat", more_stat},       {"tac", more_tac},
+    {"wget", more_wget},     {"awk", awk_main},
     {"yes", more_yes},
 };
 
