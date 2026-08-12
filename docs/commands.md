@@ -49,7 +49,8 @@ than rejected, so check this page when a script behaves oddly.
 | `ls [path]` | `-a` `-l` `-1` | colours by kind, `/` for directories, `*` for executables |
 | `clear` | | |
 | `rehash` | | rescan `PATH`, reload the theme and plugins after editing them |
-| `help` | | |
+| `help [command...]` | | a page per command, arguments in `<required> [optional] ...` form |
+| `describe name summary [usage] [detail]` | | write a help page, see [plugins](plugins.md#help-pages) |
 | `theme [name\|reset]` | | list, switch, or rewrite the bundled files |
 | `die [message]` | | print in red and end the script with status 1 |
 | `have name...` | | succeeds when every name is runnable, prints nothing |

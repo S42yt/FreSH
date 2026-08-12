@@ -7,11 +7,14 @@
 #include "help.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "shell.h"
 #include "style.h"
 #include "term.h"
 #include "util.h"
+#include "vars.h"
 
 typedef struct {
     const char *name;
@@ -49,6 +52,13 @@ static const HelpEntry ENTRIES[] = {
      "  -a   an array with numbered keys\n"
      "  -A   an array with named keys\n"
      "With no argument it prints every variable."},
+
+    {"describe", "describe <name> <summary> [<usage>] [<detail>]",
+     "give a command a help page, for plugins to document what they add",
+     "The page shows under help <name>. Name an existing command to replace its page,\n"
+     "or an alias or a function your plugin defines to give it one.\n"
+     "  describe greet \"say hello to someone\" \"greet <name> [<greeting>]\"\n"
+     "  describe gpush \"push the branch you are on\" \"gpush [<remote>]\" \"  -f  force it\""},
 
     {"die", "die [<message> ...]", "print a message in red and end the script with status 1",
      "Replaces the echo to stderr and exit pair.\n"
@@ -280,7 +290,56 @@ static const HelpEntry ENTRIES[] = {
 
 static const size_t ENTRY_COUNT = sizeof(ENTRIES) / sizeof(ENTRIES[0]);
 
+static HelpEntry *described;
+static size_t described_count;
+
+static HelpEntry *described_find(const char *name) {
+    for (size_t i = 0; i < described_count; i++) {
+        if (strcmp(described[i].name, name) == 0) return &described[i];
+    }
+    return NULL;
+}
+
+static char *own_text(const char *text) { return text && *text ? xstrdup(text) : NULL; }
+
+void help_describe(const char *name, const char *summary, const char *usage, const char *detail) {
+    HelpEntry *entry = described_find(name);
+    if (entry) {
+        free((char *)entry->summary);
+        free((char *)entry->usage);
+        free((char *)entry->detail);
+    } else {
+        described = xrealloc(described, (described_count + 1) * sizeof(*described));
+        entry = &described[described_count++];
+        entry->name = xstrdup(name);
+    }
+    entry->summary = own_text(summary);
+    entry->usage = own_text(usage);
+    entry->detail = own_text(detail);
+}
+
+void help_described_names(StrList *out) {
+    for (size_t i = 0; i < described_count; i++) sl_push_copy(out, described[i].name);
+}
+
+int builtin_describe(int argc, char **argv) {
+    if (argc < 3) {
+        shell_error("describe: usage: describe name summary [usage] [detail]");
+        return 1;
+    }
+    help_describe(argv[1], argv[2], argc > 3 ? argv[3] : NULL, argc > 4 ? argv[4] : NULL);
+    return 0;
+}
+
+static size_t total_count(void) { return described_count + ENTRY_COUNT; }
+
+static const HelpEntry *entry_at(size_t index) {
+    return index < described_count ? &described[index] : &ENTRIES[index - described_count];
+}
+
 static const HelpEntry *find_entry(const char *name) {
+    const HelpEntry *entry = described_find(name);
+    if (entry) return entry;
     for (size_t i = 0; i < ENTRY_COUNT; i++) {
         if (strcmp(ENTRIES[i].name, name) == 0) return &ENTRIES[i];
     }
@@ -307,8 +366,29 @@ static void print_detail(const char *detail) {
     }
 }
 
+static char *first_word(const char *text) {
+    while (*text == ' ' || *text == '\t') text++;
+    size_t length = 0;
+    while (text[length] && text[length] != ' ' && text[length] != '\t') length++;
+    return xstrndup(text, length);
+}
+
 int help_show(const char *name) {
     const HelpEntry *entry = find_entry(name);
+    const char *alias = alias_get(name);
+
+    if (!entry && alias) {
+        char *target = first_word(alias);
+        entry = find_entry(target);
+        free(target);
+        printf("\n  %s%s%s  %san alias for %s%s\n", style(S_HEADING), name, style(S_RESET),
+               style(S_DIM), alias, style(S_RESET));
+        if (!entry) {
+            printf("\n");
+            return 0;
+        }
+    }
+
     if (!entry) {
         printf("  %sno help for %s%s\n", style(S_DIM), name, style(S_RESET));
 
@@ -317,16 +397,17 @@ int help_show(const char *name) {
         size_t length = strlen(name);
 
         for (size_t width = length; width > 0 && near.len == 0; width--) {
-            for (size_t i = 0; i < ENTRY_COUNT; i++) {
-                if (strncmp(ENTRIES[i].name, name, width) == 0)
-                    sl_push_copy(&near, ENTRIES[i].name);
+            for (size_t i = 0; i < total_count(); i++) {
+                if (strncmp(entry_at(i)->name, name, width) == 0)
+                    sl_push_copy(&near, entry_at(i)->name);
             }
         }
         if (near.len == 0) {
-            for (size_t i = 0; i < ENTRY_COUNT; i++) {
-                if (strstr(ENTRIES[i].name, name)) sl_push_copy(&near, ENTRIES[i].name);
+            for (size_t i = 0; i < total_count(); i++) {
+                if (strstr(entry_at(i)->name, name)) sl_push_copy(&near, entry_at(i)->name);
             }
         }
+        sl_sort(&near);
         if (near.len > 0) {
             printf("  %sdid you mean%s", style(S_DIM), style(S_RESET));
             for (size_t i = 0; i < near.len && i < 8; i++) printf(" %s", near.items[i]);
@@ -336,9 +417,10 @@ int help_show(const char *name) {
         return 1;
     }
 
-    printf("\n  %s%s%s  %s%s%s\n", style(S_HEADING), entry->name, style(S_RESET), style(S_DIM),
-           entry->summary, style(S_RESET));
-    printf("  %s%s%s\n", style(S_ACCENT), entry->usage, style(S_RESET));
+    printf("%s  %s%s%s  %s%s%s\n", alias ? "" : "\n", style(S_HEADING), entry->name, style(S_RESET),
+           style(S_DIM), entry->summary ? entry->summary : "", style(S_RESET));
+    printf("  %s%s%s\n", style(S_ACCENT), entry->usage ? entry->usage : entry->name,
+           style(S_RESET));
 
     if (entry->detail) {
         printf("\n");

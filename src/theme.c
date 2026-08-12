@@ -69,7 +69,10 @@ static const BundledFile PLUGINS[] = {
      "alias gpl='git pull'\n"
      "\n"
      "groot() { cd \"$(git rev-parse --show-toplevel)\"; }\n"
-     "gclean() { git branch --merged | grep -v '\\*' ; }\n"},
+     "gclean() { git branch --merged | grep -v '\\*' ; }\n"
+     "\n"
+     "describe groot 'go to the top of the repository' 'groot'\n"
+     "describe gclean 'list the branches already merged' 'gclean'\n"},
 
     {"dirs",
      "# directory helpers\n"
@@ -81,7 +84,10 @@ static const BundledFile PLUGINS[] = {
      "alias l='ls'\n"
      "\n"
      "mkcd() { mkdir -p \"$1\"; cd \"$1\"; }\n"
-     "up() { cd ..; ls; }\n"},
+     "up() { cd ..; ls; }\n"
+     "\n"
+     "describe mkcd 'make a directory and go into it' 'mkcd <directory>'\n"
+     "describe up 'go up one directory and list it' 'up'\n"},
 
     {"sys",
      "# system helpers\n"
@@ -91,14 +97,19 @@ static const BundledFile PLUGINS[] = {
      "alias c='clear'\n"
      "\n"
      "ports() { netstat -ano | grep LISTENING; }\n"
-     "psg() { ps | grep \"$1\"; }\n"},
+     "psg() { ps | grep \"$1\"; }\n"
+     "\n"
+     "describe ports 'show the ports being listened on' 'ports'\n"
+     "describe psg 'find a running process by name' 'psg <pattern>'\n"},
 
     {"edit",
      "# open things in your editor\n"
      "alias e='$EDITOR'\n"
      "alias rc='$EDITOR ~/.freshrc'\n"
      "\n"
-     "edit() { open \"$1\"; }\n"},
+     "edit() { open \"$1\"; }\n"
+     "\n"
+     "describe edit 'open a file in your editor' 'edit <file>'\n"},
 };
 
 static char *fresh_home(void) {

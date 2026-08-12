@@ -134,6 +134,58 @@ if which cargo > nul 2>&1; then
 fi
 ```
 
+## Help pages
+
+`describe` gives anything you add a page under `help <name>`, in the same
+shape as the built in ones:
+
+```sh
+describe <name> <summary> [<usage>] [<detail>]
+```
+
+```sh
+dsh() {
+  docker exec -it "$1" sh
+}
+
+describe dsh "open a shell inside a running container" "dsh <container>"
+```
+
+```
+λ help dsh
+
+  dsh  open a shell inside a running container
+  dsh <container>
+
+  <required>  [optional]  ... repeatable
+```
+
+Write the usage in the same notation the shell uses: `<required>`,
+`[optional]`, `...` for repeatable. The fourth argument is a block of detail
+printed under the usage line, which is where flags belong:
+
+```sh
+describe dclean "remove stopped containers and unused images" \
+  "dclean [-a]" \
+  "  -a   images with no tag as well
+Asks for nothing and does not stop anything that is running."
+```
+
+Aliases need no `describe`. `help ll` finds `ll='ls -l'` on its own and prints
+the alias with the page for `ls`. Describe one anyway when the alias does
+something the target's page does not explain.
+
+Naming an existing command replaces its page, so a plugin that changes what
+`gs` does can say so:
+
+```sh
+alias gs='git status --short --branch'
+describe gs "the short status, with the branch line" "gs"
+```
+
+Everything described shows up in the `help` overview under **Described by
+plugins**, so a user can see what a plugin added without reading the file.
+
 ## Rules of thumb
 
 - Keep it fast. Everything in a plugin runs before your first prompt appears.

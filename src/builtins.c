@@ -911,6 +911,21 @@ static int builtin_help(int argc, char **argv) {
         sl_free(&names);
     }
 
+    StrList described;
+    sl_init(&described);
+    help_described_names(&described);
+    if (described.len > 0) {
+        sl_sort(&described);
+        printf("  %sDescribed by plugins:%s\n", style(S_LABEL), style(S_RESET));
+        for (size_t i = 0; i < described.len; i++) {
+            printf("  %-12s", described.items[i]);
+            if ((i + 1) % (size_t)columns == 0) putchar('\n');
+        }
+        if (described.len % (size_t)columns) putchar('\n');
+        putchar('\n');
+    }
+    sl_free(&described);
+
     printf("  %sLine editing%s\n", style(S_LABEL), style(S_RESET));
     printf("  Tab              complete commands, files and variables\n");
     printf("  Up / Down        history, filtered by what is already typed\n");
@@ -936,6 +951,7 @@ static const Builtin BUILTINS[] = {
     {"cd", builtin_cd},             {"clear", builtin_clear},
     {"cmd", builtin_cmd},           {"ps1", builtin_ps1},
     {"continue", builtin_continue}, {"declare", builtin_declare},
+    {"describe", builtin_describe},
     {"local", builtin_local},       {"typeset", builtin_declare},
     {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},

@@ -109,7 +109,8 @@ static char *command_word(const char *buffer, size_t start) {
 
 static int wants_commands(const char *command) {
     return strcmp(command, "help") == 0 || strcmp(command, "which") == 0 ||
-           strcmp(command, "type") == 0 || strcmp(command, "man") == 0;
+           strcmp(command, "type") == 0 || strcmp(command, "man") == 0 ||
+           strcmp(command, "describe") == 0;
 }
 
 static int wants_directories(const char *command) {
