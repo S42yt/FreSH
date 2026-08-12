@@ -19,6 +19,7 @@
 #include "expand.h"
 #include "foreign.h"
 #include "gitinfo.h"
+#include "help.h"
 #include "history.h"
 #include "prompt.h"
 #include "shell.h"
@@ -879,8 +880,12 @@ static int builtin_gitinfo(int argc, char **argv) {
 }
 
 static int builtin_help(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    if (argc > 1) {
+        int status = 0;
+        for (int i = 1; i < argc; i++) status |= help_show(argv[i]);
+        return status;
+    }
+
     printf("\n  %s%s%s  %sFreSH%s %s%s%s\n", style(S_ACCENT), S_LAMBDA, style(S_RESET),
            style(S_HEADING), style(S_RESET), style(S_DIM), FRESH_VERSION, style(S_RESET));
     printf("  %sa zsh flavoured shell for Windows%s\n\n", style(S_DIM), style(S_RESET));
@@ -915,6 +920,8 @@ static int builtin_help(int argc, char **argv) {
     printf("  Ctrl+W / Backsp  delete the previous word\n");
     printf("  Ctrl+U / Ctrl+K  cut to start and to end\n");
     printf("  Ctrl+L           clear the screen\n\n");
+    printf("  %shelp <command> for what it does and the arguments it takes%s\n", style(S_DIM),
+           style(S_RESET));
     printf("  %sConfiguration lives in ~/.freshrc%s\n\n", style(S_DIM), style(S_RESET));
     return 0;
 }

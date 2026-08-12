@@ -107,6 +107,11 @@ static char *command_word(const char *buffer, size_t start) {
     return xstrndup(buffer + begin, end - begin);
 }
 
+static int wants_commands(const char *command) {
+    return strcmp(command, "help") == 0 || strcmp(command, "which") == 0 ||
+           strcmp(command, "type") == 0 || strcmp(command, "man") == 0;
+}
+
 static int wants_directories(const char *command) {
     return strcmp(command, "cd") == 0 || strcmp(command, "rmdir") == 0 ||
            strcmp(command, "pushd") == 0 || strcmp(command, "mkdir") == 0;
@@ -181,7 +186,8 @@ void complete_at(const char *buffer, size_t cursor, StrList *matches, size_t *re
         complete_paths(token, matches, 0);
     } else {
         char *command = command_word(buffer, start);
-        complete_paths(token, matches, wants_directories(command));
+        if (wants_commands(command)) complete_commands(token, matches);
+        else complete_paths(token, matches, wants_directories(command));
         free(command);
     }
     free(raw);
