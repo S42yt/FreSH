@@ -314,8 +314,18 @@ int help_show(const char *name) {
 
         StrList near;
         sl_init(&near);
-        for (size_t i = 0; i < ENTRY_COUNT; i++) {
-            if (strncmp(ENTRIES[i].name, name, 1) == 0) sl_push_copy(&near, ENTRIES[i].name);
+        size_t length = strlen(name);
+
+        for (size_t width = length; width > 0 && near.len == 0; width--) {
+            for (size_t i = 0; i < ENTRY_COUNT; i++) {
+                if (strncmp(ENTRIES[i].name, name, width) == 0)
+                    sl_push_copy(&near, ENTRIES[i].name);
+            }
+        }
+        if (near.len == 0) {
+            for (size_t i = 0; i < ENTRY_COUNT; i++) {
+                if (strstr(ENTRIES[i].name, name)) sl_push_copy(&near, ENTRIES[i].name);
+            }
         }
         if (near.len > 0) {
             printf("  %sdid you mean%s", style(S_DIM), style(S_RESET));
