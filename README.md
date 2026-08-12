@@ -44,12 +44,27 @@ and brings its own unix commands.
 Commands are colour highlighted as you type: known commands green, unknown
 red, strings yellow, variables cyan, operators magenta.
 
+## PowerShell and cmd, still here when you want them
+
+Cmdlets and cmd builtins run without leaving FreSH. The line goes to whichever
+shell understands it, syntax intact:
+
+```sh
+Get-Process | Select-Object -First 5 -ExpandProperty Name
+dir /s /b
+ps1 "Get-Service | Where-Object Status -eq Running"
+cmd                       # an interactive cmd.exe, if you really want one
+```
+
+Cmdlet names complete on Tab. `FRESH_FOREIGN=0` switches the automatic
+routing off.
+
 ## Themes
 
 Themes are plain FreSH scripts in `~/.fresh/themes`. Six ship with the shell:
 
 ```
-josh        two lines, lambda, git branch      (default)
+fresh       two lines, lambda, git branch      (default)
 minimal     one line, path and an arrow
 classic     the bash look, user@host:path$
 powerline   block segments, needs a powerline font
@@ -62,8 +77,8 @@ theme              # list them, the active one is marked
 theme minimal      # switch right now
 ```
 
-Set `FRESH_THEME=minimal` in `~/.freshrc` to keep it. Writing your own is one
-file:
+Set `FRESH_THEME=minimal` in `~/.freshrc` to keep it, and `theme reset` to
+rewrite the bundled files after an update. Writing your own is one file:
 
 ```sh
 # ~/.fresh/themes/mine.theme
@@ -120,8 +135,9 @@ into startup, theme and plugins, prompt, editing, history and aliases:
 ```sh
 FRESH_BANNER=1            # banner on start
 FRESH_BANNER_TEXT=""      # your own line instead
-FRESH_THEME=josh
+FRESH_THEME=fresh
 FRESH_PLUGINS="git dirs sys"
+FRESH_FOREIGN=1           # cmdlets and cmd builtins run in their own shell
 FRESH_PROMPT_CHAR="λ"
 FRESH_PATH_DEPTH=3        # trailing path components to show
 FRESH_SHOW_USER=1

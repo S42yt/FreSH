@@ -42,7 +42,11 @@ than rejected, so check this page when a script behaves oddly.
 | `clear` | | |
 | `rehash` | | rescan `PATH` after installing something |
 | `help` | | |
-| `theme [name]` | | list or switch, see [themes](themes.md) |
+| `theme [name\|reset]` | | list, switch, or rewrite the bundled files |
+| `die [message]` | | print in red and end the script with status 1 |
+| `have name...` | | succeeds when every name is runnable, prints nothing |
+| `say` / `ok` / `warn` | | styled progress output |
+| `set -e` / `set -x` | | stop on failure, trace commands |
 | `plugin [list\|load name...]` | | see [plugins](plugins.md) |
 | `gitinfo` | | repository, branch, user, clean or dirty |
 
@@ -118,6 +122,46 @@ than rejected, so check this page when a script behaves oddly.
 | `md5sum files` | | |
 | `sha1sum files` | | |
 | `sha256sum files` | | |
+
+## PowerShell and cmd
+
+You never have to leave FreSH to run something written for the other shells.
+
+A line whose first word is a PowerShell cmdlet (`Verb-Noun`, with a real
+PowerShell verb) or a known PowerShell alias is handed to PowerShell whole, so
+its own syntax survives:
+
+```sh
+Get-Process | Select-Object -First 5 -ExpandProperty Name
+Get-ChildItem -Recurse -Filter *.c | Measure-Object
+```
+
+A line starting with a cmd builtin goes to cmd.exe:
+
+```
+dir /s /b
+ver
+mklink /d link target
+```
+
+Routing only happens when nothing in FreSH claims the name and it does not
+resolve on `PATH`, so `docker-compose` is not mistaken for a cmdlet and the
+bundled `ps` still lists processes rather than starting PowerShell.
+
+To be explicit:
+
+| Command | Runs |
+| --- | --- |
+| `ps1 <command>` | the command in PowerShell |
+| `ps1` | an interactive PowerShell |
+| `cmd <command>` | the command in cmd.exe |
+| `cmd` | an interactive cmd.exe |
+
+Cmdlet names complete on Tab. The list is read from PowerShell the first time
+it is needed, which takes a moment, then cached in `~/.fresh/cmdlets.cache`.
+`rehash` refreshes it.
+
+`FRESH_FOREIGN=0` turns automatic routing off, leaving `ps1` and `cmd`.
 
 ## Running other programs
 
