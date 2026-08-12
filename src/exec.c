@@ -53,6 +53,7 @@ static int command_cache_valid = 0;
 
 static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out);
 static int exec_pipeline(Node *node, int background);
+static void job_add(HANDLE process, const char *command);
 
 void exec_init(void) {
     sl_init(&command_cache);
