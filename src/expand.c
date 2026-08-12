@@ -473,6 +473,15 @@ void brace_expand_word(const char *word, StrList *out) {
             p++;
             continue;
         }
+        if (*p == '\'' || *p == '"') {
+            char quote = *p++;
+            while (*p && *p != quote) {
+                if (quote == '"' && *p == '\\' && p[1]) p++;
+                p++;
+            }
+            if (!*p) break;
+            continue;
+        }
         if (*p == '$' && p[1] == '{') {
             p++;
             const char *close = find_brace_close(p);
