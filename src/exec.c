@@ -458,7 +458,52 @@ static int is_assignment(const char *word) {
     if (!isalpha((unsigned char)*word) && *word != '_') return 0;
     const char *p = word;
     while (isalnum((unsigned char)*p) || *p == '_') p++;
+
+    if (*p == '[') {
+        const char *close = strchr(p, ']');
+        if (!close) return 0;
+        p = close + 1;
+    }
+    if (*p == '+') p++;
     return *p == '=';
+}
+
+static void assign_from_word(char *word) {
+    char *eq = strchr(word, '=');
+    if (!eq) return;
+
+    const char *value = eq + 1;
+    int append = eq > word && eq[-1] == '+';
+    char *name_end = append ? eq - 1 : eq;
+
+    char *open = memchr(word, '[', (size_t)(name_end - word));
+    if (open) {
+        char *name = xstrndup(word, (size_t)(open - word));
+        char *close = memchr(open, ']', (size_t)(name_end - open));
+        char *index = xstrndup(open + 1, close ? (size_t)(close - open - 1) : 0);
+        char *resolved = expand_single(index);
+
+        if (append) {
+            const char *previous = var_get_element(name, resolved);
+            StrBuf sb;
+            sb_init(&sb);
+            sb_puts(&sb, previous ? previous : "");
+            sb_puts(&sb, value);
+            var_set_element(name, resolved, sb.data);
+            sb_free(&sb);
+        } else {
+            var_set_element(name, resolved, value);
+        }
+        free(resolved);
+        free(index);
+        free(name);
+        return;
+    }
+
+    char *name = xstrndup(word, (size_t)(name_end - word));
+    if (append) var_append(name, value);
+    else var_set(name, value);
+    free(name);
 }
 
 static int call_function(Function *f, const StrList *args) {
@@ -530,12 +575,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     while (first < words.len && is_assignment(words.items[first])) first++;
 
     if (first == words.len) {
-        for (size_t i = 0; i < words.len; i++) {
-            char *eq = strchr(words.items[i], '=');
-            *eq = '\0';
-            var_set(words.items[i], eq + 1);
-            *eq = '=';
-        }
+        for (size_t i = 0; i < words.len; i++) assign_from_word(words.items[i]);
         sl_free(&words);
         return 0;
     }

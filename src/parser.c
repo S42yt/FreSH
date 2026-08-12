@@ -159,6 +159,7 @@ static char *scan_word(const char **p, int *quoted, int *incomplete) {
 
 static void tokenize(const char *src, TokenList *out, int *incomplete) {
     const char *p = src;
+    const char *heredoc_resume = NULL;
     while (*p) {
         while (*p == ' ' || *p == '\t' || *p == '\r') p++;
         if (*p == '\\' && p[1] == '\r' && p[2] == '\n') {
@@ -182,7 +183,12 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
         if (*p == '\n') {
             Token t = {T_NEWLINE, NULL, 0, 0, R_IN};
             token_push(out, t);
-            p++;
+            if (heredoc_resume) {
+                p = heredoc_resume;
+                heredoc_resume = NULL;
+            } else {
+                p++;
+            }
             continue;
         }
         if (*p == '|' && p[1] == '|') {
@@ -261,33 +267,36 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             }
             free(delimiter);
 
-            while (*p && *p != '\n') p++;
-            if (*p == '\n') p++;
+            const char *rest_of_line = p;
+            const char *scan = p;
+            while (*scan && *scan != '\n') scan++;
+            if (*scan == '\n') scan++;
 
             StrBuf body;
             sb_init(&body);
-            while (*p) {
-                const char *line_start = p;
-                while (*p && *p != '\n') p++;
-                size_t line_length = (size_t)(p - line_start);
+            while (*scan) {
+                const char *line_start = scan;
+                while (*scan && *scan != '\n') scan++;
+                size_t line_length = (size_t)(scan - line_start);
                 char *line = xstrndup(line_start, line_length);
                 char *trimmed = str_trim(line);
-
-                if (strcmp(trimmed, clean.data) == 0) {
-                    free(line);
-                    if (*p == '\n') p++;
-                    break;
-                }
+                int is_delimiter = strcmp(trimmed, clean.data) == 0;
                 free(line);
+
+                if (*scan == '\n') scan++;
+                else if (!is_delimiter) *incomplete = 1;
+
+                if (is_delimiter) break;
                 sb_putn(&body, line_start, line_length);
                 sb_putc(&body, '\n');
-                if (*p == '\n') p++;
-                else *incomplete = 1;
             }
 
             sb_free(&clean);
             t.text = sb_take(&body);
             token_push(out, t);
+
+            heredoc_resume = scan;
+            p = rest_of_line;
             continue;
         }
 

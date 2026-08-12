@@ -132,6 +132,7 @@ static int expand_array_body(const char *body, StrList *out) {
     const char *source = body;
     int keys_wanted = 0;
 
+    if (*source == '#') return 0;
     if (*source == '!') {
         keys_wanted = 1;
         source++;
