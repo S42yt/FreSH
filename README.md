@@ -1,8 +1,16 @@
-# FreSH
+<p align="center">
+  <img src="assets/logo.svg" width="112" alt="FreSH">
+</p>
 
-A fast, zsh flavoured shell for Windows, written in C with no runtime
-dependencies. No Git Bash, no WSL, no MSYS2. FreSH runs shell scripts itself
-and brings its own unix commands.
+<h1 align="center">FreSH</h1>
+
+<p align="center">
+  A fast, zsh flavoured shell for Windows, written in C with no runtime
+  dependencies.
+</p>
+
+No Git Bash, no WSL, no MSYS2. FreSH runs shell scripts itself and brings its
+own unix commands.
 
 ![FreSH](./assets/FreSH_tui.png)
 
