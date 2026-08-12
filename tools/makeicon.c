@@ -33,14 +33,14 @@ static double distance_to_segment(double x, double y, double x1, double y1, doub
 
 static double coverage(double x, double y, int size) {
     double unit = size / 100.0;
-    double thickness = size * 0.085;
+    double thickness = size * 0.118;
 
-    double spine = distance_to_segment(x, y, 30 * unit, 16 * unit, 68 * unit, 86 * unit);
-    double leg = distance_to_segment(x, y, 52 * unit, 52 * unit, 30 * unit, 86 * unit);
+    double spine = distance_to_segment(x, y, 33 * unit, 13 * unit, 71 * unit, 87 * unit);
+    double leg = distance_to_segment(x, y, 51 * unit, 49 * unit, 27 * unit, 87 * unit);
     double nearest = spine < leg ? spine : leg;
 
     double edge = thickness / 2;
-    double fade = size * 0.045;
+    double fade = size * 0.02;
     if (nearest <= edge) return 1.0;
     if (nearest >= edge + fade) return 0.0;
     return 1.0 - (nearest - edge) / fade;

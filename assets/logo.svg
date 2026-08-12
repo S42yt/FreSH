@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="128" height="128" role="img" aria-label="FreSH">
+  <rect x="2" y="2" width="96" height="96" rx="22" fill="#1b2128"/>
+  <g stroke="#78eb78" stroke-width="11.8" stroke-linecap="round" fill="none">
+    <line x1="33" y1="13" x2="71" y2="87"/>
+    <line x1="51" y1="49" x2="27" y2="87"/>
+  </g>
+</svg>
