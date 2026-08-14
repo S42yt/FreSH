@@ -29,6 +29,7 @@ void path_reload_environment(void);
 void function_define(const char *name, Node *body);
 int function_defined(const char *name);
 void function_names(StrList *out);
+int function_name_prefix(const char *prefix, size_t length);
 
 char *apply_aliases(const char *line);
 int pattern_match(const char *pattern, const char *text);

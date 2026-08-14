@@ -46,8 +46,9 @@ static size_t scope_depth = 0;
 static size_t scope_cap = 0;
 
 static Entry *find(Entry *table, size_t count, const char *name) {
+    char first = name[0];
     for (size_t i = 0; i < count; i++) {
-        if (strcmp(table[i].name, name) == 0) return &table[i];
+        if (table[i].name[0] == first && strcmp(table[i].name, name) == 0) return &table[i];
     }
     return NULL;
 }
@@ -490,4 +491,11 @@ void alias_list(StrList *out) {
         sl_push(out, sb_take(&sb));
     }
     sl_sort(out);
+}
+
+int alias_name_prefix(const char *prefix, size_t length) {
+    for (size_t i = 0; i < alias_count; i++) {
+        if (_strnicmp(aliases[i].name, prefix, length) == 0) return 1;
+    }
+    return 0;
 }

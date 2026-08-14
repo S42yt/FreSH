@@ -13,6 +13,7 @@ int foreign_route(const char *line, int *status);
 int foreign_run_powershell(const char *command);
 int foreign_run_cmd(const char *command);
 void foreign_names(StrList *out);
+int foreign_name_prefix(const char *prefix, size_t length);
 int foreign_known(const char *name);
 void foreign_forget(void);
 

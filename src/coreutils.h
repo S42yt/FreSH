@@ -12,5 +12,6 @@
 BuiltinFn coreutil_lookup(const char *name);
 int coreutil_preferred(const char *name);
 void coreutil_names(StrList *out);
+int coreutil_name_prefix(const char *prefix, size_t length);
 
 #endif

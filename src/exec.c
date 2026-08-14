@@ -104,6 +104,13 @@ void function_names(StrList *out) {
     for (size_t i = 0; i < function_count; i++) sl_push_copy(out, functions[i].name);
 }
 
+int function_name_prefix(const char *prefix, size_t length) {
+    for (size_t i = 0; i < function_count; i++) {
+        if (_strnicmp(functions[i].name, prefix, length) == 0) return 1;
+    }
+    return 0;
+}
+
 static void pathext_list(StrList *out) {
     const char *pathext = var_get("PATHEXT");
     if (!pathext || !*pathext) pathext = ".COM;.EXE;.BAT;.CMD";
@@ -242,44 +249,76 @@ void path_reload_environment(void) {
     command_cache_valid = 0;
 }
 
-static void ensure_command_cache(void) {
-    if (!command_cache_valid) {
-        sl_clear(&command_cache);
-        const char *path = var_get("PATH");
-        if (path) {
-            char *copy = xstrdup(path);
-            char *cursor = copy;
-            char *dir;
-            while ((dir = str_next_field(&cursor, ';')) != NULL) {
-                if (*dir) {
-                    char *pattern = path_join(dir, "*");
-                    WIN32_FIND_DATAA data;
-                    HANDLE find = FindFirstFileA(pattern, &data);
-                    free(pattern);
-                    if (find != INVALID_HANDLE_VALUE) {
-                        do {
-                            if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-                            const char *ext = path_ext(data.cFileName);
-                            if (!*ext) continue;
-                            if (!str_ieq(ext, ".exe") && !str_ieq(ext, ".com") &&
-                                !str_ieq(ext, ".bat") && !str_ieq(ext, ".cmd") &&
-                                !str_ieq(ext, ".ps1") && !str_ieq(ext, ".sh") &&
-                                !str_ieq(ext, ".frsh"))
-                                continue;
-                            char name[PATH_BUF];
-                            snprintf(name, sizeof(name), "%s", data.cFileName);
-                            name[strlen(name) - strlen(ext)] = '\0';
-                            if (!sl_contains(&command_cache, name)) sl_push_copy(&command_cache, name);
-                        } while (FindNextFileA(find, &data));
-                        FindClose(find);
-                    }
-                }
-            }
-            free(copy);
+static int is_command_extension(const char *ext) {
+    return str_ieq(ext, ".exe") || str_ieq(ext, ".com") || str_ieq(ext, ".bat") ||
+           str_ieq(ext, ".cmd") || str_ieq(ext, ".ps1") || str_ieq(ext, ".sh") ||
+           str_ieq(ext, ".frsh");
+}
+
+static int compare_names_fold(const void *a, const void *b) {
+    return _stricmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+static void scan_directory(const char *dir, StrList *out) {
+    char *pattern = path_join(dir, "*");
+    WIN32_FIND_DATAA data;
+    HANDLE find = FindFirstFileA(pattern, &data);
+    free(pattern);
+    if (find == INVALID_HANDLE_VALUE) return;
+
+    do {
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        const char *ext = path_ext(data.cFileName);
+        if (!*ext || !is_command_extension(ext)) continue;
+        sl_push(out, xstrndup(data.cFileName, strlen(data.cFileName) - strlen(ext)));
+    } while (FindNextFileA(find, &data));
+    FindClose(find);
+}
+
+static void drop_adjacent_duplicates(StrList *list) {
+    size_t kept = 0;
+    for (size_t i = 0; i < list->len; i++) {
+        if (kept > 0 && _stricmp(list->items[kept - 1], list->items[i]) == 0) {
+            free(list->items[i]);
+            continue;
         }
-        sl_sort(&command_cache);
-        command_cache_valid = 1;
+        list->items[kept++] = list->items[i];
     }
+    list->len = kept;
+}
+
+static void ensure_command_cache(void) {
+    if (command_cache_valid) return;
+    sl_clear(&command_cache);
+
+    const char *path = var_get("PATH");
+    if (path) {
+        char *copy = xstrdup(path);
+        char *cursor = copy;
+        char *dir;
+        while ((dir = str_next_field(&cursor, ';')) != NULL) {
+            if (*dir) scan_directory(dir, &command_cache);
+        }
+        free(copy);
+    }
+
+    if (command_cache.len > 1)
+        qsort(command_cache.items, command_cache.len, sizeof(char *), compare_names_fold);
+    drop_adjacent_duplicates(&command_cache);
+    command_cache_valid = 1;
+}
+
+static size_t cache_lower_bound(const char *name, size_t prefix_length) {
+    size_t low = 0;
+    size_t high = command_cache.len;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        int order = prefix_length ? _strnicmp(command_cache.items[mid], name, prefix_length)
+                                  : _stricmp(command_cache.items[mid], name);
+        if (order < 0) low = mid + 1;
+        else high = mid;
+    }
+    return low;
 }
 
 void path_commands(StrList *out) {
@@ -289,20 +328,16 @@ void path_commands(StrList *out) {
 
 int path_command_exists(const char *name) {
     ensure_command_cache();
-    for (size_t i = 0; i < command_cache.len; i++) {
-        if (_stricmp(command_cache.items[i], name) == 0) return 1;
-    }
-    return 0;
+    size_t index = cache_lower_bound(name, 0);
+    return index < command_cache.len && _stricmp(command_cache.items[index], name) == 0;
 }
 
 int path_command_prefix(const char *prefix) {
     ensure_command_cache();
     size_t length = strlen(prefix);
     if (length == 0) return 0;
-    for (size_t i = 0; i < command_cache.len; i++) {
-        if (_strnicmp(command_cache.items[i], prefix, length) == 0) return 1;
-    }
-    return 0;
+    size_t index = cache_lower_bound(prefix, length);
+    return index < command_cache.len && _strnicmp(command_cache.items[index], prefix, length) == 0;
 }
 
 static void track_handle(HANDLE handle) {

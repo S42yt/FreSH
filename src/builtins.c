@@ -1031,6 +1031,13 @@ BuiltinFn builtin_lookup(const char *name) {
     return NULL;
 }
 
+int builtin_name_prefix(const char *prefix, size_t length) {
+    for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++) {
+        if (_strnicmp(BUILTINS[i].name, prefix, length) == 0) return 1;
+    }
+    return 0;
+}
+
 void builtin_names(StrList *out) {
     for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++)
         sl_push_copy(out, BUILTINS[i].name);

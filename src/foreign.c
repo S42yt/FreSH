@@ -252,6 +252,17 @@ void foreign_names(StrList *out) {
     for (size_t i = 0; i < cmdlet_cache.len; i++) sl_push_copy(out, cmdlet_cache.items[i]);
 }
 
+int foreign_name_prefix(const char *prefix, size_t length) {
+    for (int i = 0; CMD_BUILTINS[i]; i++) {
+        if (_strnicmp(CMD_BUILTINS[i], prefix, length) == 0) return 1;
+    }
+    if (!cmdlet_cache_loaded) return 0;
+    for (size_t i = 0; i < cmdlet_cache.len; i++) {
+        if (_strnicmp(cmdlet_cache.items[i], prefix, length) == 0) return 1;
+    }
+    return 0;
+}
+
 int builtin_ps1(int argc, char **argv) {
     if (argc < 2) return foreign_run_powershell("");
 

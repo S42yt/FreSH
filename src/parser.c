@@ -66,6 +66,13 @@ void keyword_names(StrList *out) {
     }
 }
 
+int keyword_prefix(const char *prefix, size_t length) {
+    for (int i = 0; RESERVED[i]; i++) {
+        if (strncmp(RESERVED[i], prefix, length) == 0) return 1;
+    }
+    return 0;
+}
+
 static void token_push(TokenList *list, Token token) {
     if (list->len + 1 >= list->cap) {
         list->cap = list->cap ? list->cap * 2 : 32;

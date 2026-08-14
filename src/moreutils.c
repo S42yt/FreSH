@@ -816,3 +816,10 @@ void moreutil_names(StrList *out) {
     for (size_t i = 0; i < sizeof(MOREUTILS) / sizeof(MOREUTILS[0]); i++)
         sl_push_copy(out, MOREUTILS[i].name);
 }
+
+int moreutil_name_prefix(const char *prefix, size_t length) {
+    for (size_t i = 0; i < sizeof(MOREUTILS) / sizeof(MOREUTILS[0]); i++) {
+        if (_strnicmp(MOREUTILS[i].name, prefix, length) == 0) return 1;
+    }
+    return 0;
+}

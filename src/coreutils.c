@@ -1099,3 +1099,10 @@ void coreutil_names(StrList *out) {
         sl_push_copy(out, COREUTILS[i].name);
     moreutil_names(out);
 }
+
+int coreutil_name_prefix(const char *prefix, size_t length) {
+    for (size_t i = 0; i < sizeof(COREUTILS) / sizeof(COREUTILS[0]); i++) {
+        if (_strnicmp(COREUTILS[i].name, prefix, length) == 0) return 1;
+    }
+    return moreutil_name_prefix(prefix, length);
+}

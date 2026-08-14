@@ -97,25 +97,12 @@ static int command_known(const char *name) {
 
 static int command_pending(const char *word) {
     if (!*word) return 1;
-
-    StrList names;
-    sl_init(&names);
-    keyword_names(&names);
-    builtin_names(&names);
-    coreutil_names(&names);
-    function_names(&names);
-    alias_list(&names);
-    foreign_names(&names);
-
     size_t length = strlen(word);
-    int found = 0;
-    for (size_t i = 0; i < names.len && !found; i++) {
-        char *eq = strchr(names.items[i], '=');
-        if (eq) *eq = '\0';
-        if (_strnicmp(names.items[i], word, length) == 0) found = 1;
-    }
-    sl_free(&names);
-    return found || path_command_prefix(word);
+
+    return keyword_prefix(word, length) || builtin_name_prefix(word, length) ||
+           coreutil_name_prefix(word, length) || function_name_prefix(word, length) ||
+           alias_name_prefix(word, length) || foreign_name_prefix(word, length) ||
+           path_command_prefix(word);
 }
 
 static void highlight(const char *text, StrBuf *out) {
