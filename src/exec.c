@@ -23,6 +23,7 @@
 #include "foreign.h"
 #include "parser.h"
 #include "regex.h"
+#include "table.h"
 #include "shell.h"
 #include "vars.h"
 
@@ -39,14 +40,7 @@ typedef struct {
     int saved[3];
 } FdSave;
 
-typedef struct {
-    char *name;
-    Node *body;
-} Function;
-
-static Function *functions = NULL;
-static size_t function_count = 0;
-static size_t function_cap = 0;
+static Table function_table;
 
 static HANDLE tracked[MAX_TRACKED];
 static int tracked_count = 0;
@@ -91,39 +85,23 @@ static void temp_cleanup(void) {
 }
 
 void exec_cleanup(void) {
-    for (size_t i = 0; i < function_count; i++) {
-        free(functions[i].name);
-        node_free(functions[i].body);
-    }
-    free(functions);
-    functions = NULL;
-    function_count = function_cap = 0;
+    table_free(&function_table);
     sl_free(&command_cache);
     resolutions_release();
     temp_cleanup();
 }
 
-static Function *function_find(const char *name) {
-    for (size_t i = 0; i < function_count; i++) {
-        if (strcmp(functions[i].name, name) == 0) return &functions[i];
-    }
-    return NULL;
+static void function_release(void *body) {
+    node_free(body);
+}
+
+static Node *function_find(const char *name) {
+    return table_get(&function_table, name);
 }
 
 void function_define(const char *name, Node *body) {
-    Function *f = function_find(name);
-    if (f) {
-        node_free(f->body);
-        f->body = body;
-        return;
-    }
-    if (function_count + 1 >= function_cap) {
-        function_cap = function_cap ? function_cap * 2 : 16;
-        functions = xrealloc(functions, function_cap * sizeof(Function));
-    }
-    functions[function_count].name = xstrdup(name);
-    functions[function_count].body = body;
-    function_count++;
+    if (!function_table.buckets) table_init(&function_table, 32, 0, function_release);
+    table_put(&function_table, name, body);
 }
 
 int function_defined(const char *name) {
@@ -131,14 +109,11 @@ int function_defined(const char *name) {
 }
 
 void function_names(StrList *out) {
-    for (size_t i = 0; i < function_count; i++) sl_push_copy(out, functions[i].name);
+    table_names(&function_table, out);
 }
 
 int function_name_prefix(const char *prefix, size_t length) {
-    for (size_t i = 0; i < function_count; i++) {
-        if (_strnicmp(functions[i].name, prefix, length) == 0) return 1;
-    }
-    return 0;
+    return table_has_prefix(&function_table, prefix, length);
 }
 
 static void pathext_list(StrList *out) {
@@ -179,47 +154,23 @@ static int try_with_extensions(const char *base, char *out, size_t out_size, int
     return found;
 }
 
-typedef struct {
-    char *name;
-    char *path;
-} Resolution;
-
-static Resolution *resolutions = NULL;
-static size_t resolution_count = 0;
-static size_t resolution_cap = 0;
+static Table resolution_table;
 
 static void resolutions_forget(void) {
-    for (size_t i = 0; i < resolution_count; i++) {
-        free(resolutions[i].name);
-        free(resolutions[i].path);
-    }
-    resolution_count = 0;
+    table_free(&resolution_table);
 }
 
 static void resolutions_release(void) {
-    resolutions_forget();
-    free(resolutions);
-    resolutions = NULL;
-    resolution_cap = 0;
+    table_free(&resolution_table);
 }
 
-static const Resolution *resolution_find(const char *name) {
-    char first = name[0];
-    for (size_t i = 0; i < resolution_count; i++) {
-        if (resolutions[i].name[0] == first && strcmp(resolutions[i].name, name) == 0)
-            return &resolutions[i];
-    }
-    return NULL;
+static const char *resolution_find(const char *name) {
+    return table_get(&resolution_table, name);
 }
 
 static void resolution_remember(const char *name, const char *path) {
-    if (resolution_count + 1 >= resolution_cap) {
-        resolution_cap = resolution_cap ? resolution_cap * 2 : 32;
-        resolutions = xrealloc(resolutions, resolution_cap * sizeof(Resolution));
-    }
-    resolutions[resolution_count].name = xstrdup(name);
-    resolutions[resolution_count].path = path ? xstrdup(path) : NULL;
-    resolution_count++;
+    if (!resolution_table.buckets) table_init(&resolution_table, 64, 1, free);
+    table_put(&resolution_table, name, xstrdup(path ? path : ""));
 }
 
 int resolve_command(const char *name, char *out, size_t out_size) {
@@ -232,10 +183,10 @@ int resolve_command(const char *name, char *out, size_t out_size) {
         return try_with_extensions(base, out, out_size, 1);
     }
 
-    const Resolution *remembered = resolution_find(name);
+    const char *remembered = resolution_find(name);
     if (remembered) {
-        if (!remembered->path) return 0;
-        snprintf(out, out_size, "%s", remembered->path);
+        if (!*remembered) return 0;
+        snprintf(out, out_size, "%s", remembered);
         return 1;
     }
 
@@ -799,14 +750,14 @@ static void assign_from_word(char *word) {
     free(name);
 }
 
-static int call_function(Function *f, const StrList *args) {
+static int call_function(Node *body, const StrList *args) {
     StrList saved = shell.params;
     sl_init(&shell.params);
     for (size_t i = 0; i < args->len; i++) sl_push_copy(&shell.params, args->items[i]);
 
     scope_push();
     shell.depth++;
-    int status = exec_node(f->body);
+    int status = exec_node(body);
     shell.depth--;
     scope_pop();
 
@@ -1051,7 +1002,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         shell.trap_debug = handler;
     }
 
-    Function *f = function_find(argv[0]);
+    Node *f = function_find(argv[0]);
     BuiltinFn builtin = f ? NULL : builtin_lookup(argv[0]);
 
     char path[PATH_BUF] = "";

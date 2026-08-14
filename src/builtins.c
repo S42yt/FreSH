@@ -24,6 +24,7 @@
 #include "prompt.h"
 #include "shell.h"
 #include "style.h"
+#include "table.h"
 #include "term.h"
 #include "theme.h"
 #include "update.h"
@@ -1024,11 +1025,20 @@ static const Builtin BUILTINS[] = {
     {":", builtin_true},
 };
 
+static Table builtin_table;
+
+static void builtin_table_ready(void) {
+    if (builtin_table.buckets) return;
+
+    table_init(&builtin_table, sizeof(BUILTINS) / sizeof(BUILTINS[0]), 0, NULL);
+    for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++)
+        table_put(&builtin_table, BUILTINS[i].name, (void *)&BUILTINS[i]);
+}
+
 BuiltinFn builtin_lookup(const char *name) {
-    for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++) {
-        if (strcmp(BUILTINS[i].name, name) == 0) return BUILTINS[i].fn;
-    }
-    return NULL;
+    builtin_table_ready();
+    const Builtin *entry = table_get(&builtin_table, name);
+    return entry ? entry->fn : NULL;
 }
 
 int builtin_name_prefix(const char *prefix, size_t length) {

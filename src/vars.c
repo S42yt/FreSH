@@ -6,6 +6,8 @@
 
 #include "vars.h"
 
+#include "table.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,9 +39,7 @@ static Entry *vars = NULL;
 static size_t var_count_total = 0;
 static size_t var_cap = 0;
 
-static Entry *aliases = NULL;
-static size_t alias_count = 0;
-static size_t alias_cap = 0;
+static Table alias_table;
 
 static Scope *scopes = NULL;
 static size_t scope_depth = 0;
@@ -109,10 +109,7 @@ void vars_cleanup(void) {
     vars = NULL;
     var_count_total = var_cap = 0;
 
-    for (size_t i = 0; i < alias_count; i++) entry_free(&aliases[i]);
-    free(aliases);
-    aliases = NULL;
-    alias_count = alias_cap = 0;
+    table_free(&alias_table);
 
     for (size_t i = 0; i < scope_depth; i++) free(scopes[i].items);
     free(scopes);
@@ -464,38 +461,38 @@ void var_make_local(const char *name) {
     fresh->value = xstrdup("");
 }
 
+static void alias_table_ready(void) {
+    if (!alias_table.buckets) table_init(&alias_table, 32, 0, free);
+}
+
 void alias_set(const char *name, const char *value) {
-    Entry *e = find(aliases, alias_count, name);
-    if (!e) e = add(&aliases, &alias_count, &alias_cap, name);
-    free(e->value);
-    e->value = xstrdup(value);
+    alias_table_ready();
+    table_put(&alias_table, name, xstrdup(value));
 }
 
 const char *alias_get(const char *name) {
-    Entry *e = find(aliases, alias_count, name);
-    return e ? e->value : NULL;
+    return table_get(&alias_table, name);
 }
 
 int alias_unset(const char *name) {
-    Entry *e = find(aliases, alias_count, name);
-    if (!e) return 0;
-    remove_entry(aliases, &alias_count, e);
-    return 1;
+    return table_remove(&alias_table, name);
 }
 
 void alias_list(StrList *out) {
-    for (size_t i = 0; i < alias_count; i++) {
+    StrList names;
+    sl_init(&names);
+    table_names(&alias_table, &names);
+
+    for (size_t i = 0; i < names.len; i++) {
         StrBuf sb;
         sb_init(&sb);
-        sb_printf(&sb, "%s='%s'", aliases[i].name, aliases[i].value);
+        sb_printf(&sb, "%s='%s'", names.items[i], (const char *)table_get(&alias_table, names.items[i]));
         sl_push(out, sb_take(&sb));
     }
+    sl_free(&names);
     sl_sort(out);
 }
 
 int alias_name_prefix(const char *prefix, size_t length) {
-    for (size_t i = 0; i < alias_count; i++) {
-        if (_strnicmp(aliases[i].name, prefix, length) == 0) return 1;
-    }
-    return 0;
+    return table_has_prefix(&alias_table, prefix, length);
 }

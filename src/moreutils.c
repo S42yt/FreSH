@@ -23,6 +23,7 @@
 #include "expand.h"
 #include "regex.h"
 #include "shell.h"
+#include "table.h"
 #include "update.h"
 #include "style.h"
 #include "util.h"
@@ -805,11 +806,17 @@ static const MoreUtil MOREUTILS[] = {
     {"yes", more_yes},
 };
 
+static Table moreutil_table;
+
 BuiltinFn moreutil_lookup(const char *name) {
-    for (size_t i = 0; i < sizeof(MOREUTILS) / sizeof(MOREUTILS[0]); i++) {
-        if (strcmp(MOREUTILS[i].name, name) == 0) return MOREUTILS[i].fn;
+    if (!moreutil_table.buckets) {
+        table_init(&moreutil_table, sizeof(MOREUTILS) / sizeof(MOREUTILS[0]), 0, NULL);
+        for (size_t i = 0; i < sizeof(MOREUTILS) / sizeof(MOREUTILS[0]); i++)
+            table_put(&moreutil_table, MOREUTILS[i].name, (void *)&MOREUTILS[i]);
     }
-    return NULL;
+
+    const MoreUtil *entry = table_get(&moreutil_table, name);
+    return entry ? entry->fn : NULL;
 }
 
 void moreutil_names(StrList *out) {

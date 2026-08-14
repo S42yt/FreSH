@@ -15,6 +15,7 @@
 #include "exec.h"
 #include "shell.h"
 #include "style.h"
+#include "table.h"
 #include "util.h"
 #include "vars.h"
 
@@ -48,6 +49,7 @@ static const char *CMD_BUILTINS[] = {
 };
 
 static StrList cmdlet_cache;
+static Table cmdlet_table;
 static int cmdlet_cache_loaded = 0;
 
 static int list_contains(const char **list, const char *name, int case_sensitive) {
@@ -189,6 +191,7 @@ static void load_cmdlet_cache(void) {
     if (cmdlet_cache_loaded) return;
     cmdlet_cache_loaded = 1;
     sl_init(&cmdlet_cache);
+    table_init(&cmdlet_table, 1024, 1, NULL);
 
     char *path = cmdlet_cache_path();
     FILE *f = fopen(path, "r");
@@ -217,7 +220,10 @@ static void load_cmdlet_cache(void) {
         char line[256];
         while (fgets(line, sizeof(line), f)) {
             line[strcspn(line, "\r\n")] = '\0';
-            if (*line) sl_push_copy(&cmdlet_cache, line);
+            if (*line) {
+                sl_push_copy(&cmdlet_cache, line);
+                table_put(&cmdlet_table, line, (void *)1);
+            }
         }
         fclose(f);
     }
@@ -227,6 +233,7 @@ static void load_cmdlet_cache(void) {
 void foreign_forget(void) {
     if (!cmdlet_cache_loaded) return;
     sl_free(&cmdlet_cache);
+    table_free(&cmdlet_table);
     cmdlet_cache_loaded = 0;
 
     char *path = cmdlet_cache_path();
@@ -238,11 +245,7 @@ int foreign_known(const char *name) {
     if (list_contains(CMD_BUILTINS, name, 0)) return 1;
     if (looks_like_cmdlet(name)) return 1;
     if (!cmdlet_cache_loaded) return 0;
-
-    for (size_t i = 0; i < cmdlet_cache.len; i++) {
-        if (str_ieq(cmdlet_cache.items[i], name)) return 1;
-    }
-    return 0;
+    return table_get(&cmdlet_table, name) != NULL;
 }
 
 void foreign_names(StrList *out) {

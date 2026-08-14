@@ -19,6 +19,7 @@
 #include "moreutils.h"
 #include "regex.h"
 #include "shell.h"
+#include "table.h"
 #include "util.h"
 #include "vars.h"
 
@@ -1087,11 +1088,17 @@ int coreutil_preferred(const char *name) {
     return 0;
 }
 
+static Table coreutil_table;
+
 BuiltinFn coreutil_lookup(const char *name) {
-    for (size_t i = 0; i < sizeof(COREUTILS) / sizeof(COREUTILS[0]); i++) {
-        if (strcmp(COREUTILS[i].name, name) == 0) return COREUTILS[i].fn;
+    if (!coreutil_table.buckets) {
+        table_init(&coreutil_table, sizeof(COREUTILS) / sizeof(COREUTILS[0]), 0, NULL);
+        for (size_t i = 0; i < sizeof(COREUTILS) / sizeof(COREUTILS[0]); i++)
+            table_put(&coreutil_table, COREUTILS[i].name, (void *)&COREUTILS[i]);
     }
-    return moreutil_lookup(name);
+
+    const Coreutil *entry = table_get(&coreutil_table, name);
+    return entry ? entry->fn : moreutil_lookup(name);
 }
 
 void coreutil_names(StrList *out) {
