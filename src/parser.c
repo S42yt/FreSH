@@ -23,7 +23,8 @@ typedef enum {
     T_NEWLINE,
     T_REDIR,
     T_LPAREN,
-    T_RPAREN
+    T_RPAREN,
+    T_ARITH
 } TokenType;
 
 typedef struct {
@@ -152,6 +153,45 @@ static char *scan_word(const char **p, int *quoted, int *incomplete) {
             scan_quoted(p, &sb, '`', incomplete);
             continue;
         }
+        if (c == '$' && (*p)[1] == '\'') {
+            *quoted = 1;
+            *p += 2;
+            while (**p && **p != '\'') {
+                if (**p == '\\' && (*p)[1]) {
+                    char escaped = (*p)[1];
+                    char out = 0;
+                    int handled = 1;
+                    switch (escaped) {
+                    case 'n': out = '\n'; break;
+                    case 't': out = '\t'; break;
+                    case 'r': out = '\r'; break;
+                    case 'e':
+                    case 'E': out = 27; break;
+                    case 'a': out = 7; break;
+                    case 'b': out = 8; break;
+                    case 'f': out = 12; break;
+                    case 'v': out = 11; break;
+                    case '\\': out = '\\'; break;
+                    case '\'': out = '\''; break;
+                    case '"': out = '"'; break;
+                    default: handled = 0; break;
+                    }
+                    if (handled) {
+                        sb_putc(&sb, out);
+                        *p += 2;
+                    } else {
+                        sb_putc(&sb, **p);
+                        (*p)++;
+                    }
+                    continue;
+                }
+                sb_putc(&sb, **p);
+                (*p)++;
+            }
+            if (**p == '\'') (*p)++;
+            else *incomplete = 1;
+            continue;
+        }
         if (c == '$' && (*p)[1] == '(') {
             sb_putc(&sb, '$');
             (*p)++;
@@ -258,6 +298,25 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             p++;
             continue;
         }
+        if (*p == '(' && p[1] == '(') {
+            int depth = 0;
+            const char *q = p;
+            while (*q) {
+                if (*q == '(') depth++;
+                else if (*q == ')') {
+                    depth--;
+                    if (depth == 0) { q++; break; }
+                }
+                q++;
+            }
+            if (depth == 0) {
+                Token t = {T_ARITH, NULL, 0, 0, R_IN};
+                t.text = xstrndup(p + 2, (size_t)(q - p) - 4);
+                token_push(out, t);
+                p = q;
+                continue;
+            }
+        }
         if (*p == '(') {
             Token t = {T_LPAREN, NULL, 0, 0, R_IN};
             token_push(out, t);
@@ -286,6 +345,16 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             continue;
         }
 
+        if (*p == '<' && p[1] == '<' && p[2] == '<') {
+            Token t = {T_REDIR, NULL, 0, 0, R_HERESTRING};
+            t.fd = 0;
+            p += 3;
+            while (*p == ' ' || *p == '\t') p++;
+            int quoted = 0;
+            t.text = scan_word(&p, &quoted, incomplete);
+            token_push(out, t);
+            continue;
+        }
         if (*p == '<' && p[1] == '<') {
             Token t = {T_REDIR, NULL, 0, 0, R_HEREDOC};
             t.fd = 0;
@@ -429,6 +498,7 @@ static const char *token_label(Token *t) {
     case T_LPAREN: return "(";
     case T_RPAREN: return ")";
     case T_REDIR: return "a redirection";
+    case T_ARITH: return "an arithmetic expression";
     default: return t->text && *t->text ? t->text : "a word";
     }
 }
@@ -578,6 +648,24 @@ static Node *parse_loop(Parser *ps, NodeKind kind) {
 
 static Node *parse_for(Parser *ps) {
     advance(ps);
+    if (peek(ps)->type == T_ARITH) {
+        Node *node = node_new(N_FOR_C);
+        char *spec = xstrdup(peek(ps)->text);
+        advance(ps);
+        char *cursor = spec;
+        for (int i = 0; i < 3; i++) {
+            char *part = str_next_field(&cursor, ';');
+            sl_push_copy(&node->words, part ? str_trim(part) : "");
+        }
+        free(spec);
+        skip_newlines(ps);
+        node->right = parse_body(ps, "do", "done");
+        if (!node->right) {
+            node_free(node);
+            return NULL;
+        }
+        return node;
+    }
     Token *name = peek(ps);
     if (name->type != T_WORD) {
         fail_hint(ps, ps->pos, "for needs a variable name",
@@ -868,6 +956,24 @@ static Node *parse_command(Parser *ps) {
 static Node *parse_compound(Parser *ps) {
     Token *t = peek(ps);
 
+    if (t->type == T_ARITH) {
+        Node *node = node_new(N_ARITH);
+        node->name = xstrdup(t->text);
+        advance(ps);
+        return node;
+    }
+    if (t->type == T_LPAREN) {
+        advance(ps);
+        Node *node = node_new(N_SUBSHELL);
+        node->right = parse_list(ps, NULL);
+        if (peek(ps)->type != T_RPAREN) {
+            unfinished(ps, ps->pos, "this ( has no )", "a subshell runs a list: ( cd x && make )");
+            node_free(node);
+            return NULL;
+        }
+        advance(ps);
+        return node;
+    }
     if (is_reserved(t, "if")) return parse_if(ps);
     if (is_reserved(t, "while")) return parse_loop(ps, N_WHILE);
     if (is_reserved(t, "until")) return parse_loop(ps, N_UNTIL);

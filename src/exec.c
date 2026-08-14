@@ -308,13 +308,23 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
 
     for (Redir *r = redirs; r; r = r->next) {
-        if (r->type == R_HEREDOC || r->type == R_HEREDOC_RAW) {
+        if (r->type == R_HEREDOC || r->type == R_HEREDOC_RAW || r->type == R_HERESTRING) {
             char directory[PATH_BUF];
             char file[PATH_BUF];
             if (!GetTempPathA(sizeof(directory), directory)) return 0;
             if (!GetTempFileNameA(directory, "frhd", 0, file)) return 0;
 
-            char *body = r->type == R_HEREDOC ? expand_heredoc(r->target) : xstrdup(r->target);
+            char *body;
+            if (r->type == R_HEREDOC_RAW) body = xstrdup(r->target);
+            else if (r->type == R_HERESTRING) {
+                char *value = expand_single(r->target);
+                StrBuf sb;
+                sb_init(&sb);
+                sb_puts(&sb, value);
+                sb_putc(&sb, '\n');
+                free(value);
+                body = sb_take(&sb);
+            } else body = expand_heredoc(r->target);
             FILE *f = fopen(file, "wb");
             if (f) {
                 fputs(body, f);
@@ -911,6 +921,9 @@ static int exec_pipeline(Node *node, int background) {
     int mark = tracked_count;
     int last_stage_spawned = 0;
     int status = 0;
+    int stage_status[MAX_STAGES];
+    int proc_stage[MAX_STAGES];
+    for (int i = 0; i < count; i++) stage_status[i] = 0;
 
     for (int i = 0; i < count; i++) {
         IoSet io = io_default();
@@ -943,7 +956,9 @@ static int exec_pipeline(Node *node, int background) {
 
         HANDLE spawned = NULL;
         status = exec_command(stages[i], io, 0, &spawned);
+        stage_status[i] = status;
         if (spawned) {
+            proc_stage[process_count] = i;
             processes[process_count++] = spawned;
             if (i == count - 1) last_stage_spawned = 1;
         }
@@ -983,11 +998,18 @@ static int exec_pipeline(Node *node, int background) {
         WaitForSingleObject(processes[i], INFINITE);
         DWORD exit_code = 0;
         GetExitCodeProcess(processes[i], &exit_code);
+        stage_status[proc_stage[i]] = (int)exit_code;
         if (i == process_count - 1 && last_stage_spawned) status = (int)exit_code;
         CloseHandle(processes[i]);
     }
 
     for (int i = 0; i < spool_count; i++) DeleteFileA(spools[i]);
+
+    if (!background && shell.pipefail) {
+        status = 0;
+        for (int i = 0; i < count; i++)
+            if (stage_status[i] != 0) status = stage_status[i];
+    }
 
     release_tracked(mark);
     return status;
@@ -1388,6 +1410,45 @@ static int exec_switch(Node *node) {
     case N_GROUP:
         status = exec_node(node->right);
         break;
+
+    case N_SUBSHELL: {
+        char cwd[PATH_BUF];
+        GetCurrentDirectoryA(sizeof(cwd), cwd);
+        int was_running = shell.running;
+        status = exec_node(node->right);
+        if (!shell.running) {
+            shell.running = was_running;
+            status = shell.last_status;
+        }
+        SetCurrentDirectoryA(cwd);
+        break;
+    }
+
+    case N_ARITH: {
+        int ok = 1;
+        long value = eval_arith(node->name, &ok);
+        status = ok && value != 0 ? 0 : 1;
+        break;
+    }
+
+    case N_FOR_C: {
+        int ok = 1;
+        const char *init = node->words.items[0];
+        const char *cond = node->words.items[1];
+        const char *step = node->words.items[2];
+        if (*init) eval_arith(init, &ok);
+        while (shell.running && !shell.returning) {
+            if (*cond && eval_arith(cond, &ok) == 0) break;
+            status = exec_node(node->right);
+            if (shell.continue_level) shell.continue_level--;
+            if (shell.break_level) {
+                shell.break_level--;
+                break;
+            }
+            if (*step) eval_arith(step, &ok);
+        }
+        break;
+    }
 
     case N_PIPE:
         status = exec_pipeline(node, node->background);

@@ -892,39 +892,120 @@ static int core_find(int argc, char **argv) {
     return 0;
 }
 
-static int core_printf(int argc, char **argv) {
-    if (argc < 2) return 2;
-    const char *format = argv[1];
-    int next = 2;
-
-    for (const char *p = format; *p; p++) {
-        if (*p == '\\' && p[1]) {
-            p++;
-            if (*p == 'n') putchar('\n');
-            else if (*p == 't') putchar('\t');
-            else if (*p == 'r') putchar('\r');
-            else if (*p == '\\') putchar('\\');
-            else putchar(*p);
-            continue;
-        }
-        if (*p != '%') {
+static void printf_escapes(const char *s) {
+    for (const char *p = s; *p; p++) {
+        if (*p != '\\' || !p[1]) {
             putchar(*p);
             continue;
         }
         p++;
-        if (*p == '%') {
-            putchar('%');
-            continue;
-        }
-        const char *value = next < argc ? argv[next++] : "";
-        if (*p == 's') fputs(value, stdout);
-        else if (*p == 'd' || *p == 'i') printf("%ld", atol(value));
-        else if (*p == 'c') putchar(value[0]);
-        else {
-            putchar('%');
-            putchar(*p);
+        switch (*p) {
+        case 'n': putchar('\n'); break;
+        case 't': putchar('\t'); break;
+        case 'r': putchar('\r'); break;
+        case 'a': putchar(7); break;
+        case 'b': putchar(8); break;
+        case 'f': putchar(12); break;
+        case 'v': putchar(11); break;
+        case 'e': putchar(27); break;
+        case '\\': putchar('\\'); break;
+        default: putchar('\\'); putchar(*p); break;
         }
     }
+}
+
+static int core_printf(int argc, char **argv) {
+    if (argc < 2) return 2;
+    const char *format = argv[1];
+    int next = 2;
+    int has_conversion = 0;
+
+    do {
+        for (const char *p = format; *p; p++) {
+            if (*p == '\\' && p[1]) {
+                p++;
+                switch (*p) {
+                case 'n': putchar('\n'); break;
+                case 't': putchar('\t'); break;
+                case 'r': putchar('\r'); break;
+                case 'a': putchar(7); break;
+                case 'b': putchar(8); break;
+                case 'f': putchar(12); break;
+                case 'v': putchar(11); break;
+                case 'e': putchar(27); break;
+                case '\\': putchar('\\'); break;
+                default: putchar(*p); break;
+                }
+                continue;
+            }
+            if (*p != '%') {
+                putchar(*p);
+                continue;
+            }
+            if (p[1] == '%') {
+                putchar('%');
+                p++;
+                continue;
+            }
+
+            char spec[64];
+            size_t s = 0;
+            spec[s++] = '%';
+            p++;
+            while (*p && strchr("-+ #0", *p) && s < sizeof(spec) - 4) spec[s++] = *p++;
+            while (isdigit((unsigned char)*p) && s < sizeof(spec) - 4) spec[s++] = *p++;
+            if (*p == '.') {
+                spec[s++] = *p++;
+                while (isdigit((unsigned char)*p) && s < sizeof(spec) - 4) spec[s++] = *p++;
+            }
+            char conv = *p;
+            if (!conv) break;
+            has_conversion = 1;
+            const char *value = next < argc ? argv[next++] : "";
+
+            switch (conv) {
+            case 'd':
+            case 'i':
+                spec[s++] = 'l';
+                spec[s++] = 'd';
+                spec[s] = '\0';
+                printf(spec, strtol(value, NULL, 0));
+                break;
+            case 'o':
+            case 'u':
+            case 'x':
+            case 'X':
+                spec[s++] = 'l';
+                spec[s++] = conv;
+                spec[s] = '\0';
+                printf(spec, strtoul(value, NULL, 0));
+                break;
+            case 'f':
+            case 'e':
+            case 'E':
+            case 'g':
+            case 'G':
+                spec[s++] = conv;
+                spec[s] = '\0';
+                printf(spec, atof(value));
+                break;
+            case 'c':
+                spec[s++] = 'c';
+                spec[s] = '\0';
+                printf(spec, value[0]);
+                break;
+            case 'b':
+                printf_escapes(value);
+                break;
+            case 's':
+            default:
+                spec[s++] = 's';
+                spec[s] = '\0';
+                printf(spec, value);
+                break;
+            }
+        }
+    } while (next < argc && has_conversion);
     return 0;
 }
 

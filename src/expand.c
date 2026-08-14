@@ -230,6 +230,13 @@ static char *brace_expand(const char *body) {
     char name[128];
     char index[128];
 
+    if (*body == '!' && (isalpha((unsigned char)body[1]) || body[1] == '_')) {
+        const char *target = var_get(body + 1);
+        if (!target || !*target) return xstrdup("");
+        const char *value = var_get(target);
+        return xstrdup(value ? value : "");
+    }
+
     if (*body == '#' && split_subscript(body + 1, name, sizeof(name), index, sizeof(index)) &&
         (strcmp(index, "@") == 0 || strcmp(index, "*") == 0)) {
         StrBuf sb;
@@ -679,14 +686,32 @@ void brace_expand_word(const char *word, StrList *out) {
 
     int low = 0;
     int high = 0;
+    int given_step = 0;
     char extra = 0;
-    if (sscanf(body, "%d..%d%c", &low, &high, &extra) == 2) {
-        int step = low <= high ? 1 : -1;
-        for (int value = low;; value += step) {
+    int fields = sscanf(body, "%d..%d..%d%c", &low, &high, &given_step, &extra);
+    int simple = fields == 3 ? 0 : sscanf(body, "%d..%d%c", &low, &high, &extra) == 2;
+    if (fields == 3 || simple) {
+        int width = 0;
+        const char *dots = strstr(body, "..");
+        if (dots) {
+            const char *l = body;
+            const char *r = dots + 2;
+            if (*l == '-' || *l == '+') l++;
+            if (*r == '-' || *r == '+') r++;
+            int lw = (int)strspn(l, "0123456789");
+            int rw = (int)strspn(r, "0123456789");
+            if ((l[0] == '0' && lw > 1) || (r[0] == '0' && rw > 1))
+                width = lw > rw ? lw : rw;
+        }
+        int step = given_step ? (given_step < 0 ? -given_step : given_step) : 1;
+        int direction = low <= high ? 1 : -1;
+        for (int value = low;; value += step * direction) {
             char number[32];
-            snprintf(number, sizeof(number), "%d", value);
+            if (width > 0) snprintf(number, sizeof(number), "%0*d", width, value);
+            else snprintf(number, sizeof(number), "%d", value);
             sl_push_copy(&pieces, number);
-            if (value == high) break;
+            if (direction > 0 ? value + step * direction > high : value + step * direction < high)
+                break;
         }
     } else {
         int depth = 0;
@@ -852,65 +877,122 @@ typedef struct {
     int ok;
 } Arith;
 
-static long arith_expr(Arith *a);
+static long arith_comma(Arith *a);
+static long arith_assign(Arith *a);
 
 static void arith_space(Arith *a) {
     while (*a->p == ' ' || *a->p == '\t') a->p++;
 }
 
+static long arith_getvar(const char *name) {
+    const char *value = var_get(name);
+    if (!value) return 0;
+    char *end;
+    long n = strtol(value, &end, 0);
+    return n;
+}
+
+static void arith_setvar(const char *name, long value) {
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%ld", value);
+    var_set(name, buffer);
+}
+
+static int arith_peek_name(Arith *a, char *buffer) {
+    arith_space(a);
+    const char *q = a->p;
+    if (!(isalpha((unsigned char)*q) || *q == '_')) return 0;
+    size_t i = 0;
+    while (isalnum((unsigned char)*q) || *q == '_') {
+        if (i < 63) buffer[i++] = *q;
+        q++;
+    }
+    buffer[i] = '\0';
+    return 1;
+}
+
 static long arith_primary(Arith *a) {
     arith_space(a);
+    if (a->p[0] == '+' && a->p[1] == '+') {
+        a->p += 2;
+        char name[64];
+        if (!arith_peek_name(a, name)) { a->ok = 0; return 0; }
+        while (isalnum((unsigned char)*a->p) || *a->p == '_') a->p++;
+        long value = arith_getvar(name) + 1;
+        arith_setvar(name, value);
+        return value;
+    }
+    if (a->p[0] == '-' && a->p[1] == '-') {
+        a->p += 2;
+        char name[64];
+        if (!arith_peek_name(a, name)) { a->ok = 0; return 0; }
+        while (isalnum((unsigned char)*a->p) || *a->p == '_') a->p++;
+        long value = arith_getvar(name) - 1;
+        arith_setvar(name, value);
+        return value;
+    }
     if (*a->p == '(') {
         a->p++;
-        long value = arith_expr(a);
+        long value = arith_comma(a);
         arith_space(a);
         if (*a->p == ')') a->p++;
         return value;
     }
-    if (*a->p == '-') {
-        a->p++;
-        return -arith_primary(a);
-    }
-    if (*a->p == '+') {
-        a->p++;
-        return arith_primary(a);
-    }
-    if (*a->p == '!') {
-        a->p++;
-        return !arith_primary(a);
-    }
-    if (*a->p == '$') {
-        a->p++;
-        return arith_primary(a);
-    }
+    if (*a->p == '-') { a->p++; return -arith_primary(a); }
+    if (*a->p == '+') { a->p++; return arith_primary(a); }
+    if (*a->p == '!') { a->p++; return !arith_primary(a); }
+    if (*a->p == '~') { a->p++; return ~arith_primary(a); }
+    if (*a->p == '$') { a->p++; return arith_primary(a); }
     if (isdigit((unsigned char)*a->p)) {
         char *end;
         long value = strtol(a->p, &end, 0);
         a->p = end;
         return value;
     }
-    if (isalpha((unsigned char)*a->p) || *a->p == '_') {
-        char *name = read_name(&a->p);
-        const char *value = var_get(name);
-        free(name);
-        return value ? atol(value) : 0;
+    char name[64];
+    if (arith_peek_name(a, name)) {
+        while (isalnum((unsigned char)*a->p) || *a->p == '_') a->p++;
+        if (a->p[0] == '+' && a->p[1] == '+') {
+            a->p += 2;
+            long value = arith_getvar(name);
+            arith_setvar(name, value + 1);
+            return value;
+        }
+        if (a->p[0] == '-' && a->p[1] == '-') {
+            a->p += 2;
+            long value = arith_getvar(name);
+            arith_setvar(name, value - 1);
+            return value;
+        }
+        return arith_getvar(name);
     }
     a->ok = 0;
     return 0;
 }
 
-static long arith_mul(Arith *a) {
+static long arith_power(Arith *a) {
     long left = arith_primary(a);
+    arith_space(a);
+    if (a->p[0] == '*' && a->p[1] == '*') {
+        a->p += 2;
+        long right = arith_power(a);
+        long result = 1;
+        for (long i = 0; i < right; i++) result *= left;
+        return result;
+    }
+    return left;
+}
+
+static long arith_mul(Arith *a) {
+    long left = arith_power(a);
     while (1) {
         arith_space(a);
         char op = *a->p;
+        if (op == '*' && a->p[1] == '*') return left;
         if (op != '*' && op != '/' && op != '%') return left;
         a->p++;
-        long right = arith_primary(a);
-        if ((op == '/' || op == '%') && right == 0) {
-            a->ok = 0;
-            return 0;
-        }
+        long right = arith_power(a);
+        if ((op == '/' || op == '%') && right == 0) { a->ok = 0; return 0; }
         if (op == '*') left *= right;
         else if (op == '/') left /= right;
         else left %= right;
@@ -922,6 +1004,8 @@ static long arith_add(Arith *a) {
     while (1) {
         arith_space(a);
         char op = *a->p;
+        if (op == '+' && a->p[1] == '+') return left;
+        if (op == '-' && a->p[1] == '-') return left;
         if (op != '+' && op != '-') return left;
         a->p++;
         long right = arith_mul(a);
@@ -929,25 +1013,25 @@ static long arith_add(Arith *a) {
     }
 }
 
-static long arith_compare(Arith *a) {
+static long arith_shift(Arith *a) {
     long left = arith_add(a);
     while (1) {
         arith_space(a);
-        if (a->p[0] == '<' && a->p[1] == '=') {
-            a->p += 2;
-            left = left <= arith_add(a);
-        } else if (a->p[0] == '>' && a->p[1] == '=') {
-            a->p += 2;
-            left = left >= arith_add(a);
-        } else if (a->p[0] == '<') {
-            a->p++;
-            left = left < arith_add(a);
-        } else if (a->p[0] == '>') {
-            a->p++;
-            left = left > arith_add(a);
-        } else {
-            return left;
-        }
+        if (a->p[0] == '<' && a->p[1] == '<') { a->p += 2; left <<= arith_add(a); }
+        else if (a->p[0] == '>' && a->p[1] == '>') { a->p += 2; left >>= arith_add(a); }
+        else return left;
+    }
+}
+
+static long arith_compare(Arith *a) {
+    long left = arith_shift(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '<' && a->p[1] == '=') { a->p += 2; left = left <= arith_shift(a); }
+        else if (a->p[0] == '>' && a->p[1] == '=') { a->p += 2; left = left >= arith_shift(a); }
+        else if (a->p[0] == '<' && a->p[1] != '<') { a->p++; left = left < arith_shift(a); }
+        else if (a->p[0] == '>' && a->p[1] != '>') { a->p++; left = left > arith_shift(a); }
+        else return left;
     }
 }
 
@@ -955,40 +1039,122 @@ static long arith_equality(Arith *a) {
     long left = arith_compare(a);
     while (1) {
         arith_space(a);
-        if (a->p[0] == '=' && a->p[1] == '=') {
-            a->p += 2;
-            left = left == arith_compare(a);
-        } else if (a->p[0] == '!' && a->p[1] == '=') {
-            a->p += 2;
-            left = left != arith_compare(a);
-        } else {
-            return left;
-        }
+        if (a->p[0] == '=' && a->p[1] == '=') { a->p += 2; left = left == arith_compare(a); }
+        else if (a->p[0] == '!' && a->p[1] == '=') { a->p += 2; left = left != arith_compare(a); }
+        else return left;
     }
 }
 
-static long arith_expr(Arith *a) {
+static long arith_bit_and(Arith *a) {
     long left = arith_equality(a);
     while (1) {
         arith_space(a);
-        if (a->p[0] == '&' && a->p[1] == '&') {
-            a->p += 2;
-            long right = arith_equality(a);
-            left = left && right;
-        } else if (a->p[0] == '|' && a->p[1] == '|') {
-            a->p += 2;
-            long right = arith_equality(a);
-            left = left || right;
-        } else {
-            return left;
+        if (a->p[0] == '&' && a->p[1] != '&') { a->p++; left &= arith_equality(a); }
+        else return left;
+    }
+}
+
+static long arith_bit_xor(Arith *a) {
+    long left = arith_bit_and(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '^') { a->p++; left ^= arith_bit_and(a); }
+        else return left;
+    }
+}
+
+static long arith_bit_or(Arith *a) {
+    long left = arith_bit_xor(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '|' && a->p[1] != '|') { a->p++; left |= arith_bit_xor(a); }
+        else return left;
+    }
+}
+
+static long arith_logic_and(Arith *a) {
+    long left = arith_bit_or(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '&' && a->p[1] == '&') { a->p += 2; long r = arith_bit_or(a); left = left && r; }
+        else return left;
+    }
+}
+
+static long arith_logic_or(Arith *a) {
+    long left = arith_logic_and(a);
+    while (1) {
+        arith_space(a);
+        if (a->p[0] == '|' && a->p[1] == '|') { a->p += 2; long r = arith_logic_and(a); left = left || r; }
+        else return left;
+    }
+}
+
+static long arith_ternary(Arith *a) {
+    long condition = arith_logic_or(a);
+    arith_space(a);
+    if (*a->p == '?') {
+        a->p++;
+        long yes = arith_assign(a);
+        arith_space(a);
+        if (*a->p == ':') a->p++;
+        long no = arith_assign(a);
+        return condition ? yes : no;
+    }
+    return condition;
+}
+
+static long arith_assign(Arith *a) {
+    char name[64];
+    const char *save = a->p;
+    if (arith_peek_name(a, name)) {
+        const char *after = a->p;
+        while (isalnum((unsigned char)*after) || *after == '_') after++;
+        const char *q = after;
+        while (*q == ' ' || *q == '\t') q++;
+        char op = *q;
+        int compound = (op == '+' || op == '-' || op == '*' || op == '/' || op == '%' ||
+                        op == '&' || op == '|' || op == '^') &&
+                       q[1] == '=';
+        int plain = op == '=' && q[1] != '=';
+        if (plain || compound) {
+            a->p = compound ? q + 2 : q + 1;
+            long right = arith_assign(a);
+            long current = compound ? arith_getvar(name) : 0;
+            long value = right;
+            if (compound) {
+                switch (op) {
+                case '+': value = current + right; break;
+                case '-': value = current - right; break;
+                case '*': value = current * right; break;
+                case '/': value = right ? current / right : (a->ok = 0, 0); break;
+                case '%': value = right ? current % right : (a->ok = 0, 0); break;
+                case '&': value = current & right; break;
+                case '|': value = current | right; break;
+                case '^': value = current ^ right; break;
+                }
+            }
+            arith_setvar(name, value);
+            return value;
         }
+    }
+    a->p = save;
+    return arith_ternary(a);
+}
+
+static long arith_comma(Arith *a) {
+    long value = arith_assign(a);
+    while (1) {
+        arith_space(a);
+        if (*a->p == ',') { a->p++; value = arith_assign(a); }
+        else return value;
     }
 }
 
 long eval_arith(const char *expr, int *ok) {
     char *expanded = expand_single(expr);
     Arith a = {expanded, 1};
-    long value = arith_expr(&a);
+    long value = arith_comma(&a);
     arith_space(&a);
     if (*a.p) a.ok = 0;
     if (ok) *ok = a.ok;

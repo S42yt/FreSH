@@ -169,14 +169,37 @@ static int builtin_set(int argc, char **argv) {
         return 0;
     }
 
-    for (int i = 1; i < argc; i++) {
+    int i = 1;
+    for (; i < argc; i++) {
         char sign = argv[i][0];
-        if (sign != '-' && sign != '+') continue;
+        if (sign != '-' && sign != '+') break;
+        if (strcmp(argv[i], "--") == 0) {
+            i++;
+            break;
+        }
+        if (argv[i][1] == 'o') {
+            const char *name = i + 1 < argc ? argv[++i] : "";
+            int on = sign == '-';
+            if (strcmp(name, "pipefail") == 0) shell.pipefail = on;
+            else if (strcmp(name, "errexit") == 0) shell.errexit = on;
+            else if (strcmp(name, "xtrace") == 0) shell.xtrace = on;
+            else if (strcmp(name, "nounset") == 0) shell.nounset = on;
+            continue;
+        }
         for (const char *flag = argv[i] + 1; *flag; flag++) {
             if (*flag == 'e') shell.errexit = sign == '-';
             else if (*flag == 'x') shell.xtrace = sign == '-';
             else if (*flag == 'u') shell.nounset = sign == '-';
         }
+    }
+
+    int saw_dashes = i > 1 && strcmp(argv[i - 1], "--") == 0;
+    if (saw_dashes || i < argc) {
+        char *name = shell.params.len > 0 ? xstrdup(shell.params.items[0]) : xstrdup("FreSH");
+        sl_free(&shell.params);
+        sl_init(&shell.params);
+        sl_push(&shell.params, name);
+        for (; i < argc; i++) sl_push_copy(&shell.params, argv[i]);
     }
     return 0;
 }
@@ -200,6 +223,14 @@ static void assign_word(char *word) {
         var_set(word, eq + 1);
     }
     *eq = '=';
+}
+
+static int builtin_let(int argc, char **argv) {
+    long value = 0;
+    int ok = 1;
+    for (int i = 1; i < argc; i++) value = eval_arith(argv[i], &ok);
+    if (!ok) return 2;
+    return value != 0 ? 0 : 1;
 }
 
 static int builtin_local(int argc, char **argv) {
@@ -954,6 +985,7 @@ static const Builtin BUILTINS[] = {
     {"continue", builtin_continue}, {"declare", builtin_declare},
     {"describe", builtin_describe},
     {"local", builtin_local},       {"typeset", builtin_declare},
+    {"let", builtin_let},
     {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},
     {"exit", builtin_exit},         {"have", builtin_have},
