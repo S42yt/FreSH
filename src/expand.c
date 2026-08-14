@@ -535,8 +535,12 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         StrList elements;
         sl_init(&elements);
         if (expand_array_body(inner.data, &elements)) {
+            int joined = in_quotes && strstr(inner.data, "[*]") != NULL;
             for (size_t i = 0; i < elements.len; i++) {
-                if (i > 0) field_flush(ex);
+                if (i > 0) {
+                    if (joined) field_add(ex, " ", 1);
+                    else field_flush(ex);
+                }
                 field_add(ex, elements.items[i], strlen(elements.items[i]));
                 if (in_quotes) ex->quoted = 1;
             }
