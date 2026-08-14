@@ -20,6 +20,17 @@ check assignment_in_local "$(holder)" "x y"
 pattern=*.nothing
 check assignment_not_globbed "$pattern" "*.nothing"
 
+globdir=$(mktemp -d)
+touch "$globdir/one.tst" "$globdir/two.tst"
+set -- "$globdir"/*.tst
+check glob_after_quoted_part "$#" 2
+set -- "*.tst"
+check quoted_glob_stays_literal "$1" "*.tst"
+holder="*.tst"
+set -- "$holder"
+check quoted_expansion_literal "$1" "*.tst"
+rm -r "$globdir"
+
 appended=start
 appended+=$(echo " end")
 check assignment_append "$appended" "start end"

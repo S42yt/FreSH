@@ -400,6 +400,38 @@ static int core_cut(int argc, char **argv) {
     return 0;
 }
 
+static char *expand_set(const char *spec, size_t *length_out) {
+    StrBuf out;
+    sb_init(&out);
+
+    for (const char *p = spec; *p; p++) {
+        char c = *p;
+        if (c == '\\' && p[1]) {
+            p++;
+            switch (*p) {
+            case 'n': c = '\n'; break;
+            case 't': c = '\t'; break;
+            case 'r': c = '\r'; break;
+            case '\\': c = '\\'; break;
+            case '0': c = '\0'; break;
+            default: c = *p; break;
+            }
+            sb_putc(&out, c);
+            continue;
+        }
+        if (p[1] == '-' && p[2] && p[2] != '-' && (unsigned char)p[2] >= (unsigned char)c) {
+            for (unsigned char step = (unsigned char)c; step <= (unsigned char)p[2]; step++)
+                sb_putc(&out, (char)step);
+            p += 2;
+            continue;
+        }
+        sb_putc(&out, c);
+    }
+
+    *length_out = out.len;
+    return sb_take(&out);
+}
+
 static int core_tr(int argc, char **argv) {
     int deleting = flag_set(argc, argv, 'd');
     int index = first_operand(argc, argv);
@@ -407,22 +439,32 @@ static int core_tr(int argc, char **argv) {
         shell_error("tr: usage: tr [-d] SET1 [SET2]");
         return 2;
     }
-    const char *set1 = argv[index];
-    const char *set2 = index + 1 < argc ? argv[index + 1] : "";
-    size_t set2_length = strlen(set2);
+
+    size_t from_length = 0;
+    size_t to_length = 0;
+    char *from = expand_set(argv[index], &from_length);
+    char *to = expand_set(index + 1 < argc ? argv[index + 1] : "", &to_length);
 
     int c;
     while ((c = fgetc(stdin)) != EOF) {
-        const char *hit = strchr(set1, c);
-        if (!hit) {
+        size_t position = from_length;
+        for (size_t i = 0; i < from_length; i++) {
+            if ((unsigned char)from[i] == (unsigned char)c) {
+                position = i;
+                break;
+            }
+        }
+
+        if (position == from_length) {
             fputc(c, stdout);
             continue;
         }
-        if (deleting) continue;
-        size_t position = (size_t)(hit - set1);
-        if (set2_length == 0) continue;
-        fputc(set2[position < set2_length ? position : set2_length - 1], stdout);
+        if (deleting || to_length == 0) continue;
+        fputc(to[position < to_length ? position : to_length - 1], stdout);
     }
+
+    free(from);
+    free(to);
     return 0;
 }
 

@@ -27,6 +27,14 @@ check grep_quiet "$(echo yes | grep -q yes && echo found)" found
 check grep_ignore_case "$(echo HELLO | grep -i hello)" HELLO
 check grep_extended "$(printf 'cat\ndog\n' | grep -E 'c.t')" cat
 
+check tr_newline "$(printf 'a\nb\n' | tr '\n' '-')" a-b-
+check tr_range_digits "$(echo a1b | tr 0-9 x)" axb
+
+check sed_address_delete "$(printf 'a\nb\n' | sed '/a/d')" b
+check sed_address_replace "$(printf 'aa\nbb\n' | sed '/bb/s/b/X/g' | tr '\n' ' ')" 'aa XX '
+check sed_line_number "$(printf 'a\nb\n' | sed '2d')" a
+check sed_print "$(printf 'a\nb\n' | sed -n '/b/p')" b
+
 check sed_replace "$(echo hello | sed 's/l/L/')" heLlo
 check sed_replace_all "$(echo hello | sed 's/l/L/g')" heLLo
 check sed_delete "$(printf 'a\nb\n' | sed '/a/d')" b
@@ -37,6 +45,8 @@ check awk_separator "$(echo 'a:b' | awk -F: '{ print $2 }')" b
 check awk_condition "$(printf '1\n5\n' | awk '$1 > 3 { print $1 }')" 5
 check awk_end "$(printf 'a\nb\n' | awk 'END { print NR }')" 2
 check awk_array "$(printf 'x\nx\ny\n' | awk '{ n[$1]++ } END { print n["x"] }')" 2
+check awk_element_increment "$(awk 'BEGIN { n["k"]++; n["k"]++; print n["k"] }')" 2
+check awk_in_operator "$(awk 'BEGIN { n["k"] = 1; if ("k" in n) print "yes" }')" yes
 check awk_function "$(echo 5 | awk 'function double(v) { return v * 2 } { print double($1) }')" 10
 check awk_split "$(echo 'a,b,c' | awk '{ n = split($0, parts, ","); print n }')" 3
 

@@ -440,6 +440,14 @@ static Expr *parse_primary(Lexer *lx) {
             e->text = xstrdup(name);
             e->left = parse_expression(lx);
             accept(lx, "]");
+
+            if (is_token(lx, "++") || is_token(lx, "--")) {
+                Expr *inc = expr_new(E_INCREMENT);
+                snprintf(inc->op, sizeof(inc->op), "%s", lx->token);
+                inc->left = e;
+                lex_next(lx);
+                return inc;
+            }
             return e;
         }
 
@@ -1014,9 +1022,10 @@ static const char *evaluate(Awk *awk, Expr *e) {
         return number_text(awk, -evaluate_number(awk, e->left));
 
     case E_INCREMENT: {
-        double value = to_number(variable_get(awk, e->left->text));
+        double value = to_number(e->left->kind == E_VAR ? variable_get(awk, e->left->text)
+                                                        : evaluate(awk, e->left));
         double updated = e->op[0] == '+' ? value + 1 : value - 1;
-        variable_set(awk, e->left->text, number_text(awk, updated));
+        assign_to(awk, e->left, number_text(awk, updated));
         return number_text(awk, value);
     }
 

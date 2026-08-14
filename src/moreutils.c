@@ -135,9 +135,10 @@ static int replace_once(const char *line, const char *pattern, const char *repla
 
 static int more_sed(int argc, char **argv) {
     int quiet = flag_set(argc, argv, 'n');
+    int extended = flag_set(argc, argv, 'E') || flag_set(argc, argv, 'r');
     int index = first_operand(argc, argv);
     if (index >= argc) {
-        shell_error("sed: usage: sed [-n] 's/pattern/replacement/[g]' [file...]");
+        shell_error("sed: usage: sed [-n] '[/address/]s/pattern/replacement/[g]' [file...]");
         return 2;
     }
 
@@ -148,46 +149,98 @@ static int more_sed(int argc, char **argv) {
     sl_init(&lines);
     read_lines(argc, argv, index, &lines);
 
-    if (script[0] == 's' && script[1]) {
-        char separator = script[1];
-        char *pattern = script + 2;
+    char *cursor = script;
+    StrBuf address;
+    sb_init(&address);
+    long address_line = 0;
+    int addressed = 0;
+
+    if (*cursor == '/') {
+        char *close = strchr(cursor + 1, '/');
+        if (!close) {
+            shell_error("sed: unterminated address");
+            sb_free(&address);
+            sl_free(&lines);
+            return 2;
+        }
+        *close = '\0';
+        if (extended) sb_puts(&address, cursor + 1);
+        else regex_bre_to_ere(cursor + 1, &address);
+        addressed = 1;
+        cursor = close + 1;
+    } else if (isdigit((unsigned char)*cursor)) {
+        address_line = strtol(cursor, &cursor, 10);
+        addressed = 1;
+    }
+
+    char command = *cursor;
+    char *pattern = NULL;
+    char *replacement = NULL;
+    int global = 0;
+
+    if (command == 's' && cursor[1]) {
+        char separator = cursor[1];
+        pattern = cursor + 2;
         char *middle = strchr(pattern, separator);
         if (!middle) {
             shell_error("sed: unterminated s command");
+            sb_free(&address);
             sl_free(&lines);
             return 2;
         }
         *middle = '\0';
-        char *replacement = middle + 1;
+        replacement = middle + 1;
         char *end = strchr(replacement, separator);
-        int global = 0;
         if (end) {
             *end = '\0';
             global = strchr(end + 1, 'g') != NULL;
         }
-
-        StrBuf expression;
-        sb_init(&expression);
-        if (flag_set(argc, argv, 'E') || flag_set(argc, argv, 'r')) sb_puts(&expression, pattern);
-        else regex_bre_to_ere(pattern, &expression);
-
-        for (size_t i = 0; i < lines.len; i++) {
-            StrBuf out;
-            sb_init(&out);
-            int replaced = regex_replace(expression.data, replacement, lines.items[i], global, &out);
-            if (!quiet || replaced) printf("%s\n", out.data);
-            sb_free(&out);
-        }
-        sb_free(&expression);
-    } else if (script[0] == 'd') {
-        sl_free(&lines);
-        return 0;
-    } else {
-        shell_error("sed: only s/// and d are supported");
+    } else if (command != 'd' && command != 'p') {
+        shell_error("sed: %c: only s, d and p are supported, with an optional /address/", command);
+        sb_free(&address);
         sl_free(&lines);
         return 2;
     }
 
+    StrBuf expression;
+    sb_init(&expression);
+    if (pattern) {
+        if (extended) sb_puts(&expression, pattern);
+        else regex_bre_to_ere(pattern, &expression);
+    }
+
+    for (size_t i = 0; i < lines.len; i++) {
+        const char *line = lines.items[i];
+        int selected = 1;
+        if (addressed) {
+            selected = address_line ? (long)(i + 1) == address_line
+                                    : regex_search(address.data, line, NULL);
+        }
+
+        if (command == 'd') {
+            if (!selected && !quiet) printf("%s\n", line);
+            continue;
+        }
+        if (command == 'p') {
+            if (!quiet) printf("%s\n", line);
+            if (selected) printf("%s\n", line);
+            continue;
+        }
+
+        if (!selected) {
+            if (!quiet) printf("%s\n", line);
+            continue;
+        }
+
+        StrBuf out;
+        sb_init(&out);
+        int replaced = regex_replace(expression.data, replacement, line, global, &out);
+        if (!quiet || replaced) printf("%s\n", out.data);
+        sb_free(&out);
+    }
+
+    sb_free(&expression);
+    sb_free(&address);
     sl_free(&lines);
     return 0;
 }

@@ -12,7 +12,7 @@ check strip_suffix_long "${x%%l*}" he
 check replace_first "${x/l/L}" heLlo
 check replace_all "${x//l/L}" heLLo
 check replace_head "${x/#he/HE}" HEllo
-check replace_tail "${x/%lo/LO}" LO
+check replace_tail "${x/%lo/LO}" helLO
 check substring "${x:1:3}" ell
 check substring_rest "${x:2}" llo
 check upper "${x^^}" HELLO
