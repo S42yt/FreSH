@@ -63,6 +63,15 @@ start=$(pwd)
 (cd "$work")
 check subshell_keeps_directory "$(pwd)" "$start"
 
+ignored=$(cd "$work"; pwd)
+check substitution_keeps_directory "$(pwd)" "$start"
+
+leaked=outside
+ignored=$(leaked=inside; echo done)
+check substitution_keeps_variables "$leaked" outside
+
+check substitution_exit_status "$(x=$(exit 4); echo $?)" 4
+
 check group_output "$({ echo first; echo second; } | wc -l | tr -d ' ')" 2
 
 rm -r "$work"

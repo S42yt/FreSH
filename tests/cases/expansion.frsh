@@ -40,4 +40,4 @@ check positional_all "$*" "one two three"
 shift
 check after_shift "$1" two
 
-check tilde_expands "$(cd ~; pwd)" "$HOME"
+check tilde_expands "$(cd ~; pwd)" "$(cd "$HOME"; pwd)"

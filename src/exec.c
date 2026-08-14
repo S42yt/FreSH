@@ -2019,7 +2019,19 @@ int capture_command(const char *command, StrBuf *out) {
     Drain drain = {read_end, out};
     HANDLE reader = CreateThread(NULL, 0, drain_pipe, &drain, 0, NULL);
 
+    char cwd[PATH_BUF];
+    GetCurrentDirectoryA(sizeof(cwd), cwd);
+    void *snapshot = vars_snapshot();
+    int was_running = shell.running;
+
     int status = exec_text(command);
+
+    if (!shell.running) {
+        shell.running = was_running;
+        status = shell.last_status;
+    }
+    vars_restore(snapshot);
+    SetCurrentDirectoryA(cwd);
 
     fflush(stdout);
     _dup2(saved_out, 1);
