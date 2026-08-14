@@ -40,6 +40,13 @@ static const HelpEntry ENTRIES[] = {
      "  cd src/parser\n"
      "  cd -"},
 
+    {"case", "case <word> in <pattern>) <commands> ;; ... esac", "branch on what a word looks like",
+     "Patterns are globs, and | separates alternatives.\n"
+     "  case $1 in\n"
+     "    start|up) run ;;\n"
+     "    *)        die \"unknown: $1\" ;;\n"
+     "  esac"},
+
     {"clear", "clear", "wipe the screen", NULL},
 
     {"cmd", "cmd [<command> ...]", "run a command in cmd.exe",
@@ -82,6 +89,15 @@ static const HelpEntry ENTRIES[] = {
     {"fg", "fg [<job>]", "resume a job if stopped and wait for it",
      "With no argument it takes the most recent job."},
 
+    {"for", "for <name> in <word> ...; do <commands>; done", "run commands once per word",
+     "With no in list it walks the arguments the script was given.\n"
+     "  for f in *.txt; do echo $f; done\n"
+     "  for i in $(seq 1 3); do echo $i; done"},
+
+    {"function", "function <name> { <commands>; } | <name>() { <commands>; }", "define a function",
+     "Arguments arrive as $1 $2 and $@, and local keeps a variable inside.\n"
+     "  greet() { echo \"hi $1\"; }"},
+
     {"fresh", "fresh [version|update [--check]]", "about this shell, and updating it",
      "  fresh                 version, paths, theme and plugins\n"
      "  fresh update          fetch and install the newest release\n"
@@ -100,6 +116,11 @@ static const HelpEntry ENTRIES[] = {
     {"history", "history [-c] [<count>]", "commands you have run",
      "  -c        forget them all\n"
      "  history 20   the last twenty"},
+
+    {"if", "if <command>; then <commands>; [elif ...] [else ...] fi", "run commands when one succeeds",
+     "It branches on the exit status, so the condition is a command, not an expression.\n"
+     "  if test -f build.frsh; then echo found; fi\n"
+     "  if have gcc; then cc=gcc; else cc=clang; fi"},
 
     {"jobs", "jobs", "background jobs, running or stopped", NULL},
 
@@ -277,9 +298,13 @@ static const HelpEntry ENTRIES[] = {
      "  tr a-z A-Z        upper case\n"
      "  tr -d '\\r'        drop carriage returns"},
     {"uname", "uname [-a]", "the system name", NULL},
+    {"until", "until <command>; do <commands>; done", "loop while a command keeps failing",
+     "  until test -f ready; do sleep 1; done"},
     {"uniq", "uniq [-c] [<file> ...]", "collapse repeated neighbouring lines",
      "  -c   count them. Sort first if the duplicates are apart."},
     {"wc", "wc [-l] [-w] [-c] [<file> ...]", "count lines, words and characters", NULL},
+    {"while", "while <command>; do <commands>; done", "loop while a command keeps succeeding",
+     "  while read line; do echo \"$line\"; done < file"},
     {"wget", "wget [-O <file>] <url>", "download a url",
      "  -O   the name to save it as"},
     {"whoami", "whoami", "your user name", NULL},

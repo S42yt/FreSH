@@ -52,6 +52,19 @@ static const char *RESERVED[] = {"if",     "then",  "elif",     "else", "fi",   
                                  "case",   "esac",  "function", "{",     "}",    "[[",
                                  "]]",     NULL};
 
+int keyword_known(const char *word) {
+    for (int i = 0; RESERVED[i]; i++) {
+        if (strcmp(RESERVED[i], word) == 0) return 1;
+    }
+    return 0;
+}
+
+void keyword_names(StrList *out) {
+    for (int i = 0; RESERVED[i]; i++) {
+        if (isalpha((unsigned char)RESERVED[i][0])) sl_push_copy(out, RESERVED[i]);
+    }
+}
+
 static void token_push(TokenList *list, Token token) {
     if (list->len + 1 >= list->cap) {
         list->cap = list->cap ? list->cap * 2 : 32;
@@ -403,8 +416,43 @@ static Token *advance(Parser *ps) {
     return t;
 }
 
-static void fail(Parser *ps, const char *message) {
-    if (!ps->error) ps->error = xstrdup(message);
+static const char *token_label(Token *t) {
+    switch (t->type) {
+    case T_EOF: return "the end of the input";
+    case T_NEWLINE: return "a new line";
+    case T_SEMI: return ";";
+    case T_DSEMI: return ";;";
+    case T_PIPE: return "|";
+    case T_AND_AND: return "&&";
+    case T_OR_OR: return "||";
+    case T_AMP: return "&";
+    case T_LPAREN: return "(";
+    case T_RPAREN: return ")";
+    case T_REDIR: return "a redirection";
+    default: return t->text && *t->text ? t->text : "a word";
+    }
+}
+
+static int line_at(Parser *ps, size_t index) {
+    int line = 1;
+    for (size_t i = 0; i < index && i < ps->tokens.len; i++) {
+        if (ps->tokens.items[i].type == T_NEWLINE) line++;
+    }
+    return line;
+}
+
+static void fail_hint(Parser *ps, size_t index, const char *problem, const char *hint) {
+    if (ps->error) return;
+    StrBuf sb;
+    sb_init(&sb);
+    sb_printf(&sb, "line %d: %s", line_at(ps, index), problem);
+    if (hint) sb_printf(&sb, "\n  %s", hint);
+    ps->error = sb_take(&sb);
+}
+
+static void unfinished(Parser *ps, size_t opener, const char *problem, const char *hint) {
+    ps->incomplete = 1;
+    fail_hint(ps, opener, problem, hint);
 }
 
 static int is_reserved(Token *t, const char *word) {
@@ -453,15 +501,26 @@ static int at_stop(Parser *ps, const char **stop) {
 }
 
 static Node *parse_body(Parser *ps, const char *opener, const char *closer) {
+    size_t start = ps->pos;
     if (!is_reserved(peek(ps), opener)) {
-        fail(ps, "syntax error: expected keyword");
+        char problem[128];
+        char hint[128];
+        snprintf(problem, sizeof(problem), "expected %s here and found %s", opener,
+                 token_label(peek(ps)));
+        snprintf(hint, sizeof(hint), "the loop reads: <loop> <condition>; %s <commands>; %s", opener,
+                 closer);
+        fail_hint(ps, ps->pos, problem, hint);
         return NULL;
     }
     advance(ps);
     const char *stop[] = {closer, NULL};
     Node *body = parse_list(ps, stop);
     if (!is_reserved(peek(ps), closer)) {
-        ps->incomplete = 1;
+        char problem[128];
+        char hint[128];
+        snprintf(problem, sizeof(problem), "this %s has no %s", opener, closer);
+        snprintf(hint, sizeof(hint), "close the loop with %s, on its own line or after a ;", closer);
+        unfinished(ps, start, problem, hint);
         node_free(body);
         return NULL;
     }
@@ -470,12 +529,14 @@ static Node *parse_body(Parser *ps, const char *opener, const char *closer) {
 }
 
 static Node *parse_if(Parser *ps) {
+    size_t start = ps->pos;
     advance(ps);
     const char *cond_stop[] = {"then", NULL};
     Node *node = node_new(N_IF);
     node->left = parse_list(ps, cond_stop);
     if (!is_reserved(peek(ps), "then")) {
-        ps->incomplete = 1;
+        unfinished(ps, start, "this if has no then",
+                   "it reads: if <command>; then <commands>; fi");
         node_free(node);
         return NULL;
     }
@@ -493,7 +554,8 @@ static Node *parse_if(Parser *ps) {
         node->extra = parse_list(ps, else_stop);
     }
     if (!is_reserved(peek(ps), "fi")) {
-        ps->incomplete = 1;
+        unfinished(ps, start, "this if has no fi",
+                   "close it with fi, and note that it is fi rather than end or endif");
         node_free(node);
         return NULL;
     }
@@ -518,7 +580,8 @@ static Node *parse_for(Parser *ps) {
     advance(ps);
     Token *name = peek(ps);
     if (name->type != T_WORD) {
-        fail(ps, "syntax error: for requires a variable name");
+        fail_hint(ps, ps->pos, "for needs a variable name",
+                  "it reads: for <name> in <words>; do <commands>; done");
         return NULL;
     }
     Node *node = node_new(N_FOR);
@@ -544,10 +607,12 @@ static Node *parse_for(Parser *ps) {
 }
 
 static Node *parse_case(Parser *ps) {
+    size_t start = ps->pos;
     advance(ps);
     Token *subject = peek(ps);
     if (subject->type != T_WORD) {
-        fail(ps, "syntax error: case requires a word");
+        fail_hint(ps, ps->pos, "case needs a word to match on",
+                  "it reads: case $1 in <pattern>) <commands> ;; esac");
         return NULL;
     }
     Node *node = node_new(N_CASE);
@@ -556,7 +621,8 @@ static Node *parse_case(Parser *ps) {
     skip_line_breaks(ps);
 
     if (!is_reserved(peek(ps), "in")) {
-        ps->incomplete = 1;
+        unfinished(ps, start, "this case has no in",
+                   "the word to match is followed by in: case $1 in");
         node_free(node);
         return NULL;
     }
@@ -567,7 +633,8 @@ static Node *parse_case(Parser *ps) {
         skip_line_breaks(ps);
         if (is_reserved(peek(ps), "esac")) break;
         if (peek(ps)->type == T_EOF) {
-            ps->incomplete = 1;
+            unfinished(ps, start, "this case has no esac",
+                       "each branch ends with ;; and the whole thing with esac");
             node_free(node);
             return NULL;
         }
@@ -581,7 +648,8 @@ static Node *parse_case(Parser *ps) {
             else break;
         }
         if (peek(ps)->type != T_RPAREN) {
-            fail(ps, "syntax error: expected ')' in case");
+            fail_hint(ps, ps->pos, "a case pattern needs a ) after it",
+                      "write: start|up) <commands> ;;");
             node_free(item);
             node_free(node);
             return NULL;
@@ -597,7 +665,8 @@ static Node *parse_case(Parser *ps) {
     }
 
     if (!is_reserved(peek(ps), "esac")) {
-        ps->incomplete = 1;
+        unfinished(ps, start, "this case has no esac",
+                   "each branch ends with ;; and the whole thing with esac");
         node_free(node);
         return NULL;
     }
@@ -606,13 +675,15 @@ static Node *parse_case(Parser *ps) {
 }
 
 static Node *parse_test(Parser *ps) {
+    size_t start = ps->pos;
     advance(ps);
     Node *node = node_new(N_TEST);
 
     while (1) {
         Token *t = peek(ps);
         if (t->type == T_EOF) {
-            ps->incomplete = 1;
+            unfinished(ps, start, "this [[ has no ]]",
+                       "close it with ]] , with a space before it");
             node_free(node);
             return NULL;
         }
@@ -643,7 +714,8 @@ static Node *parse_select(Parser *ps) {
     advance(ps);
     Token *name = peek(ps);
     if (name->type != T_WORD) {
-        fail(ps, "syntax error: select requires a variable name");
+        fail_hint(ps, ps->pos, "select needs a variable name",
+                  "it reads: select <name> in <words>; do <commands>; done");
         return NULL;
     }
     Node *node = node_new(N_SELECT);
@@ -670,12 +742,14 @@ static Node *parse_select(Parser *ps) {
 }
 
 static Node *parse_group(Parser *ps) {
+    size_t start = ps->pos;
     advance(ps);
     const char *stop[] = {"}", NULL};
     Node *node = node_new(N_GROUP);
     node->right = parse_list(ps, stop);
     if (!is_reserved(peek(ps), "}")) {
-        ps->incomplete = 1;
+        unfinished(ps, start, "this { has no }",
+                   "the last command inside needs a ; or a new line before the }");
         node_free(node);
         return NULL;
     }
@@ -688,7 +762,8 @@ static Node *parse_function(Parser *ps, const char *name) {
     node->name = xstrdup(name);
     skip_line_breaks(ps);
     if (!is_reserved(peek(ps), "{")) {
-        fail(ps, "syntax error: function body must be a { } block");
+        fail_hint(ps, ps->pos, "a function body has to be a { } block",
+                  "write: name() { <commands>; }");
         node_free(node);
         return NULL;
     }
@@ -725,7 +800,8 @@ static Node *parse_simple(Parser *ps) {
                 advance(ps);
             }
             if (peek(ps)->type != T_RPAREN) {
-                ps->incomplete = 1;
+                unfinished(ps, ps->pos, "this array assignment has no closing )",
+                           "write: names=(one two three)");
                 node_free(assign);
                 node_free(node);
                 return NULL;
@@ -740,7 +816,8 @@ static Node *parse_simple(Parser *ps) {
             advance(ps);
             advance(ps);
             if (peek(ps)->type != T_RPAREN) {
-                fail(ps, "syntax error: expected ')'");
+                fail_hint(ps, ps->pos, "a function name is followed by ()",
+                          "write: name() { <commands>; }");
                 free(name);
                 node_free(node);
                 return NULL;
@@ -790,7 +867,8 @@ static Node *parse_compound(Parser *ps) {
         advance(ps);
         Token *name = peek(ps);
         if (name->type != T_WORD) {
-            fail(ps, "syntax error: function requires a name");
+            fail_hint(ps, ps->pos, "function needs a name",
+                      "write: function name { <commands>; }");
             return NULL;
         }
         char *fname = xstrdup(name->text);
@@ -821,7 +899,8 @@ static Node *parse_pipeline(Parser *ps) {
         skip_line_breaks(ps);
         Node *right = parse_command(ps);
         if (!right) {
-            ps->incomplete = 1;
+            unfinished(ps, ps->pos, "a | needs a command after it",
+                       "the left side sends its output to the right, as in: ls | wc -l");
             node_free(left);
             return NULL;
         }
@@ -844,11 +923,15 @@ static Node *parse_and_or(Parser *ps) {
     if (!left) return NULL;
     while (peek(ps)->type == T_AND_AND || peek(ps)->type == T_OR_OR) {
         NodeKind kind = peek(ps)->type == T_AND_AND ? N_AND : N_OR;
+        int is_and = kind == N_AND;
         advance(ps);
         skip_line_breaks(ps);
         Node *right = parse_pipeline(ps);
         if (!right) {
-            ps->incomplete = 1;
+            unfinished(ps, ps->pos, is_and ? "a && needs a command after it"
+                                           : "a || needs a command after it",
+                       is_and ? "&& runs the next command only when this one succeeds"
+                              : "|| runs the next command only when this one fails");
             node_free(left);
             return NULL;
         }
@@ -871,7 +954,12 @@ static Node *parse_list(Parser *ps, const char **stop) {
 
         Node *cmd = parse_and_or(ps);
         if (!cmd) {
-            if (!ps->error && !ps->incomplete) fail(ps, "syntax error near unexpected token");
+            if (!ps->error && !ps->incomplete) {
+                char problem[128];
+                snprintf(problem, sizeof(problem), "%s cannot start a command",
+                         token_label(peek(ps)));
+                fail_hint(ps, ps->pos, problem, "a command starts with a name, a variable or a (");
+            }
             node_free(list);
             return NULL;
         }
@@ -902,10 +990,21 @@ Node *parse_string(const char *src, int *incomplete, char **error) {
 
     Node *node = parse_list(&ps, NULL);
     if (!ps.error && !ps.incomplete && peek(&ps)->type != T_EOF) {
-        fail(&ps, "syntax error near unexpected token");
+        Token *t = peek(&ps);
+        char problem[128];
+        const char *hint = "a stray keyword usually means the block above it was never opened";
+        snprintf(problem, sizeof(problem), "%s was not expected here", token_label(t));
+        if (is_any_reserved(t)) {
+            snprintf(problem, sizeof(problem), "%s without the block it belongs to", t->text);
+            hint = "if goes with then and fi, while and for go with do and done";
+        }
+        fail_hint(&ps, ps.pos, problem, hint);
         node_free(node);
         node = NULL;
     }
+    if (ps.incomplete && !ps.error)
+        fail_hint(&ps, ps.tokens.len, "the input ends inside something that is not finished",
+                  "a quote, a $( ), or a block that was never closed");
     if (incomplete) *incomplete = ps.incomplete;
     if (error) {
         *error = ps.error;

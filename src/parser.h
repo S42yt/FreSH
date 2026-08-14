@@ -59,4 +59,7 @@ typedef struct Node {
 Node *parse_string(const char *src, int *incomplete, char **error);
 void node_free(Node *node);
 
+int keyword_known(const char *word);
+void keyword_names(StrList *out);
+
 #endif

@@ -16,6 +16,7 @@
 #include "coreutils.h"
 #include "exec.h"
 #include "foreign.h"
+#include "parser.h"
 #include "vars.h"
 
 static size_t token_start(const char *buffer, size_t cursor) {
@@ -78,6 +79,7 @@ static void complete_commands(const char *token, StrList *out) {
 
     StrList names;
     sl_init(&names);
+    keyword_names(&names);
     builtin_names(&names);
     coreutil_names(&names);
     foreign_names(&names);

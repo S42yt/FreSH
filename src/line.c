@@ -17,6 +17,7 @@
 #include "exec.h"
 #include "foreign.h"
 #include "history.h"
+#include "parser.h"
 #include "prompt.h"
 #include "shell.h"
 #include "style.h"
@@ -25,6 +26,7 @@
 #include "vars.h"
 
 #define HL_COMMAND "\x1b[1;32m"
+#define HL_KEYWORD "\x1b[32m"
 #define HL_UNKNOWN "\x1b[1;31m"
 #define HL_STRING "\x1b[33m"
 #define HL_VARIABLE "\x1b[36m"
@@ -131,7 +133,12 @@ static void highlight(const char *text, StrBuf *out) {
         while (*p && !isspace((unsigned char)*p) && !strchr("|&;<>'\"$", *p)) p++;
         char *word = xstrndup(start, (size_t)(p - start));
 
-        if (expect_command) {
+        if (keyword_known(word)) {
+            sb_puts(out, HL_KEYWORD);
+            sb_puts(out, word);
+            sb_puts(out, HL_RESET);
+            expect_command = 1;
+        } else if (expect_command) {
             sb_puts(out, command_known(word) ? HL_COMMAND : HL_UNKNOWN);
             sb_puts(out, word);
             sb_puts(out, HL_RESET);

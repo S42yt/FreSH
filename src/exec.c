@@ -21,6 +21,7 @@
 #include "coreutils.h"
 #include "expand.h"
 #include "foreign.h"
+#include "parser.h"
 #include "regex.h"
 #include "shell.h"
 #include "vars.h"
@@ -659,6 +660,65 @@ static void finish_substitutions(Substitution *pending, int count) {
     }
 }
 
+static int edit_distance(const char *a, const char *b, int limit) {
+    size_t la = strlen(a);
+    size_t lb = strlen(b);
+    if (lb > 96 || la > lb + (size_t)limit || lb > la + (size_t)limit) return limit + 1;
+
+    int previous[98];
+    int current[98];
+    for (size_t j = 0; j <= lb; j++) previous[j] = (int)j;
+
+    for (size_t i = 1; i <= la; i++) {
+        current[0] = (int)i;
+        for (size_t j = 1; j <= lb; j++) {
+            int cost = tolower((unsigned char)a[i - 1]) == tolower((unsigned char)b[j - 1]) ? 0 : 1;
+            int best = previous[j] + 1;
+            if (current[j - 1] + 1 < best) best = current[j - 1] + 1;
+            if (previous[j - 1] + cost < best) best = previous[j - 1] + cost;
+            current[j] = best;
+        }
+        memcpy(previous, current, sizeof(int) * (lb + 1));
+    }
+    return previous[lb];
+}
+
+static char *nearest_command(const char *name) {
+    StrList names;
+    sl_init(&names);
+    keyword_names(&names);
+    builtin_names(&names);
+    coreutil_names(&names);
+    function_names(&names);
+    alias_list(&names);
+    path_commands(&names);
+
+    int limit = strlen(name) <= 3 ? 1 : 2;
+    int best_score = limit + 1;
+    char *best = NULL;
+
+    for (size_t i = 0; i < names.len; i++) {
+        char *eq = strchr(names.items[i], '=');
+        if (eq) *eq = '\0';
+        int score = edit_distance(name, names.items[i], limit);
+        if (score < best_score) {
+            best_score = score;
+            free(best);
+            best = xstrdup(names.items[i]);
+        }
+    }
+    sl_free(&names);
+    return best;
+}
+
+static void report_not_found(const char *name) {
+    char *near = nearest_command(name);
+    if (near) shell_error("%s: command not found\n  did you mean %s", name, near);
+    else shell_error("%s: command not found\n  if it is installed, run rehash so FreSH sees it",
+                     name);
+    free(near);
+}
+
 static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) {
     StrList words;
     sl_init(&words);
@@ -743,7 +803,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
             FdSave save;
             int redirected = !io_is_default(&io);
             if (redirected) fds_apply(&io, &save);
-            shell_error("%s: command not found", argv[0]);
+            report_not_found(argv[0]);
             if (redirected) fds_restore(&save);
             status = 127;
         } else if (is_shell_script(path)) {
@@ -1539,7 +1599,8 @@ int exec_text(const char *text) {
 
     if (!node) {
         if (error) {
-            shell_error("%s", error);
+            if (shell.script_name) shell_error("%s: %s", shell.script_name, error);
+            else shell_error("%s", error);
             free(error);
             shell.last_status = 2;
             return 2;
@@ -1586,11 +1647,20 @@ int exec_script_file(const char *path, const StrList *args) {
         for (size_t i = 0; i < args->len; i++) sl_push_copy(&shell.params, args->items[i]);
     }
 
+    const char *leaf = strrchr(path, '/');
+    const char *back = strrchr(path, '\\');
+    if (back > leaf) leaf = back;
+    char *saved_name = shell.script_name;
+    shell.script_name = xstrdup(leaf ? leaf + 1 : path);
+
     int was_running = shell.running;
     shell.depth++;
     int status = exec_text(text);
     shell.depth--;
     shell.returning = 0;
+
+    free(shell.script_name);
+    shell.script_name = saved_name;
 
     if (args) {
         if (!shell.running) {
