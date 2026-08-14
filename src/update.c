@@ -213,14 +213,27 @@ int builtin_fresh(int argc, char **argv) {
     char *rc = config_path(".freshrc");
     path_to_slashes(rc);
 
-    printf("\n  %s%s%s  %sFreSH%s %s%s%s\n", style(S_ACCENT), S_LAMBDA, style(S_RESET),
-           style(S_HEADING), style(S_RESET), style(S_DIM), FRESH_VERSION, style(S_RESET));
-    printf("  %s%-9s%s %s\n", style(S_LABEL), "binary", style(S_RESET), exe);
-    printf("  %s%-9s%s %s\n", style(S_LABEL), "config", style(S_RESET), rc);
-    printf("  %s%-9s%s %s\n", style(S_LABEL), "theme", style(S_RESET),
-           var_get("FRESH_THEME") ? var_get("FRESH_THEME") : "fresh");
-    printf("  %s%-9s%s %s\n", style(S_LABEL), "plugins", style(S_RESET),
-           var_get("FRESH_PLUGINS") ? var_get("FRESH_PLUGINS") : "none");
+    const char *art[5] = {
+        "     __",
+        "    /\\ \\",
+        "   /  \\ \\",
+        "  / /\\ \\ \\",
+        " /_/  \\_\\_\\",
+    };
+
+    char info[5][PATH_BUF + 64];
+    snprintf(info[0], sizeof(info[0]), "%sFreSH%s %s%s%s", style(S_HEADING), style(S_RESET),
+             style(S_DIM), FRESH_VERSION, style(S_RESET));
+    snprintf(info[1], sizeof(info[1]), "%s%-8s%s %s", style(S_LABEL), "binary", style(S_RESET), exe);
+    snprintf(info[2], sizeof(info[2]), "%s%-8s%s %s", style(S_LABEL), "config", style(S_RESET), rc);
+    snprintf(info[3], sizeof(info[3]), "%s%-8s%s %s", style(S_LABEL), "theme", style(S_RESET),
+             var_get("FRESH_THEME") ? var_get("FRESH_THEME") : "fresh");
+    snprintf(info[4], sizeof(info[4]), "%s%-8s%s %s", style(S_LABEL), "plugins", style(S_RESET),
+             var_get("FRESH_PLUGINS") ? var_get("FRESH_PLUGINS") : "none");
+
+    printf("\n");
+    for (int i = 0; i < 5; i++)
+        printf("  %s%-12s%s   %s\n", style(S_ACCENT), art[i], style(S_RESET), info[i]);
     printf("\n  %sfresh update%s checks github and installs the newest release\n", style(S_DIM),
            style(S_RESET));
     printf("\n");
