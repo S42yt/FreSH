@@ -798,7 +798,7 @@ static Node *parse_simple(Parser *ps) {
             continue;
         }
         if (t->type != T_WORD) break;
-        if (node->words.len > 0 && is_any_reserved(t)) break;
+        if (node->words.len == 0 && is_any_reserved(t)) break;
 
         size_t text_length = t->text ? strlen(t->text) : 0;
         if (text_length > 1 && t->text[text_length - 1] == '=' &&
