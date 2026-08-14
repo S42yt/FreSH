@@ -20,7 +20,9 @@ check assignment_in_local "$(holder)" "x y"
 pattern=*.nothing
 check assignment_not_globbed "$pattern" "*.nothing"
 
-globdir=$(mktemp -d)
+globdir=.fresh-test-glob
+rm -r "$globdir" 2> /dev/null
+mkdir -p "$globdir"
 touch "$globdir/one.tst" "$globdir/two.tst"
 set -- "$globdir"/*.tst
 check glob_after_quoted_part "$#" 2

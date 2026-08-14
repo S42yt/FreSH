@@ -1,6 +1,8 @@
 suite redirect
 
-work=$(mktemp -d)
+work=.fresh-test-redirect
+rm -r "$work" 2> /dev/null
+mkdir -p "$work"
 
 echo written > "$work/out.txt"
 check write_file "$(cat "$work/out.txt")" written
