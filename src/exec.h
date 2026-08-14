@@ -22,6 +22,7 @@ int capture_command(const char *command, StrBuf *out);
 int resolve_command(const char *name, char *out, size_t out_size);
 void path_commands(StrList *out);
 int path_command_exists(const char *name);
+int path_command_prefix(const char *prefix);
 void path_rehash(void);
 
 void function_define(const char *name, Node *body);

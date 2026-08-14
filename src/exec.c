@@ -224,6 +224,16 @@ int path_command_exists(const char *name) {
     return 0;
 }
 
+int path_command_prefix(const char *prefix) {
+    ensure_command_cache();
+    size_t length = strlen(prefix);
+    if (length == 0) return 0;
+    for (size_t i = 0; i < command_cache.len; i++) {
+        if (_strnicmp(command_cache.items[i], prefix, length) == 0) return 1;
+    }
+    return 0;
+}
+
 static void track_handle(HANDLE handle) {
     if (tracked_count < MAX_TRACKED) tracked[tracked_count++] = handle;
 }

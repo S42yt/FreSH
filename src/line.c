@@ -95,6 +95,29 @@ static int command_known(const char *name) {
     return path_command_exists(name);
 }
 
+static int command_pending(const char *word) {
+    if (!*word) return 1;
+
+    StrList names;
+    sl_init(&names);
+    keyword_names(&names);
+    builtin_names(&names);
+    coreutil_names(&names);
+    function_names(&names);
+    alias_list(&names);
+    foreign_names(&names);
+
+    size_t length = strlen(word);
+    int found = 0;
+    for (size_t i = 0; i < names.len && !found; i++) {
+        char *eq = strchr(names.items[i], '=');
+        if (eq) *eq = '\0';
+        if (_strnicmp(names.items[i], word, length) == 0) found = 1;
+    }
+    sl_free(&names);
+    return found || path_command_prefix(word);
+}
+
 static void highlight(const char *text, StrBuf *out) {
     const char *p = text;
     int expect_command = 1;
@@ -105,10 +128,11 @@ static void highlight(const char *text, StrBuf *out) {
             continue;
         }
         if (*p == '|' || *p == '&' || *p == ';' || *p == '<' || *p == '>') {
+            int redirect = *p == '<' || *p == '>';
             sb_puts(out, HL_OPERATOR);
             while (*p == '|' || *p == '&' || *p == ';' || *p == '<' || *p == '>') sb_putc(out, *p++);
             sb_puts(out, HL_RESET);
-            expect_command = 1;
+            expect_command = !redirect;
             continue;
         }
         if (*p == '\'' || *p == '"') {
@@ -139,9 +163,14 @@ static void highlight(const char *text, StrBuf *out) {
             sb_puts(out, HL_RESET);
             expect_command = 1;
         } else if (expect_command) {
-            sb_puts(out, command_known(word) ? HL_COMMAND : HL_UNKNOWN);
+            int func_def = strchr(word, '(') != NULL;
+            const char *color;
+            if (func_def || command_known(word)) color = HL_COMMAND;
+            else if (command_pending(word)) color = NULL;
+            else color = HL_UNKNOWN;
+            if (color) sb_puts(out, color);
             sb_puts(out, word);
-            sb_puts(out, HL_RESET);
+            if (color) sb_puts(out, HL_RESET);
             expect_command = 0;
         } else if (word[0] == '-') {
             sb_puts(out, HL_OPTION);
