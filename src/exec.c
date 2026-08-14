@@ -1102,8 +1102,9 @@ static HANDLE open_spool(char **path_out) {
     if (!path) return INVALID_HANDLE_VALUE;
 
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
-    HANDLE handle = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
-                                CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
+    HANDLE handle = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS,
+                                FILE_ATTRIBUTE_TEMPORARY, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         temp_release(path);
         return INVALID_HANDLE_VALUE;
@@ -1112,10 +1113,14 @@ static HANDLE open_spool(char **path_out) {
     return handle;
 }
 
-static HANDLE reopen_spool(const char *path) {
-    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
-    return CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING,
-                       FILE_ATTRIBUTE_TEMPORARY, NULL);
+static HANDLE rewind_spool(HANDLE spool) {
+    HANDLE reader = NULL;
+    if (!DuplicateHandle(GetCurrentProcess(), spool, GetCurrentProcess(), &reader, 0, TRUE,
+                         DUPLICATE_SAME_ACCESS))
+        return INVALID_HANDLE_VALUE;
+
+    SetFilePointer(reader, 0, NULL, FILE_BEGIN);
+    return reader;
 }
 
 static int flatten_pipeline(Node *node, Node **stages, int max) {
@@ -1194,10 +1199,10 @@ static int exec_pipeline(Node *node, int background) {
         }
 
         if (spool != INVALID_HANDLE_VALUE) {
+            stage_input = rewind_spool(spool);
             untrack_handle(spool);
             CloseHandle(spool);
             spools[spool_count++] = spool_path;
-            stage_input = reopen_spool(spool_path);
             if (stage_input == INVALID_HANDLE_VALUE) stage_input = NULL;
             else track_handle(stage_input);
         } else {
@@ -1963,20 +1968,41 @@ int exec_script_file(const char *path, const StrList *args) {
     return status;
 }
 
+typedef struct {
+    HANDLE source;
+    StrBuf *out;
+} Drain;
+
+static DWORD WINAPI drain_pipe(LPVOID parameter) {
+    Drain *drain = parameter;
+    char buffer[8192];
+    DWORD read = 0;
+
+    while (ReadFile(drain->source, buffer, sizeof(buffer), &read, NULL) && read > 0)
+        sb_putn(drain->out, buffer, read);
+    return 0;
+}
+
 int capture_command(const char *command, StrBuf *out) {
-    char *temp_file = temp_acquire();
-    if (!temp_file) return 1;
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    HANDLE read_end = NULL;
+    HANDLE write_end = NULL;
+    if (!CreatePipe(&read_end, &write_end, &sa, 65536)) return 1;
+
+    int fd = _open_osfhandle((intptr_t)write_end, _O_WRONLY | _O_BINARY);
+    if (fd < 0) {
+        CloseHandle(read_end);
+        CloseHandle(write_end);
+        return 1;
+    }
 
     fflush(stdout);
     int saved_out = _dup(1);
-    int fd = _open(temp_file, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
-    if (fd < 0) {
-        _close(saved_out);
-        temp_release(temp_file);
-        return 1;
-    }
     _dup2(fd, 1);
     _close(fd);
+
+    Drain drain = {read_end, out};
+    HANDLE reader = CreateThread(NULL, 0, drain_pipe, &drain, 0, NULL);
 
     int status = exec_text(command);
 
@@ -1984,13 +2010,10 @@ int capture_command(const char *command, StrBuf *out) {
     _dup2(saved_out, 1);
     _close(saved_out);
 
-    FILE *f = fopen(temp_file, "rb");
-    if (f) {
-        char buffer[4096];
-        size_t n;
-        while ((n = fread(buffer, 1, sizeof(buffer), f)) > 0) sb_putn(out, buffer, n);
-        fclose(f);
+    if (reader) {
+        WaitForSingleObject(reader, INFINITE);
+        CloseHandle(reader);
     }
-    temp_release(temp_file);
+    CloseHandle(read_end);
     return status;
 }

@@ -31,6 +31,7 @@ void table_put(Table *table, const char *name, void *value);
 int table_remove(Table *table, const char *name);
 
 int table_has_prefix(const Table *table, const char *prefix, size_t length);
+void table_collect_prefix(const Table *table, const char *prefix, size_t length, StrList *out);
 void table_names(const Table *table, StrList *out);
 size_t table_count(const Table *table);
 
