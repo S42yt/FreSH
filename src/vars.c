@@ -217,6 +217,13 @@ void var_set_array(const char *name, const StrList *values, VarKind kind) {
 }
 
 static int index_position(Entry *e, const char *index) {
+    char resolved[24];
+    if (index[0] == '-' && e->kind == VAR_INDEXED) {
+        int n = (int)e->values.len + atoi(index);
+        if (n < 0) return -1;
+        snprintf(resolved, sizeof(resolved), "%d", n);
+        index = resolved;
+    }
     for (size_t i = 0; i < e->keys.len; i++) {
         if (strcmp(e->keys.items[i], index) == 0) return (int)i;
     }
@@ -337,6 +344,43 @@ void vars_list(StrList *out) {
     }
     if (block) FreeEnvironmentStringsA(block);
     sl_sort(out);
+}
+
+typedef struct {
+    Entry *entries;
+    size_t count;
+} Snapshot;
+
+static Entry entry_copy(const Entry *src) {
+    Entry e;
+    memset(&e, 0, sizeof(e));
+    e.name = xstrdup(src->name);
+    e.value = src->value ? xstrdup(src->value) : NULL;
+    e.kind = src->kind;
+    e.exported = src->exported;
+    sl_init(&e.keys);
+    sl_init(&e.values);
+    for (size_t i = 0; i < src->keys.len; i++) sl_push_copy(&e.keys, src->keys.items[i]);
+    for (size_t i = 0; i < src->values.len; i++) sl_push_copy(&e.values, src->values.items[i]);
+    return e;
+}
+
+void *vars_snapshot(void) {
+    Snapshot *snap = xmalloc(sizeof(Snapshot));
+    snap->count = var_count_total;
+    snap->entries = var_count_total ? xmalloc(var_count_total * sizeof(Entry)) : NULL;
+    for (size_t i = 0; i < var_count_total; i++) snap->entries[i] = entry_copy(&vars[i]);
+    return snap;
+}
+
+void vars_restore(void *handle) {
+    Snapshot *snap = handle;
+    for (size_t i = 0; i < var_count_total; i++) entry_free(&vars[i]);
+    free(vars);
+    vars = snap->entries;
+    var_count_total = snap->count;
+    var_cap = snap->count;
+    free(snap);
 }
 
 void scope_push(void) {

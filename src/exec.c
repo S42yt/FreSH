@@ -363,6 +363,18 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
         }
 
         char *target = expand_single(r->target);
+        if (strcmp(target, "/dev/null") == 0) {
+            free(target);
+            target = xstrdup("nul");
+        } else if (strcmp(target, "/dev/stdout") == 0) {
+            free(target);
+            target = xstrdup("1");
+            r->type = R_DUP;
+        } else if (strcmp(target, "/dev/stderr") == 0) {
+            free(target);
+            target = xstrdup("2");
+            r->type = R_DUP;
+        }
 
         if (r->type == R_DUP) {
             int fd = atoi(target);
@@ -1414,12 +1426,14 @@ static int exec_switch(Node *node) {
     case N_SUBSHELL: {
         char cwd[PATH_BUF];
         GetCurrentDirectoryA(sizeof(cwd), cwd);
+        void *snapshot = vars_snapshot();
         int was_running = shell.running;
         status = exec_node(node->right);
         if (!shell.running) {
             shell.running = was_running;
             status = shell.last_status;
         }
+        vars_restore(snapshot);
         SetCurrentDirectoryA(cwd);
         break;
     }

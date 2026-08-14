@@ -127,8 +127,6 @@ static int split_subscript(const char *body, char *name, size_t name_size, char 
 }
 
 static int expand_array_body(const char *body, StrList *out) {
-    char name[128];
-    char index[128];
     const char *source = body;
     int keys_wanted = 0;
 
@@ -137,11 +135,46 @@ static int expand_array_body(const char *body, StrList *out) {
         keys_wanted = 1;
         source++;
     }
-    if (!split_subscript(source, name, sizeof(name), index, sizeof(index))) return 0;
-    if (strcmp(index, "@") != 0 && strcmp(index, "*") != 0) return 0;
+    const char *open = strchr(source, '[');
+    if (!open) return 0;
+    const char *close = strchr(open, ']');
+    if (!close || close != open + 2 || (open[1] != '@' && open[1] != '*')) return 0;
 
-    if (keys_wanted) var_keys(name, out);
-    else var_values(name, out);
+    size_t name_length = (size_t)(open - source);
+    char name[128];
+    if (name_length == 0 || name_length >= sizeof(name)) return 0;
+    memcpy(name, source, name_length);
+    name[name_length] = '\0';
+
+    StrList all;
+    sl_init(&all);
+    if (keys_wanted) var_keys(name, &all);
+    else var_values(name, &all);
+
+    const char *after = close + 1;
+    if (*after != ':') {
+        for (size_t i = 0; i < all.len; i++) sl_push_copy(out, all.items[i]);
+        sl_free(&all);
+        return 1;
+    }
+
+    char spec[128];
+    snprintf(spec, sizeof(spec), "%s", after + 1);
+    char *cursor = spec;
+    char *offset_text = str_next_field(&cursor, ':');
+    char *length_text = str_next_field(&cursor, ':');
+
+    int ok = 1;
+    long offset = offset_text ? eval_arith(offset_text, &ok) : 0;
+    if (offset < 0) offset += (long)all.len;
+    if (offset < 0) offset = 0;
+    long count = length_text ? eval_arith(length_text, &ok) : (long)all.len - offset;
+    if (count < 0) count = 0;
+
+    for (long i = offset; i < offset + count && i < (long)all.len; i++)
+        if (i >= 0) sl_push_copy(out, all.items[i]);
+
+    sl_free(&all);
     return 1;
 }
 
@@ -267,8 +300,16 @@ static char *brace_expand(const char *body) {
     }
 
     if (*body == '#') {
-        const char *name = body + 1;
-        const char *value = var_get(name);
+        char ename[128];
+        char eindex[128];
+        const char *value;
+        if (split_subscript(body + 1, ename, sizeof(ename), eindex, sizeof(eindex))) {
+            char *resolved = expand_single(eindex);
+            value = var_get_element(ename, resolved);
+            free(resolved);
+        } else {
+            value = var_get(body + 1);
+        }
         StrBuf sb;
         sb_init(&sb);
         sb_printf(&sb, "%d", value ? (int)strlen(value) : 0);

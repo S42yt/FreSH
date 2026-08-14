@@ -233,6 +233,7 @@ static int core_grep(int argc, char **argv) {
     int count_only = flag_set(argc, argv, 'c');
     int list_files = flag_set(argc, argv, 'l');
     int fixed = flag_set(argc, argv, 'F');
+    int quiet = flag_set(argc, argv, 'q');
 
     int index = first_operand(argc, argv);
     if (index >= argc) {
@@ -268,6 +269,11 @@ static int core_grep(int argc, char **argv) {
             if (!matched) continue;
             matches++;
             found_any = 1;
+            if (quiet) {
+                close_input(f);
+                sb_free(&expression);
+                return 0;
+            }
             if (count_only || list_files) continue;
             if (multiple && name) printf("%s:", name);
             if (numbered) printf("%ld:", number);

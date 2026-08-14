@@ -39,6 +39,9 @@ void var_append(const char *name, const char *value);
 
 void scope_push(void);
 void scope_pop(void);
+
+void *vars_snapshot(void);
+void vars_restore(void *handle);
 void var_make_local(const char *name);
 
 void alias_set(const char *name, const char *value);
