@@ -125,7 +125,16 @@ static int write_payload(const InstallOptions *options) {
     ensure_directory(options->install_dir);
 
     FILE *f = fopen(options->exe_path, "wb");
-    if (!f) return 0;
+    if (!f) {
+        char backup[MAX_PATH_LEN];
+        snprintf(backup, sizeof(backup), "%s.old-%lu", options->exe_path,
+                 (unsigned long)GetTickCount());
+        if (MoveFileExA(options->exe_path, backup, MOVEFILE_REPLACE_EXISTING)) {
+            if (!DeleteFileA(backup)) MoveFileExA(backup, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+            f = fopen(options->exe_path, "wb");
+        }
+        if (!f) return 0;
+    }
     size_t written = fwrite(FRESH_PAYLOAD, 1, (size_t)FRESH_PAYLOAD_size, f);
     fclose(f);
     return written == (size_t)FRESH_PAYLOAD_size;
