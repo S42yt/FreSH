@@ -307,7 +307,7 @@ static LONG WINAPI crash_report(EXCEPTION_POINTERS *info) {
                           "\n%s%s%s\n"
                           "%s  crashed: %s%s\n"
                           "%s  fault 0x%08lx at %p, FreSH %s%s\n"
-                          "%s  a bug, please report it at "
+                          "%s  if this is a bug, report it at "
                           "https://github.com/S42yt/FreSH/issues%s\n",
                           red, logo, reset, red, reason, reset, dim, (unsigned long)code, at,
                           FRESH_VERSION, reset, dim, reset);
