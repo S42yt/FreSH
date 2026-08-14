@@ -92,6 +92,13 @@ large repositories if you notice the marker lagging behind.
 Colour is disabled automatically when output is redirected, so
 `ls > files.txt` never writes escape codes into the file.
 
+Tab completes commands, files, variables and flags. Command names match
+without regard to case and are corrected as they complete, so `get-childi`
+becomes `Get-ChildItem`. After a command, a word starting with `-` completes
+from the flags its help page lists, so `grep -` offers only the flags FreSH
+actually implements. `cd` and `rmdir` complete directories alone, and `help`,
+`which`, `type` and `describe` complete command names rather than files.
+
 While you type, a command that can be run is bright green. A word is only red
 once it cannot become a real command, so a half typed name stays plain and a
 genuine typo turns red. Keywords such as `if`, `for` and `done` are green,
