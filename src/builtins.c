@@ -823,9 +823,15 @@ static int builtin_false(int argc, char **argv) {
 static int builtin_read(int argc, char **argv) {
     int index = 1;
     const char *prompt = NULL;
-    if (argc > 2 && strcmp(argv[1], "-p") == 0) {
-        prompt = argv[2];
-        index = 3;
+    while (index < argc && argv[index][0] == '-' && argv[index][1]) {
+        if (strcmp(argv[index], "-p") == 0 && index + 1 < argc) {
+            prompt = argv[index + 1];
+            index += 2;
+        } else if (strchr(argv[index], 'r')) {
+            index++;
+        } else {
+            index++;
+        }
     }
     if (prompt) {
         fputs(prompt, stdout);
