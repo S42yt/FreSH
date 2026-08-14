@@ -550,7 +550,7 @@ static int builtin_rehash(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    path_rehash();
+    path_reload_environment();
     foreign_forget();
     fresh_home_init();
     theme_load_configured();

@@ -24,6 +24,7 @@ void path_commands(StrList *out);
 int path_command_exists(const char *name);
 int path_command_prefix(const char *prefix);
 void path_rehash(void);
+void path_reload_environment(void);
 
 void function_define(const char *name, Node *body);
 int function_defined(const char *name);

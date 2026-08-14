@@ -141,28 +141,6 @@ void shell_handle_signal(int which) {
     history_save();
 }
 
-static void prepend_user_bins(void) {
-    const char *directories[] = {"bin", ".local\\bin", "AppData\\Local\\bin", "scoop\\shims",
-                                 "AppData\\Roaming\\npm"};
-    StrBuf path;
-    sb_init(&path);
-
-    for (size_t i = 0; i < sizeof(directories) / sizeof(directories[0]); i++) {
-        char *candidate = path_join(home_dir(), directories[i]);
-        if (path_is_dir(candidate)) {
-            sb_puts(&path, candidate);
-            sb_putc(&path, ';');
-        }
-        free(candidate);
-    }
-
-    const char *current = var_get("PATH");
-    sb_puts(&path, current ? current : "");
-    var_set_exported("PATH", path.data);
-    sb_free(&path);
-    path_rehash();
-}
-
 static void load_rc(void) {
     char *rc = config_path(".freshrc");
     if (!path_is_file(rc)) {
@@ -192,7 +170,7 @@ void shell_init(int interactive) {
 
     vars_init();
     exec_init();
-    prepend_user_bins();
+    path_reload_environment();
 }
 
 void shell_cleanup(void) {

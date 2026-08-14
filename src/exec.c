@@ -171,6 +171,77 @@ void path_rehash(void) {
     command_cache_valid = 0;
 }
 
+static char *read_registry_path(HKEY root, const char *subkey) {
+    HKEY key;
+    if (RegOpenKeyExA(root, subkey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return NULL;
+
+    DWORD type = 0;
+    DWORD size = 0;
+    if (RegQueryValueExA(key, "Path", NULL, &type, NULL, &size) != ERROR_SUCCESS || size == 0) {
+        RegCloseKey(key);
+        return NULL;
+    }
+    char *raw = xmalloc(size + 1);
+    if (RegQueryValueExA(key, "Path", NULL, &type, (BYTE *)raw, &size) != ERROR_SUCCESS) {
+        free(raw);
+        RegCloseKey(key);
+        return NULL;
+    }
+    raw[size] = '\0';
+    RegCloseKey(key);
+
+    if (type == REG_EXPAND_SZ) {
+        DWORD needed = ExpandEnvironmentStringsA(raw, NULL, 0);
+        if (needed > 0) {
+            char *expanded = xmalloc(needed + 1);
+            if (ExpandEnvironmentStringsA(raw, expanded, needed + 1)) {
+                free(raw);
+                return expanded;
+            }
+            free(expanded);
+        }
+    }
+    return raw;
+}
+
+void path_reload_environment(void) {
+    StrBuf path;
+    sb_init(&path);
+
+    const char *home_bins[] = {"bin", ".local\\bin", "AppData\\Local\\bin", "scoop\\shims",
+                               "AppData\\Roaming\\npm"};
+    for (size_t i = 0; i < sizeof(home_bins) / sizeof(home_bins[0]); i++) {
+        char *candidate = path_join(home_dir(), home_bins[i]);
+        if (path_is_dir(candidate)) {
+            sb_puts(&path, candidate);
+            sb_putc(&path, ';');
+        }
+        free(candidate);
+    }
+
+    char *machine = read_registry_path(
+        HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment");
+    char *user = read_registry_path(HKEY_CURRENT_USER, "Environment");
+
+    if (machine && *machine) {
+        sb_puts(&path, machine);
+        sb_putc(&path, ';');
+    }
+    if (user && *user) sb_puts(&path, user);
+
+    if (!machine && !user) {
+        const char *current = var_get("PATH");
+        if (current) sb_puts(&path, current);
+    }
+
+    free(machine);
+    free(user);
+
+    if (path.len > 0) var_set_exported("PATH", path.data);
+    sb_free(&path);
+    command_cache_valid = 0;
+}
+
 static void ensure_command_cache(void) {
     if (!command_cache_valid) {
         sl_clear(&command_cache);
