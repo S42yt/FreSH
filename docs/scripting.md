@@ -238,8 +238,21 @@ backup notes.txt
 Inside a function, `$1` and friends are the function arguments and `$#` is
 their count. `return` sets the exit status. `shift` drops arguments.
 
-Functions see and change the same variables as the rest of the script, there
-is no `local`.
+A function name can be punctuation, `:` included, and the opening brace may
+sit right against the body, so both of these define the same thing:
+
+```sh
+work() { echo run; }
+work(){echo run;}
+```
+
+That last leniency is a FreSH extension; bash needs a space after the `{`.
+It is what lets the classic fork bomb parse: `:(){ :|:& };:` defines a
+function named `:` that pipes itself into a backgrounded copy, then runs it.
+Do not run that unless you mean it.
+
+Functions see and change the same variables as the rest of the script, unless
+a name is made `local`.
 
 ## A complete example
 

@@ -43,6 +43,7 @@ than rejected, so check this page when a script behaves oddly.
 | `read [-p prompt] [names]` | `-p` | fills `REPLY` when no name given |
 | `test expr` / `[ expr ]` | | see [scripting](scripting.md#conditionals) |
 | `true` / `false` | | |
+| `:` | | the null command, always succeeds, the same as `true` |
 | `history [n]` | `-c` | `-c` clears |
 | `which name...` | | path of a command |
 | `type name...` | | says whether it is an alias, function, builtin or file |
