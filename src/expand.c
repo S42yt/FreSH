@@ -452,10 +452,20 @@ static char *brace_expand(const char *body) {
     return result;
 }
 
+static int substitution_status = 0;
+
+void expand_forget_substitution_status(void) {
+    substitution_status = 0;
+}
+
+int expand_substitution_status(void) {
+    return substitution_status;
+}
+
 static char *capture_trimmed(const char *command) {
     StrBuf out;
     sb_init(&out);
-    capture_command(command, &out);
+    substitution_status = capture_command(command, &out);
     while (out.len > 0 && (out.data[out.len - 1] == '\n' || out.data[out.len - 1] == '\r'))
         out.data[--out.len] = '\0';
     return sb_take(&out);

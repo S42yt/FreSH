@@ -974,6 +974,7 @@ static void report_not_found(const char *name) {
 static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) {
     StrList words;
     sl_init(&words);
+    expand_forget_substitution_status();
     expand_words(&node->words, &words);
 
     Substitution pending[8];
@@ -990,7 +991,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     if (first == words.len) {
         for (size_t i = 0; i < words.len; i++) assign_from_word(words.items[i]);
         sl_free(&words);
-        return 0;
+        return expand_substitution_status();
     }
 
     StrList saved_names;

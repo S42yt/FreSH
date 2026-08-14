@@ -14,6 +14,9 @@ char *expand_single(const char *word);
 char *expand_heredoc(const char *body);
 void brace_expand_word(const char *word, StrList *out);
 long eval_arith(const char *expr, int *ok);
+
+void expand_forget_substitution_status(void);
+int expand_substitution_status(void);
 int glob_expand(const char *pattern, StrList *out);
 
 #endif
