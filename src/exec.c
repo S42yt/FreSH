@@ -406,6 +406,20 @@ int path_command_prefix(const char *prefix) {
     return index < command_cache.len && _strnicmp(command_cache.items[index], prefix, length) == 0;
 }
 
+void path_command_complete(const char *prefix, StrList *out) {
+    ensure_command_cache();
+    size_t length = strlen(prefix);
+
+    for (size_t i = cache_lower_bound(prefix, length); i < command_cache.len; i++) {
+        if (length && _strnicmp(command_cache.items[i], prefix, length) != 0) break;
+        sl_push_copy(out, command_cache.items[i]);
+    }
+}
+
+void function_complete(const char *prefix, size_t length, StrList *out) {
+    table_collect_prefix(&function_table, prefix, length, out);
+}
+
 static void track_handle(HANDLE handle) {
     if (tracked_count < MAX_TRACKED) tracked[tracked_count++] = handle;
 }

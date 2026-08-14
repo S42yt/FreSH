@@ -379,6 +379,36 @@ static const HelpEntry *find_entry(const char *name) {
     return NULL;
 }
 
+static void collect_flags(const char *text, const char *prefix, size_t length, StrList *out) {
+    if (!text) return;
+
+    for (const char *p = text; *p; p++) {
+        if (*p != '-' || (p != text && p[-1] != ' ' && p[-1] != '\n' && p[-1] != '[')) continue;
+
+        size_t span = 1;
+        if (p[span] == '-') span++;
+        while (isalnum((unsigned char)p[span]) || p[span] == '-') span++;
+        if (span < 2) continue;
+
+        char flag[32];
+        if (span >= sizeof(flag)) continue;
+        memcpy(flag, p, span);
+        flag[span] = '\0';
+
+        if (_strnicmp(flag, prefix, length) == 0 && !sl_contains(out, flag)) sl_push_copy(out, flag);
+        p += span - 1;
+    }
+}
+
+void help_flags(const char *name, const char *prefix, StrList *out) {
+    const HelpEntry *entry = find_entry(name);
+    if (!entry) return;
+
+    size_t length = strlen(prefix);
+    collect_flags(entry->usage, prefix, length, out);
+    collect_flags(entry->detail, prefix, length, out);
+}
+
 const char *help_summary(const char *name) {
     const HelpEntry *entry = find_entry(name);
     return entry ? entry->summary : NULL;

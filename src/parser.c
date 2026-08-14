@@ -66,6 +66,13 @@ void keyword_names(StrList *out) {
     }
 }
 
+void keyword_complete(const char *prefix, size_t length, StrList *out) {
+    for (int i = 0; RESERVED[i]; i++) {
+        if (isalpha((unsigned char)RESERVED[i][0]) && strncmp(RESERVED[i], prefix, length) == 0)
+            sl_push_copy(out, RESERVED[i]);
+    }
+}
+
 int keyword_prefix(const char *prefix, size_t length) {
     for (int i = 0; RESERVED[i]; i++) {
         if (strncmp(RESERVED[i], prefix, length) == 0) return 1;

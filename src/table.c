@@ -137,6 +137,16 @@ int table_has_prefix(const Table *table, const char *prefix, size_t length) {
     return 0;
 }
 
+void table_collect_prefix(const Table *table, const char *prefix, size_t length, StrList *out) {
+    if (!table->buckets) return;
+
+    for (size_t i = 0; i < table->size; i++) {
+        for (TableNode *node = table->buckets[i]; node; node = node->next) {
+            if (_strnicmp(node->name, prefix, length) == 0) sl_push_copy(out, node->name);
+        }
+    }
+}
+
 void table_names(const Table *table, StrList *out) {
     if (!table->buckets) return;
 

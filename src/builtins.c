@@ -1048,6 +1048,12 @@ int builtin_name_prefix(const char *prefix, size_t length) {
     return 0;
 }
 
+void builtin_complete(const char *prefix, size_t length, StrList *out) {
+    for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++) {
+        if (_strnicmp(BUILTINS[i].name, prefix, length) == 0) sl_push_copy(out, BUILTINS[i].name);
+    }
+}
+
 void builtin_names(StrList *out) {
     for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++)
         sl_push_copy(out, BUILTINS[i].name);

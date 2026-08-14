@@ -12,5 +12,6 @@
 BuiltinFn moreutil_lookup(const char *name);
 void moreutil_names(StrList *out);
 int moreutil_name_prefix(const char *prefix, size_t length);
+void moreutil_complete(const char *prefix, size_t length, StrList *out);
 
 #endif

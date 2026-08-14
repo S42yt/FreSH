@@ -66,5 +66,6 @@ void node_free(Node *node);
 int keyword_known(const char *word);
 void keyword_names(StrList *out);
 int keyword_prefix(const char *prefix, size_t length);
+void keyword_complete(const char *prefix, size_t length, StrList *out);
 
 #endif

@@ -496,3 +496,7 @@ void alias_list(StrList *out) {
 int alias_name_prefix(const char *prefix, size_t length) {
     return table_has_prefix(&alias_table, prefix, length);
 }
+
+void alias_complete(const char *prefix, size_t length, StrList *out) {
+    table_collect_prefix(&alias_table, prefix, length, out);
+}

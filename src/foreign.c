@@ -255,6 +255,14 @@ void foreign_names(StrList *out) {
     for (size_t i = 0; i < cmdlet_cache.len; i++) sl_push_copy(out, cmdlet_cache.items[i]);
 }
 
+void foreign_complete(const char *prefix, size_t length, StrList *out) {
+    for (int i = 0; CMD_BUILTINS[i]; i++) {
+        if (_strnicmp(CMD_BUILTINS[i], prefix, length) == 0) sl_push_copy(out, CMD_BUILTINS[i]);
+    }
+    load_cmdlet_cache();
+    table_collect_prefix(&cmdlet_table, prefix, length, out);
+}
+
 int foreign_name_prefix(const char *prefix, size_t length) {
     for (int i = 0; CMD_BUILTINS[i]; i++) {
         if (_strnicmp(CMD_BUILTINS[i], prefix, length) == 0) return 1;

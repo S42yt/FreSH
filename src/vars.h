@@ -51,5 +51,6 @@ const char *alias_get(const char *name);
 int alias_unset(const char *name);
 void alias_list(StrList *out);
 int alias_name_prefix(const char *prefix, size_t length);
+void alias_complete(const char *prefix, size_t length, StrList *out);
 
 #endif

@@ -16,6 +16,7 @@
 #include "coreutils.h"
 #include "exec.h"
 #include "foreign.h"
+#include "help.h"
 #include "parser.h"
 #include "vars.h"
 
@@ -75,24 +76,20 @@ static void complete_variables(const char *token, StrList *out) {
 }
 
 static void complete_commands(const char *token, StrList *out) {
-    size_t token_len = strlen(token);
+    size_t length = strlen(token);
 
-    StrList names;
-    sl_init(&names);
-    keyword_names(&names);
-    builtin_names(&names);
-    coreutil_names(&names);
-    foreign_names(&names);
-    function_names(&names);
-    alias_list(&names);
-    path_commands(&names);
+    StrList found;
+    sl_init(&found);
+    keyword_complete(token, length, &found);
+    builtin_complete(token, length, &found);
+    coreutil_complete(token, length, &found);
+    function_complete(token, length, &found);
+    alias_complete(token, length, &found);
+    path_command_complete(token, &found);
+    if (option_enabled("FRESH_FOREIGN", 1)) foreign_complete(token, length, &found);
 
-    for (size_t i = 0; i < names.len; i++) {
-        char *quote = strchr(names.items[i], '=');
-        if (quote) *quote = '\0';
-        if (strncmp(names.items[i], token, token_len) == 0) push_unique(out, names.items[i]);
-    }
-    sl_free(&names);
+    for (size_t i = 0; i < found.len; i++) push_unique(out, found.items[i]);
+    sl_free(&found);
     sl_sort(out);
 }
 
@@ -189,7 +186,8 @@ void complete_at(const char *buffer, size_t cursor, StrList *matches, size_t *re
         complete_paths(token, matches, 0);
     } else {
         char *command = command_word(buffer, start);
-        if (wants_commands(command)) complete_commands(token, matches);
+        if (token[0] == '-') help_flags(command, token, matches);
+        else if (wants_commands(command)) complete_commands(token, matches);
         else complete_paths(token, matches, wants_directories(command));
         free(command);
     }

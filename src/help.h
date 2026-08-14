@@ -11,6 +11,7 @@
 
 int help_show(const char *name);
 const char *help_summary(const char *name);
+void help_flags(const char *name, const char *prefix, StrList *out);
 void help_describe(const char *name, const char *summary, const char *usage, const char *detail);
 void help_described_names(StrList *out);
 int builtin_describe(int argc, char **argv);

@@ -1113,3 +1113,10 @@ int coreutil_name_prefix(const char *prefix, size_t length) {
     }
     return moreutil_name_prefix(prefix, length);
 }
+
+void coreutil_complete(const char *prefix, size_t length, StrList *out) {
+    for (size_t i = 0; i < sizeof(COREUTILS) / sizeof(COREUTILS[0]); i++) {
+        if (_strnicmp(COREUTILS[i].name, prefix, length) == 0) sl_push_copy(out, COREUTILS[i].name);
+    }
+    moreutil_complete(prefix, length, out);
+}

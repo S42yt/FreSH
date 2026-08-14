@@ -23,6 +23,8 @@ int resolve_command(const char *name, char *out, size_t out_size);
 void path_commands(StrList *out);
 int path_command_exists(const char *name);
 int path_command_prefix(const char *prefix);
+void path_command_complete(const char *prefix, StrList *out);
+void function_complete(const char *prefix, size_t length, StrList *out);
 void path_rehash(void);
 void path_reload_environment(void);
 
