@@ -1,0 +1,68 @@
+suite redirect
+
+work=$(mktemp -d)
+
+echo written > "$work/out.txt"
+check write_file "$(cat "$work/out.txt")" written
+
+echo appended >> "$work/out.txt"
+check append_file "$(cat "$work/out.txt" | tail -n 1)" appended
+
+cat < "$work/out.txt" > "$work/copy.txt"
+check read_redirect "$(head -n 1 "$work/copy.txt")" written
+
+echo quiet > /dev/null
+check dev_null_status "$?" 0
+
+nosuchcommandhere 2> "$work/err.txt"
+check stderr_redirect "$(cat "$work/err.txt" | wc -l | tr -d ' ')" 2
+
+check pipe_simple "$(echo piped | cat)" piped
+check pipe_chain "$(printf 'a\nb\nc\n' | grep b | cat)" b
+check pipe_count "$(printf 'x\ny\n' | wc -l | tr -d ' ')" 2
+
+name=world
+check heredoc "$(cat <<EOF
+hello $name
+EOF
+)" "hello world"
+
+check heredoc_quoted "$(cat <<'EOF'
+no $expansion
+EOF
+)" 'no $expansion'
+
+check heredoc_lines "$(cat <<EOF | wc -l | tr -d ' '
+one
+two
+EOF
+)" 2
+
+read first rest <<< "alpha beta gamma"
+check herestring_first "$first" alpha
+check herestring_rest "$rest" "beta gamma"
+
+read -r raw <<< "kept"
+check read_dash_r "$raw" kept
+
+check process_substitution "$(cat <(echo substituted))" substituted
+
+set -o pipefail
+false | true
+check pipefail_on "$?" 1
+set +o pipefail
+false | true
+check pipefail_off "$?" 0
+
+outside=before
+(outside=inside)
+check subshell_isolates "$outside" before
+check subshell_output "$(echo sub)" sub
+
+start=$(pwd)
+(cd "$work")
+check subshell_keeps_directory "$(pwd)" "$start"
+
+check group_output "$({ echo first; echo second; } | wc -l | tr -d ' ')" 2
+
+rm -r "$work"

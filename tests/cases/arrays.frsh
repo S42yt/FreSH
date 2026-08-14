@@ -1,0 +1,36 @@
+suite arrays
+
+items=(one two three)
+check first "${items[0]}" one
+check last_index "${items[2]}" three
+check all "${items[@]}" "one two three"
+check count "${#items[@]}" 3
+check element_length "${#items[1]}" 3
+check keys "${!items[@]}" "0 1 2"
+
+check negative_index "${items[-1]}" three
+check slice "${items[@]:1:2}" "two three"
+check slice_to_end "${items[@]:2}" three
+
+items+=(four)
+check appended "${items[3]}" four
+check appended_count "${#items[@]}" 4
+
+items[7]=eight
+check sparse "${items[7]}" eight
+
+declare -A colours
+colours[sky]=blue
+colours[apple]=red
+check assoc_first "${colours[sky]}" blue
+check assoc_second "${colours[apple]}" red
+
+joined=""
+for item in "${items[@]:0:3}"; do
+  joined="$joined$item."
+done
+check iterate "$joined" "one.two.three."
+
+text=start
+text+=middle
+check string_append "$text" startmiddle

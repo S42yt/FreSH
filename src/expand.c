@@ -20,6 +20,7 @@ typedef struct {
     StrBuf field;
     int has_content;
     int quoted;
+    int meta;
     StrList *out;
     int split;
     int glob;
@@ -33,7 +34,7 @@ static const char *param_get(int index) {
 static void field_flush(Expander *ex) {
     if (!ex->has_content) return;
     char *value = xstrdup(ex->field.data);
-    if (ex->glob && !ex->quoted && (strchr(value, '*') || strchr(value, '?'))) {
+    if (ex->glob && ex->meta) {
         if (glob_expand(value, ex->out)) {
             free(value);
         } else {
@@ -45,6 +46,7 @@ static void field_flush(Expander *ex) {
     sb_clear(&ex->field);
     ex->has_content = 0;
     ex->quoted = 0;
+    ex->meta = 0;
 }
 
 static void field_add(Expander *ex, const char *text, size_t len) {
@@ -52,8 +54,18 @@ static void field_add(Expander *ex, const char *text, size_t len) {
     ex->has_content = 1;
 }
 
+static void note_meta(Expander *ex, const char *text, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (text[i] == '*' || text[i] == '?') {
+            ex->meta = 1;
+            return;
+        }
+    }
+}
+
 static void field_add_split(Expander *ex, const char *text) {
     if (!text) return;
+    note_meta(ex, text, strlen(text));
     if (!ex->split) {
         field_add(ex, text, strlen(text));
         return;
@@ -687,6 +699,7 @@ static void expand_into(const char *word, Expander *ex) {
             expand_dollar(ex, &p, 0);
             continue;
         }
+        note_meta(ex, p, 1);
         field_add(ex, p, 1);
         p++;
     }
@@ -830,6 +843,7 @@ static void expand_assignment(const char *word, size_t prefix, StrList *out) {
     sb_init(&ex.field);
     ex.has_content = 1;
     ex.quoted = 0;
+    ex.meta = 0;
     ex.out = out;
     ex.split = 0;
     ex.glob = 0;
@@ -868,6 +882,7 @@ void expand_words(const StrList *in, StrList *out) {
             sb_init(&ex.field);
             ex.has_content = 0;
             ex.quoted = 0;
+            ex.meta = 0;
             ex.out = out;
             ex.split = 1;
             ex.glob = 1;
@@ -887,6 +902,7 @@ char *expand_heredoc(const char *body) {
     sb_init(&ex.field);
     ex.has_content = 0;
     ex.quoted = 0;
+    ex.meta = 0;
     ex.out = &fields;
     ex.split = 0;
     ex.glob = 0;
@@ -919,6 +935,7 @@ char *expand_single(const char *word) {
     sb_init(&ex.field);
     ex.has_content = 0;
     ex.quoted = 0;
+    ex.meta = 0;
     ex.out = &fields;
     ex.split = 0;
     ex.glob = 0;

@@ -1,0 +1,10 @@
+here=$(dirname "$0")
+source "$here/lib.frsh"
+
+printf '\n  FreSH test suite\n\n'
+
+for case_file in "$here"/cases/*.frsh; do
+  source "$case_file"
+done
+
+summary

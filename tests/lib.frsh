@@ -1,0 +1,30 @@
+passed=0
+failed=0
+current="?"
+
+suite() {
+  current=$1
+}
+
+check() {
+  if [ "$2" = "$3" ]; then
+    passed=$((passed + 1))
+  else
+    failed=$((failed + 1))
+    printf '  FAIL  %-18s %-22s got [%s] want [%s]\n' "$current" "$1" "$2" "$3"
+  fi
+}
+
+ok() {
+  check "$1" "$2" yes
+}
+
+summary() {
+  printf '\n'
+  if [ "$failed" -eq 0 ]; then
+    printf '  %d passed\n' "$passed"
+  else
+    printf '  %d passed, %d failed\n' "$passed" "$failed"
+  fi
+  return "$failed"
+}

@@ -1,0 +1,48 @@
+suite words
+
+check brace_list "$(echo {a,b,c})" "a b c"
+check brace_range "$(echo {1..5})" "1 2 3 4 5"
+check brace_padded "$(echo {01..03})" "01 02 03"
+check brace_step "$(echo {1..9..2})" "1 3 5 7 9"
+
+value=$(echo one two)
+check assignment_keeps_spaces "$value" "one two"
+
+exported=$(echo a b)
+check assignment_in_export "$exported" "a b"
+
+holder() {
+  local inner=$(echo x y)
+  echo "$inner"
+}
+check assignment_in_local "$(holder)" "x y"
+
+pattern=*.nothing
+check assignment_not_globbed "$pattern" "*.nothing"
+
+appended=start
+appended+=$(echo " end")
+check assignment_append "$appended" "start end"
+
+set -- $(echo p q)
+check argument_still_splits "$#" 2
+
+check argument_word_split "$(echo $(echo a b c))" "a b c"
+
+spaced="keep  spaces"
+check quoted_preserved "$spaced" "keep  spaces"
+
+single='no $expansion here'
+check single_quotes "$single" 'no $expansion here'
+
+name=world
+check double_quotes "hello $name" "hello world"
+
+escaped="a\tb"
+check ansi_c_quoting "$(printf %s $'a\tb')" "$(printf 'a\tb')"
+
+check printf_padding "$(printf '%03d' 7)" 007
+check printf_width "$(printf '[%5s]' hi)" '[   hi]'
+check printf_left "$(printf '[%-5s]' hi)" '[hi   ]'
+check printf_float "$(printf '%.2f' 3.14159)" 3.14
+check printf_repeat "$(printf '%s-' a b c)" "a-b-c-"

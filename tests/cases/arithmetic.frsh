@@ -1,0 +1,55 @@
+suite arithmetic
+
+check precedence "$((3 + 4 * 2))" 11
+check parentheses "$(( (2 + 3) * 4 ))" 20
+check modulo "$((17 % 5))" 2
+check power "$((2 ** 8))" 256
+check hex "$(( 0xff ))" 255
+check ternary "$(( 1 ? 10 : 20 ))" 10
+check bit_and "$(( 6 & 3 ))" 2
+check bit_or "$(( 6 | 1 ))" 7
+check bit_xor "$(( 6 ^ 3 ))" 5
+check shift_left "$(( 1 << 4 ))" 16
+check shift_right "$(( 32 >> 2 ))" 8
+check comparison "$(( 5 > 3 ))" 1
+check negation "$(( !0 ))" 1
+
+counter=5
+: $((counter++))
+check post_increment "$counter" 6
+: $((counter--))
+check post_decrement "$counter" 5
+
+total=0
+total=$((total + 7))
+check accumulate "$total" 7
+
+(( product = 6 * 7 ))
+check arithmetic_command "$product" 42
+
+if (( 3 < 5 )); then
+  ok arithmetic_condition yes
+else
+  ok arithmetic_condition no
+fi
+
+let sum=6+1
+check let_builtin "$sum" 7
+
+declare -i number
+number=3+4
+check integer_attribute "$number" 7
+
+loop=0
+for ((i = 1; i <= 4; i++)); do
+  loop=$((loop + i))
+done
+check c_style_for "$loop" 10
+
+countdown=3
+steps=""
+while (( countdown > 0 )); do
+  steps="$steps$countdown"
+  countdown=$((countdown - 1))
+done
+check arithmetic_while "$steps" 321

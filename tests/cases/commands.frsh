@@ -1,0 +1,46 @@
+suite commands
+
+check echo_plain "$(echo hello)" hello
+check echo_no_newline "$(echo -n hi)" hi
+check echo_escapes "$(echo -e 'a\tb')" "$(printf 'a\tb')"
+
+check seq_range "$(seq 1 4 | tr '\n' ' ' | tr -d ' ')" 1234
+check head_lines "$(seq 1 10 | head -n 3 | tr -d '\n')" 123
+check tail_lines "$(seq 1 10 | tail -n 2 | tr -d '\n')" 910
+check sort_lines "$(printf 'b\na\nc\n' | sort | tr -d '\n')" abc
+check sort_numeric "$(printf '10\n9\n' | sort -n | tr -d '\n')" 910
+check sort_reverse "$(printf 'a\nb\n' | sort -r | tr -d '\n')" ba
+check uniq_lines "$(printf 'a\na\nb\n' | uniq | tr -d '\n')" ab
+check wc_lines "$(printf 'a\nb\n' | wc -l | tr -d ' ')" 2
+check tr_upper "$(echo abc | tr a-z A-Z)" ABC
+check tr_delete "$(echo a-b-c | tr -d -)" abc
+check rev_line "$(echo abc | rev)" cba
+check tac_lines "$(printf 'a\nb\n' | tac | tr -d '\n')" ba
+check cut_field "$(echo 'a:b:c' | cut -d: -f2)" b
+check basename_path "$(basename /tmp/file.txt)" file.txt
+check dirname_path "$(dirname /tmp/file.txt)" /tmp
+
+check grep_match "$(printf 'apple\nbanana\n' | grep an)" banana
+check grep_invert "$(printf 'apple\nbanana\n' | grep -v an)" apple
+check grep_count "$(printf 'a\na\nb\n' | grep -c a)" 2
+check grep_quiet "$(echo yes | grep -q yes && echo found)" found
+check grep_ignore_case "$(echo HELLO | grep -i hello)" HELLO
+check grep_extended "$(printf 'cat\ndog\n' | grep -E 'c.t')" cat
+
+check sed_replace "$(echo hello | sed 's/l/L/')" heLlo
+check sed_replace_all "$(echo hello | sed 's/l/L/g')" heLLo
+check sed_delete "$(printf 'a\nb\n' | sed '/a/d')" b
+check sed_group "$(echo 'a b' | sed 's/\(a\) \(b\)/\2 \1/')" 'b a'
+
+check awk_field "$(echo 'one two' | awk '{ print $2 }')" two
+check awk_separator "$(echo 'a:b' | awk -F: '{ print $2 }')" b
+check awk_condition "$(printf '1\n5\n' | awk '$1 > 3 { print $1 }')" 5
+check awk_end "$(printf 'a\nb\n' | awk 'END { print NR }')" 2
+check awk_array "$(printf 'x\nx\ny\n' | awk '{ n[$1]++ } END { print n["x"] }')" 2
+check awk_function "$(echo 5 | awk 'function double(v) { return v * 2 } { print double($1) }')" 10
+check awk_split "$(echo 'a,b,c' | awk '{ n = split($0, parts, ","); print n }')" 3
+
+check which_finds_builtin "$(which echo > /dev/null; echo $?)" 0
+check type_builtin "$(type echo | grep -c builtin)" 1
+check have_builtin "$(have echo && echo present)" present
+check have_missing "$(have nosuchcommandhere || echo absent)" absent

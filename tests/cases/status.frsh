@@ -1,0 +1,47 @@
+suite status
+
+true
+check true_status "$?" 0
+
+false
+check false_status "$?" 1
+
+check colon_status "$(: ; echo $?)" 0
+
+x=$(false)
+check assignment_substitution_fails "$?" 1
+
+x=$(true)
+check assignment_substitution_succeeds "$?" 0
+
+x=plain
+check plain_assignment "$?" 0
+
+false
+x=plain
+check status_does_not_leak "$?" 0
+
+x=$(true) y=$(false)
+check last_substitution_wins "$?" 1
+
+x=$(false) y=$(true)
+check last_substitution_succeeds "$?" 0
+
+x=$(false) true
+check assignment_prefix_uses_command "$?" 0
+
+x=$(true) false
+check assignment_prefix_failing_command "$?" 1
+
+returns_seven() { return 7; }
+x=$(returns_seven)
+check function_status_through_substitution "$?" 7
+
+nosuchcommandhere 2> /dev/null
+check not_found_status "$?" 127
+
+check pipeline_status "$(false | true; echo $?)" 0
+check negated_status "$(! false; echo $?)" 0
+
+subshell_status=$( (exit 3); echo $? )
+check subshell_status "$subshell_status" 3

@@ -1,0 +1,43 @@
+suite expansion
+
+x=hello
+check length "${#x}" 5
+check default "${nope:-fallback}" fallback
+check default_kept "${x:-fallback}" hello
+check alternate "${x:+set}" set
+check strip_prefix "${x#he}" llo
+check strip_prefix_long "${x##*l}" o
+check strip_suffix "${x%lo}" hel
+check strip_suffix_long "${x%%l*}" he
+check replace_first "${x/l/L}" heLlo
+check replace_all "${x//l/L}" heLLo
+check replace_head "${x/#he/HE}" HEllo
+check replace_tail "${x/%lo/LO}" LO
+check substring "${x:1:3}" ell
+check substring_rest "${x:2}" llo
+check upper "${x^^}" HELLO
+check lower "${x,,}" hello
+
+target=value
+pointer=target
+check indirect "${!pointer}" value
+
+: "${filled:=written}"
+check assign_default "$filled" written
+
+check command_substitution "$(echo nested)" nested
+check backticks "`echo old`" old
+check nested_substitution "$(echo $(echo deep))" deep
+
+quoted="a b"
+check quoted_keeps_spaces "$quoted" "a b"
+check length_of_quoted "${#quoted}" 3
+
+set -- one two three
+check positional_count "$#" 3
+check positional_first "$1" one
+check positional_all "$*" "one two three"
+shift
+check after_shift "$1" two
+
+check tilde_expands "$(cd ~; pwd)" "$HOME"
