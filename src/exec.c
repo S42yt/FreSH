@@ -57,6 +57,7 @@ static int command_cache_valid = 0;
 static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out);
 static int exec_pipeline(Node *node, int background);
 static void job_add(HANDLE process, const char *command);
+static void resolutions_release(void);
 
 void exec_init(void) {
     sl_init(&command_cache);
@@ -71,6 +72,7 @@ void exec_cleanup(void) {
     functions = NULL;
     function_count = function_cap = 0;
     sl_free(&command_cache);
+    resolutions_release();
 }
 
 static Function *function_find(const char *name) {
@@ -126,11 +128,13 @@ static void pathext_list(StrList *out) {
     sl_push_copy(out, ".sh");
 }
 
-static int try_with_extensions(const char *base, char *out, size_t out_size) {
+static int try_with_extensions(const char *base, char *out, size_t out_size, int with_extensions) {
     if (path_is_file(base)) {
         snprintf(out, out_size, "%s", base);
         return 1;
     }
+    if (!with_extensions) return 0;
+
     StrList extensions;
     sl_init(&extensions);
     pathext_list(&extensions);
@@ -147,6 +151,49 @@ static int try_with_extensions(const char *base, char *out, size_t out_size) {
     return found;
 }
 
+typedef struct {
+    char *name;
+    char *path;
+} Resolution;
+
+static Resolution *resolutions = NULL;
+static size_t resolution_count = 0;
+static size_t resolution_cap = 0;
+
+static void resolutions_forget(void) {
+    for (size_t i = 0; i < resolution_count; i++) {
+        free(resolutions[i].name);
+        free(resolutions[i].path);
+    }
+    resolution_count = 0;
+}
+
+static void resolutions_release(void) {
+    resolutions_forget();
+    free(resolutions);
+    resolutions = NULL;
+    resolution_cap = 0;
+}
+
+static const Resolution *resolution_find(const char *name) {
+    char first = name[0];
+    for (size_t i = 0; i < resolution_count; i++) {
+        if (resolutions[i].name[0] == first && strcmp(resolutions[i].name, name) == 0)
+            return &resolutions[i];
+    }
+    return NULL;
+}
+
+static void resolution_remember(const char *name, const char *path) {
+    if (resolution_count + 1 >= resolution_cap) {
+        resolution_cap = resolution_cap ? resolution_cap * 2 : 32;
+        resolutions = xrealloc(resolutions, resolution_cap * sizeof(Resolution));
+    }
+    resolutions[resolution_count].name = xstrdup(name);
+    resolutions[resolution_count].path = path ? xstrdup(path) : NULL;
+    resolution_count++;
+}
+
 int resolve_command(const char *name, char *out, size_t out_size) {
     if (!name || !*name) return 0;
 
@@ -154,12 +201,20 @@ int resolve_command(const char *name, char *out, size_t out_size) {
         char base[PATH_BUF];
         snprintf(base, sizeof(base), "%s", name);
         path_to_backslashes(base);
-        return try_with_extensions(base, out, out_size);
+        return try_with_extensions(base, out, out_size, 1);
+    }
+
+    const Resolution *remembered = resolution_find(name);
+    if (remembered) {
+        if (!remembered->path) return 0;
+        snprintf(out, out_size, "%s", remembered->path);
+        return 1;
     }
 
     const char *path = var_get("PATH");
     if (!path) return 0;
 
+    int with_extensions = path_command_exists(name);
     char *copy = xstrdup(path);
     char *cursor = copy;
     char *dir;
@@ -167,15 +222,18 @@ int resolve_command(const char *name, char *out, size_t out_size) {
     while (!found && (dir = str_next_field(&cursor, ';')) != NULL) {
         if (!*dir) continue;
         char *base = path_join(dir, name);
-        found = try_with_extensions(base, out, out_size);
+        found = try_with_extensions(base, out, out_size, with_extensions);
         free(base);
     }
     free(copy);
+
+    resolution_remember(name, found ? out : NULL);
     return found;
 }
 
 void path_rehash(void) {
     command_cache_valid = 0;
+    resolutions_forget();
 }
 
 static char *read_registry_path(HKEY root, const char *subkey) {
@@ -249,17 +307,18 @@ void path_reload_environment(void) {
     command_cache_valid = 0;
 }
 
-static int is_command_extension(const char *ext) {
-    return str_ieq(ext, ".exe") || str_ieq(ext, ".com") || str_ieq(ext, ".bat") ||
-           str_ieq(ext, ".cmd") || str_ieq(ext, ".ps1") || str_ieq(ext, ".sh") ||
-           str_ieq(ext, ".frsh");
+static int is_command_extension(const StrList *extensions, const char *ext) {
+    for (size_t i = 0; i < extensions->len; i++) {
+        if (str_ieq(extensions->items[i], ext)) return 1;
+    }
+    return 0;
 }
 
 static int compare_names_fold(const void *a, const void *b) {
     return _stricmp(*(const char *const *)a, *(const char *const *)b);
 }
 
-static void scan_directory(const char *dir, StrList *out) {
+static void scan_directory(const char *dir, const StrList *extensions, StrList *out) {
     char *pattern = path_join(dir, "*");
     WIN32_FIND_DATAA data;
     HANDLE find = FindFirstFileA(pattern, &data);
@@ -269,7 +328,7 @@ static void scan_directory(const char *dir, StrList *out) {
     do {
         if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
         const char *ext = path_ext(data.cFileName);
-        if (!*ext || !is_command_extension(ext)) continue;
+        if (!*ext || !is_command_extension(extensions, ext)) continue;
         sl_push(out, xstrndup(data.cFileName, strlen(data.cFileName) - strlen(ext)));
     } while (FindNextFileA(find, &data));
     FindClose(find);
@@ -293,13 +352,18 @@ static void ensure_command_cache(void) {
 
     const char *path = var_get("PATH");
     if (path) {
+        StrList extensions;
+        sl_init(&extensions);
+        pathext_list(&extensions);
+
         char *copy = xstrdup(path);
         char *cursor = copy;
         char *dir;
         while ((dir = str_next_field(&cursor, ';')) != NULL) {
-            if (*dir) scan_directory(dir, &command_cache);
+            if (*dir) scan_directory(dir, &extensions, &command_cache);
         }
         free(copy);
+        sl_free(&extensions);
     }
 
     if (command_cache.len > 1)
