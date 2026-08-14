@@ -269,6 +269,21 @@ static char *read_registry_path(HKEY root, const char *subkey) {
     return raw;
 }
 
+static int path_listed(const char *list, const char *dir) {
+    if (!list || !*list) return 0;
+    size_t length = strlen(dir);
+    const char *cursor = list;
+
+    while (*cursor) {
+        const char *end = strchr(cursor, ';');
+        size_t span = end ? (size_t)(end - cursor) : strlen(cursor);
+        if (span == length && _strnicmp(cursor, dir, length) == 0) return 1;
+        if (!end) break;
+        cursor = end + 1;
+    }
+    return 0;
+}
+
 void path_reload_environment(void) {
     StrBuf path;
     sb_init(&path);
@@ -293,18 +308,26 @@ void path_reload_environment(void) {
         sb_putc(&path, ';');
     }
     if (user && *user) sb_puts(&path, user);
-
-    if (!machine && !user) {
-        const char *current = var_get("PATH");
-        if (current) sb_puts(&path, current);
-    }
-
     free(machine);
     free(user);
+
+    const char *current = var_get("PATH");
+    if (current) {
+        char *copy = xstrdup(current);
+        char *cursor = copy;
+        char *dir;
+        while ((dir = str_next_field(&cursor, ';')) != NULL) {
+            if (!*dir || path_listed(path.data, dir)) continue;
+            if (path.len > 0) sb_putc(&path, ';');
+            sb_puts(&path, dir);
+        }
+        free(copy);
+    }
 
     if (path.len > 0) var_set_exported("PATH", path.data);
     sb_free(&path);
     command_cache_valid = 0;
+    resolutions_forget();
 }
 
 static int is_command_extension(const StrList *extensions, const char *ext) {
