@@ -521,13 +521,40 @@ select choice in build test clean; do
 done
 ```
 
+## bash features that work
+
+`.sh` and `.frsh` run through the same parser, so a bash script runs
+unchanged. Beyond the basics above, these all work:
+
+```sh
+( cd build && make )              # subshell, its cd and variables stay inside
+(( count += 3 ))                  # arithmetic command, sets the exit status
+for ((i = 0; i < 10; i++)); do :; done
+let n=2**8                        # let, and ** ++ -- ?: & | ^ << >> in $(( ))
+declare -i total; total=3+4       # integer variables evaluate on assignment
+read -r first rest <<< "$line"    # here-strings
+name=$'tab\there'                 # ANSI-C escapes
+who=admin; echo "${!who_ref}"     # ${!var} indirection
+echo "${arr[@]:1:2}" "${arr[-1]}" # array slices and negative indices
+set -o pipefail                   # a pipeline fails if any stage does
+set -- one two three              # set the positional parameters
+printf '%-8s %05.2f\n' hi 3.1     # printf widths, precision and flags
+grep -q pattern file && echo yes  # -q stays quiet
+```
+
+`/dev/null`, `/dev/stdout` and `/dev/stderr` work as redirection targets and
+map to the Windows equivalents, so `2>/dev/null` needs no rewriting.
+
 ## What FreSH does not support
 
 - Backgrounding a bundled command. `&` only makes a job out of an external
   program, because bundled commands run inside the shell process.
+- A subshell that is a stage of a pipeline shares the shell's variables; a
+  standalone `( ... )` isolates them. Exported variables set inside any
+  subshell still reach later commands.
 - Signals beyond EXIT, HUP, INT, QUIT, TERM, ERR, DEBUG and RETURN. Windows
   has no others to deliver.
-- `coproc`, `shopt`, `${!prefix*}`, and `$'ansi strings'`.
+- `coproc`, `shopt`, and `${!prefix*}`.
 - `tar`, `curl`, `zip`, `ssh` and friends are not bundled, though Windows
   ships `tar` and `curl` itself. Anything else: install it, put it on `PATH`,
   run `rehash`.
