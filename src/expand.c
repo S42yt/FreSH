@@ -1201,8 +1201,8 @@ static long arith_comma(Arith *a) {
 }
 
 long eval_arith(const char *expr, int *ok) {
-    char *expanded = expand_single(expr);
-    Arith a = {expanded, 1};
+    char *expanded = strpbrk(expr, "$`'\"") ? expand_single(expr) : NULL;
+    Arith a = {expanded ? expanded : expr, 1};
     long value = arith_comma(&a);
     arith_space(&a);
     if (*a.p) a.ok = 0;

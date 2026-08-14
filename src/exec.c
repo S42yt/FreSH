@@ -59,8 +59,35 @@ static int exec_pipeline(Node *node, int background);
 static void job_add(HANDLE process, const char *command);
 static void resolutions_release(void);
 
+static StrList temp_free_list;
+static StrList temp_created;
+
 void exec_init(void) {
     sl_init(&command_cache);
+    sl_init(&temp_free_list);
+    sl_init(&temp_created);
+}
+
+static char *temp_acquire(void) {
+    if (temp_free_list.len > 0) return temp_free_list.items[--temp_free_list.len];
+
+    char directory[PATH_BUF];
+    char file[PATH_BUF];
+    if (!GetTempPathA(sizeof(directory), directory)) return NULL;
+    if (!GetTempFileNameA(directory, "frsh", 0, file)) return NULL;
+
+    sl_push_copy(&temp_created, file);
+    return xstrdup(file);
+}
+
+static void temp_release(char *path) {
+    if (path) sl_push(&temp_free_list, path);
+}
+
+static void temp_cleanup(void) {
+    for (size_t i = 0; i < temp_created.len; i++) DeleteFileA(temp_created.items[i]);
+    sl_free(&temp_created);
+    sl_free(&temp_free_list);
 }
 
 void exec_cleanup(void) {
@@ -73,6 +100,7 @@ void exec_cleanup(void) {
     function_count = function_cap = 0;
     sl_free(&command_cache);
     resolutions_release();
+    temp_cleanup();
 }
 
 static Function *function_find(const char *name) {
@@ -535,8 +563,10 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
             }
             free(body);
 
-            HANDLE handle = CreateFileA(file, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
-                                        OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY, NULL);
+            HANDLE handle =
+                CreateFileA(file, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                            OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
+                            NULL);
             if (handle == INVALID_HANDLE_VALUE) return 0;
             track_handle(handle);
             io->in = handle;
@@ -556,8 +586,10 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
                 sb_free(&script);
                 free(command);
 
-                HANDLE handle = CreateFileA(file, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                            &sa, OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY, NULL);
+                HANDLE handle =
+                    CreateFileA(file, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                                OPEN_EXISTING,
+                                FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, NULL);
                 if (handle == INVALID_HANDLE_VALUE) return 0;
                 track_handle(handle);
                 io->in = handle;
@@ -1100,17 +1132,19 @@ static int stage_runs_in_process(Node *node) {
     return coreutil_lookup(word) != NULL;
 }
 
-static HANDLE open_spool(char *path, size_t path_size) {
-    char directory[PATH_BUF];
-    if (!GetTempPathA(sizeof(directory), directory)) return INVALID_HANDLE_VALUE;
-
-    char file[PATH_BUF];
-    if (!GetTempFileNameA(directory, "frsp", 0, file)) return INVALID_HANDLE_VALUE;
-    snprintf(path, path_size, "%s", file);
+static HANDLE open_spool(char **path_out) {
+    char *path = temp_acquire();
+    if (!path) return INVALID_HANDLE_VALUE;
 
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
-    return CreateFileA(file, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS,
-                       FILE_ATTRIBUTE_TEMPORARY, NULL);
+    HANDLE handle = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                                CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        temp_release(path);
+        return INVALID_HANDLE_VALUE;
+    }
+    *path_out = path;
+    return handle;
 }
 
 static HANDLE reopen_spool(const char *path) {
@@ -1136,7 +1170,7 @@ static int exec_pipeline(Node *node, int background) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     HANDLE processes[MAX_STAGES];
     int process_count = 0;
-    char spools[MAX_STAGES][PATH_BUF];
+    char *spools[MAX_STAGES];
     int spool_count = 0;
     HANDLE stage_input = NULL;
     int mark = tracked_count;
@@ -1151,13 +1185,13 @@ static int exec_pipeline(Node *node, int background) {
         HANDLE read_end = NULL;
         HANDLE write_end = NULL;
         HANDLE spool = INVALID_HANDLE_VALUE;
-        char spool_path[PATH_BUF] = "";
+        char *spool_path = NULL;
 
         if (stage_input) io.in = stage_input;
 
         if (i < count - 1) {
             if (stage_runs_in_process(stages[i])) {
-                spool = open_spool(spool_path, sizeof(spool_path));
+                spool = open_spool(&spool_path);
                 if (spool == INVALID_HANDLE_VALUE) {
                     shell_error("cannot create pipeline buffer");
                     break;
@@ -1197,7 +1231,7 @@ static int exec_pipeline(Node *node, int background) {
         if (spool != INVALID_HANDLE_VALUE) {
             untrack_handle(spool);
             CloseHandle(spool);
-            snprintf(spools[spool_count++], PATH_BUF, "%s", spool_path);
+            spools[spool_count++] = spool_path;
             stage_input = reopen_spool(spool_path);
             if (stage_input == INVALID_HANDLE_VALUE) stage_input = NULL;
             else track_handle(stage_input);
@@ -1224,7 +1258,7 @@ static int exec_pipeline(Node *node, int background) {
         CloseHandle(processes[i]);
     }
 
-    for (int i = 0; i < spool_count; i++) DeleteFileA(spools[i]);
+    for (int i = 0; i < spool_count; i++) temp_release(spools[i]);
 
     if (!background && shell.pipefail) {
         status = 0;
@@ -1965,17 +1999,15 @@ int exec_script_file(const char *path, const StrList *args) {
 }
 
 int capture_command(const char *command, StrBuf *out) {
-    char temp_dir[PATH_BUF];
-    char temp_file[PATH_BUF];
-    if (!GetTempPathA(sizeof(temp_dir), temp_dir)) return 1;
-    if (!GetTempFileNameA(temp_dir, "frsh", 0, temp_file)) return 1;
+    char *temp_file = temp_acquire();
+    if (!temp_file) return 1;
 
     fflush(stdout);
     int saved_out = _dup(1);
     int fd = _open(temp_file, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
     if (fd < 0) {
         _close(saved_out);
-        DeleteFileA(temp_file);
+        temp_release(temp_file);
         return 1;
     }
     _dup2(fd, 1);
@@ -1994,6 +2026,6 @@ int capture_command(const char *command, StrBuf *out) {
         while ((n = fread(buffer, 1, sizeof(buffer), f)) > 0) sb_putn(out, buffer, n);
         fclose(f);
     }
-    DeleteFileA(temp_file);
+    temp_release(temp_file);
     return status;
 }
