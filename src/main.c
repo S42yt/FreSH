@@ -293,21 +293,24 @@ static LONG WINAPI crash_report(EXCEPTION_POINTERS *info) {
     void *at = info->ExceptionRecord->ExceptionAddress;
     int colored = _isatty(_fileno(stderr));
 
-    int length;
-    if (name)
-        length = snprintf(message, sizeof(message),
-                          "%sFreSH crashed: %s%s\n  fault 0x%08lx at %p, FreSH %s\n"
-                          "  this is a bug, please report it at "
-                          "https://github.com/S42yt/FreSH/issues\n",
-                          colored ? "\x1b[31m" : "", name, colored ? "\x1b[0m" : "",
-                          (unsigned long)code, at, FRESH_VERSION);
-    else
-        length = snprintf(message, sizeof(message),
-                          "%sFreSH crashed: fault 0x%08lx at %p%s, FreSH %s\n"
-                          "  this is a bug, please report it at "
-                          "https://github.com/S42yt/FreSH/issues\n",
-                          colored ? "\x1b[31m" : "", (unsigned long)code, at,
-                          colored ? "\x1b[0m" : "", FRESH_VERSION);
+    const char *red = colored ? "\x1b[31m" : "";
+    const char *dim = colored ? "\x1b[90m" : "";
+    const char *reset = colored ? "\x1b[0m" : "";
+    const char *logo = "      __\n"
+                       "     /\\ \\\n"
+                       "    /  \\ \\    \xce\xbb  FreSH\n"
+                       "   / /\\ \\ \\\n"
+                       "  /_/  \\_\\_\\\n";
+    const char *reason = name ? name : "an unexpected fault";
+
+    int length = snprintf(message, sizeof(message),
+                          "\n%s%s%s\n"
+                          "%s  crashed: %s%s\n"
+                          "%s  fault 0x%08lx at %p, FreSH %s%s\n"
+                          "%s  a bug, please report it at "
+                          "https://github.com/S42yt/FreSH/issues%s\n",
+                          red, logo, reset, red, reason, reset, dim, (unsigned long)code, at,
+                          FRESH_VERSION, reset, dim, reset);
 
     if (length > 0) {
         DWORD written;
