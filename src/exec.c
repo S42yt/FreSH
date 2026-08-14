@@ -549,8 +549,18 @@ static void assign_from_word(char *word) {
     }
 
     char *name = xstrndup(word, (size_t)(name_end - word));
-    if (append) var_append(name, value);
-    else var_set(name, value);
+    if (var_is_integer(name)) {
+        int ok = 1;
+        long number = eval_arith(value, &ok);
+        if (append) number = eval_arith(var_get(name), &ok) + number;
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%ld", number);
+        var_set(name, buffer);
+    } else if (append) {
+        var_append(name, value);
+    } else {
+        var_set(name, value);
+    }
     free(name);
 }
 

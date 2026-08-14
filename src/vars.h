@@ -30,6 +30,8 @@ int var_exists(const char *name);
 void var_declare(const char *name, VarKind kind);
 VarKind var_kind(const char *name);
 void var_set_array(const char *name, const StrList *values, VarKind kind);
+void var_mark_integer(const char *name);
+int var_is_integer(const char *name);
 void var_set_element(const char *name, const char *index, const char *value);
 const char *var_get_element(const char *name, const char *index);
 void var_values(const char *name, StrList *out);

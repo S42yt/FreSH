@@ -219,6 +219,12 @@ static void assign_word(char *word) {
         snprintf(index, sizeof(index), "%s", open + 1);
         index[strcspn(index, "]")] = '\0';
         var_set_element(word, index, eq + 1);
+    } else if (var_is_integer(word)) {
+        int ok = 1;
+        long number = eval_arith(eq + 1, &ok);
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%ld", number);
+        var_set(word, buffer);
     } else {
         var_set(word, eq + 1);
     }
@@ -247,11 +253,13 @@ static int builtin_local(int argc, char **argv) {
 static int builtin_declare(int argc, char **argv) {
     VarKind kind = VAR_SCALAR;
     int local_wanted = 0;
+    int integer_wanted = 0;
     int index = 1;
 
     for (; index < argc && argv[index][0] == '-'; index++) {
         if (strchr(argv[index], 'A')) kind = VAR_ASSOC;
         if (strchr(argv[index], 'a')) kind = VAR_INDEXED;
+        if (strchr(argv[index], 'i')) integer_wanted = 1;
         if (strchr(argv[index], 'g')) local_wanted = 0;
     }
 
@@ -269,6 +277,7 @@ static int builtin_declare(int argc, char **argv) {
         char *name = eq ? xstrndup(argv[index], (size_t)(eq - argv[index])) : xstrdup(argv[index]);
         if (local_wanted) var_make_local(name);
         if (kind != VAR_SCALAR) var_declare(name, kind);
+        if (integer_wanted) var_mark_integer(name);
         free(name);
         if (eq) assign_word(argv[index]);
     }

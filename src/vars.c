@@ -18,6 +18,7 @@ typedef struct {
     StrList values;
     VarKind kind;
     int exported;
+    int integer;
 } Entry;
 
 typedef struct {
@@ -258,6 +259,17 @@ void var_set_element(const char *name, const char *index, const char *value) {
     sl_push_copy(&e->values, value);
 }
 
+void var_mark_integer(const char *name) {
+    Entry *e = find(vars, var_count_total, name);
+    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    e->integer = 1;
+}
+
+int var_is_integer(const char *name) {
+    Entry *e = find(vars, var_count_total, name);
+    return e ? e->integer : 0;
+}
+
 const char *var_get_element(const char *name, const char *index) {
     Entry *e = find(vars, var_count_total, name);
     if (!e) return NULL;
@@ -358,6 +370,7 @@ static Entry entry_copy(const Entry *src) {
     e.value = src->value ? xstrdup(src->value) : NULL;
     e.kind = src->kind;
     e.exported = src->exported;
+    e.integer = src->integer;
     sl_init(&e.keys);
     sl_init(&e.values);
     for (size_t i = 0; i < src->keys.len; i++) sl_push_copy(&e.keys, src->keys.items[i]);

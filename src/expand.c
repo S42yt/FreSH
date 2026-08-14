@@ -270,15 +270,23 @@ static char *brace_expand(const char *body) {
         return xstrdup(value ? value : "");
     }
 
-    if (*body == '#' && split_subscript(body + 1, name, sizeof(name), index, sizeof(index)) &&
-        (strcmp(index, "@") == 0 || strcmp(index, "*") == 0)) {
+    if (*body == '#' && split_subscript(body + 1, name, sizeof(name), index, sizeof(index))) {
+        if (strcmp(index, "@") == 0 || strcmp(index, "*") == 0) {
+            StrBuf sb;
+            sb_init(&sb);
+            sb_printf(&sb, "%d", var_count(name));
+            return sb_take(&sb);
+        }
+        char *resolved = expand_single(index);
+        const char *element = var_get_element(name, resolved);
+        free(resolved);
         StrBuf sb;
         sb_init(&sb);
-        sb_printf(&sb, "%d", var_count(name));
+        sb_printf(&sb, "%d", element ? (int)strlen(element) : 0);
         return sb_take(&sb);
     }
 
-    if (split_subscript(body, name, sizeof(name), index, sizeof(index))) {
+    if (body[0] != '#' && split_subscript(body, name, sizeof(name), index, sizeof(index))) {
         if (strcmp(index, "@") == 0 || strcmp(index, "*") == 0) {
             StrList values;
             sl_init(&values);
