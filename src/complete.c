@@ -18,6 +18,7 @@
 #include "foreign.h"
 #include "help.h"
 #include "parser.h"
+#include "style.h"
 #include "vars.h"
 
 static size_t token_start(const char *buffer, size_t cursor) {
