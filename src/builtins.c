@@ -974,6 +974,7 @@ static const Builtin BUILTINS[] = {
     {"type", builtin_type},         {"unalias", builtin_unalias},
     {"unset", builtin_unset},       {"which", builtin_which},
     {"[", builtin_test},            {".", builtin_source},
+    {":", builtin_true},
 };
 
 BuiltinFn builtin_lookup(const char *name) {

@@ -741,9 +741,22 @@ static Node *parse_select(Parser *ps) {
     return node;
 }
 
+static int is_brace_open(Token *t) {
+    return t->type == T_WORD && !t->quoted && t->text && t->text[0] == '{';
+}
+
+static void open_brace(Parser *ps) {
+    Token *t = peek(ps);
+    if (t->text[1] == '\0') {
+        advance(ps);
+        return;
+    }
+    memmove(t->text, t->text + 1, strlen(t->text));
+}
+
 static Node *parse_group(Parser *ps) {
     size_t start = ps->pos;
-    advance(ps);
+    open_brace(ps);
     const char *stop[] = {"}", NULL};
     Node *node = node_new(N_GROUP);
     node->right = parse_list(ps, stop);
@@ -761,7 +774,7 @@ static Node *parse_function(Parser *ps, const char *name) {
     Node *node = node_new(N_FUNC);
     node->name = xstrdup(name);
     skip_line_breaks(ps);
-    if (!is_reserved(peek(ps), "{")) {
+    if (!is_brace_open(peek(ps))) {
         fail_hint(ps, ps->pos, "a function body has to be a { } block",
                   "write: name() { <commands>; }");
         node_free(node);

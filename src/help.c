@@ -40,6 +40,10 @@ static const HelpEntry ENTRIES[] = {
      "  cd src/parser\n"
      "  cd -"},
 
+    {":", ":", "do nothing and succeed",
+     "The null command, the same as true. Handy as a placeholder:\n"
+     "  while :; do work || break; done"},
+
     {"case", "case <word> in <pattern>) <commands> ;; ... esac", "branch on what a word looks like",
      "Patterns are globs, and | separates alternatives.\n"
      "  case $1 in\n"
