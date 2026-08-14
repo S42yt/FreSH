@@ -3,8 +3,22 @@ source "$here/lib.frsh"
 
 printf '\n  FreSH test suite\n\n'
 
-for case_file in "$here"/cases/*.frsh; do
-  source "$case_file"
+suite_files=("$here"/cases/*.frsh)
+suite_total=${#suite_files[@]}
+suite_index=0
+
+for suite_file in "${suite_files[@]}"; do
+  suite_index=$((suite_index + 1))
+  suite_name=${suite_file##*/}
+  suite_name=${suite_name%.frsh}
+
+  if [ -z "$CI" ]; then progress "$suite_index" "$suite_total" "$suite_name"; fi
+  source "$suite_file"
 done
+
+if [ -z "$CI" ]; then
+  progress "$suite_total" "$suite_total" "done"
+  printf '\n'
+fi
 
 summary
