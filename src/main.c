@@ -270,7 +270,59 @@ static void interactive_loop(void) {
     }
 }
 
+static const char *exception_name(DWORD code) {
+    switch (code) {
+    case EXCEPTION_ACCESS_VIOLATION: return "segmentation fault, a bad or null memory access";
+    case EXCEPTION_STACK_OVERFLOW: return "stack overflow, most likely runaway recursion";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO: return "integer divide by zero";
+    case EXCEPTION_INT_OVERFLOW: return "integer overflow";
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO: return "floating point divide by zero";
+    case EXCEPTION_ILLEGAL_INSTRUCTION: return "illegal instruction";
+    case EXCEPTION_PRIV_INSTRUCTION: return "privileged instruction";
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: return "array index out of bounds";
+    case EXCEPTION_DATATYPE_MISALIGNMENT: return "a misaligned memory access";
+    case EXCEPTION_IN_PAGE_ERROR: return "a page fault, the file backing memory was unreachable";
+    default: return NULL;
+    }
+}
+
+static LONG WINAPI crash_report(EXCEPTION_POINTERS *info) {
+    static char message[512];
+    DWORD code = info->ExceptionRecord->ExceptionCode;
+    const char *name = exception_name(code);
+    void *at = info->ExceptionRecord->ExceptionAddress;
+    int colored = _isatty(_fileno(stderr));
+
+    int length;
+    if (name)
+        length = snprintf(message, sizeof(message),
+                          "%sFreSH crashed: %s%s\n  fault 0x%08lx at %p, FreSH %s\n"
+                          "  this is a bug, please report it at "
+                          "https://github.com/S42yt/FreSH/issues\n",
+                          colored ? "\x1b[31m" : "", name, colored ? "\x1b[0m" : "",
+                          (unsigned long)code, at, FRESH_VERSION);
+    else
+        length = snprintf(message, sizeof(message),
+                          "%sFreSH crashed: fault 0x%08lx at %p%s, FreSH %s\n"
+                          "  this is a bug, please report it at "
+                          "https://github.com/S42yt/FreSH/issues\n",
+                          colored ? "\x1b[31m" : "", (unsigned long)code, at,
+                          colored ? "\x1b[0m" : "", FRESH_VERSION);
+
+    if (length > 0) {
+        DWORD written;
+        WriteFile(GetStdHandle(STD_ERROR_HANDLE), message, (DWORD)length, &written, NULL);
+    }
+    ExitProcess((UINT)code);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 int main(int argc, char *argv[]) {
+    ULONG stack_reserve = 65536;
+    SetThreadStackGuarantee(&stack_reserve);
+    SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
+    SetUnhandledExceptionFilter(crash_report);
+
     int interactive = 1;
     const char *command = NULL;
     const char *script = NULL;
