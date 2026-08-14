@@ -33,6 +33,25 @@ A shebang line is allowed and ignored, so a script can stay portable:
 echo this runs on both
 ```
 
+## Typing and pasting at the prompt
+
+Everything in this page can be typed straight at the prompt. When a line is
+not finished, because a block is open or a quote is unclosed, FreSH prompts
+with `…` and keeps reading until it is:
+
+```sh
+λ if test -d src; then
+…   echo yes
+… fi
+yes
+```
+
+Ctrl+C abandons the block and gives you a clean prompt back.
+
+Pasting a script works the same way. Tabs and indentation come through as
+written, and each complete command runs as it arrives, so a pasted block of
+lines behaves like a file that was sourced.
+
 ## Exit status
 
 The script exits with the status of its last command, or whatever you pass to

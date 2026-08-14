@@ -249,6 +249,12 @@ static void interactive_loop(void) {
         while (command.len > 0 && needs_more_input(command.data)) {
             char *more = line_read(1);
             if (!more) break;
+            if (shell.interrupted) {
+                sb_clear(&command);
+                sb_puts(&command, more);
+                free(more);
+                break;
+            }
             sb_putc(&command, '\n');
             sb_puts(&command, more);
             free(more);

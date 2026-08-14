@@ -391,6 +391,7 @@ char *line_read(int continuation) {
     sb_init(&editor.prompt);
     sl_init(&editor.menu);
     editor.history_index = -1;
+    shell.interrupted = 0;
 
     if (continuation) {
         prompt_build_continuation(&editor.prompt);
@@ -405,9 +406,10 @@ char *line_read(int continuation) {
     char *result = NULL;
     while (1) {
         int key = term_read_key();
+        int pasting = term_input_pending();
         int was_tab = key == KEY_TAB;
 
-        if (key == KEY_ENTER) {
+        if (key == KEY_ENTER || key == KEY_LINE_FEED) {
             finish_line(&editor);
             result = xstrdup(editor.buffer.data);
             break;
@@ -417,6 +419,7 @@ char *line_read(int continuation) {
             term_write("^C\r\n");
             result = xstrdup(shell.trap_int ? shell.trap_int : "");
             shell.last_status = 130;
+            shell.interrupted = 1;
             break;
         }
         if (key == KEY_CTRL_D) {
@@ -427,7 +430,8 @@ char *line_read(int continuation) {
             }
             delete_range(&editor, editor.cursor, next_char(editor.buffer.data, editor.cursor));
         } else if (key == KEY_TAB) {
-            complete(&editor);
+            if (pasting) insert_text(&editor, " ", 1);
+            else complete(&editor);
         } else if (key == KEY_BACKSPACE) {
             size_t from = prev_char(editor.buffer.data, editor.cursor);
             delete_range(&editor, from, editor.cursor);
@@ -486,6 +490,7 @@ char *line_read(int continuation) {
             editor.menu_active = 0;
             sl_clear(&editor.menu);
         }
+        if (pasting) continue;
         update_suggestion(&editor);
         render(&editor);
     }

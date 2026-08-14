@@ -17,6 +17,7 @@ enum {
     KEY_CTRL_G = 7,
     KEY_BACKSPACE = 8,
     KEY_TAB = 9,
+    KEY_LINE_FEED = 10,
     KEY_CTRL_K = 11,
     KEY_CTRL_L = 12,
     KEY_ENTER = 13,
@@ -48,6 +49,7 @@ void term_cleanup(void);
 int term_width(void);
 int term_height(void);
 int term_read_key(void);
+int term_input_pending(void);
 void term_write(const char *s);
 void term_clear_screen(void);
 void term_set_title(const char *title);

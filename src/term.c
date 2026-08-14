@@ -121,8 +121,24 @@ static int map_extended(int code) {
     }
 }
 
+static int pushback = -1;
+
+int term_input_pending(void) {
+    return pushback >= 0 || _kbhit() != 0;
+}
+
 int term_read_key(void) {
-    int ch = _getch();
+    int ch;
+    if (pushback >= 0) {
+        ch = pushback;
+        pushback = -1;
+    } else {
+        ch = _getch();
+    }
+    if (ch == '\r' && _kbhit()) {
+        int next = _getch();
+        if (next != '\n') pushback = next;
+    }
     if (ch == 0 || ch == 224) {
         int mapped = map_extended(_getch());
         return mapped > 0 ? mapped : -1;

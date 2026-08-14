@@ -934,7 +934,8 @@ static int builtin_help(int argc, char **argv) {
     printf("  Ctrl+A / Ctrl+E  start and end of line\n");
     printf("  Ctrl+W / Backsp  delete the previous word\n");
     printf("  Ctrl+U / Ctrl+K  cut to start and to end\n");
-    printf("  Ctrl+L           clear the screen\n\n");
+    printf("  Ctrl+L           clear the screen\n");
+    printf("  Ctrl+C           abandon the line, or the block you are part way through\n\n");
     printf("  %shelp <command> for what it does and the arguments it takes%s\n", style(S_DIM),
            style(S_RESET));
     printf("  %sConfiguration lives in ~/.freshrc%s\n\n", style(S_DIM), style(S_RESET));
