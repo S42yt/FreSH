@@ -801,8 +801,54 @@ void brace_expand_word(const char *word, StrList *out) {
     free(body);
 }
 
+static size_t assignment_prefix(const char *word) {
+    if (!isalpha((unsigned char)word[0]) && word[0] != '_') return 0;
+
+    size_t i = 1;
+    while (isalnum((unsigned char)word[i]) || word[i] == '_') i++;
+    if (word[i] == '[') {
+        const char *close = strchr(word + i, ']');
+        if (!close) return 0;
+        i = (size_t)(close - word) + 1;
+    }
+    if (word[i] == '+' && word[i + 1] == '=') return i + 2;
+    return word[i] == '=' ? i + 1 : 0;
+}
+
+static void expand_assignment(const char *word, size_t prefix, StrList *out) {
+    Expander ex;
+    sb_init(&ex.field);
+    ex.has_content = 1;
+    ex.quoted = 0;
+    ex.out = out;
+    ex.split = 0;
+    ex.glob = 0;
+
+    sb_putn(&ex.field, word, prefix);
+    expand_into(word + prefix, &ex);
+    ex.has_content = 1;
+    field_flush(&ex);
+    sb_free(&ex.field);
+}
+
+static int declaration_command(const char *word) {
+    return strcmp(word, "local") == 0 || strcmp(word, "export") == 0 ||
+           strcmp(word, "declare") == 0 || strcmp(word, "typeset") == 0 ||
+           strcmp(word, "readonly") == 0;
+}
+
 void expand_words(const StrList *in, StrList *out) {
+    int leading = 1;
+
     for (size_t i = 0; i < in->len; i++) {
+        size_t prefix = leading ? assignment_prefix(in->items[i]) : 0;
+        if (!prefix && !(i == 0 && declaration_command(in->items[i]))) leading = 0;
+
+        if (prefix) {
+            expand_assignment(in->items[i], prefix, out);
+            continue;
+        }
+
         StrList braced;
         sl_init(&braced);
         brace_expand_word(in->items[i], &braced);
