@@ -907,7 +907,26 @@ static int edit_distance(const char *a, const char *b, int limit) {
     return previous[lb];
 }
 
+typedef struct {
+    const char *name;
+    int limit;
+    int score;
+    char *best;
+} Nearest;
+
+static void nearest_consider(Nearest *search, const char *candidate) {
+    int score = edit_distance(search->name, candidate, search->limit);
+    if (score >= search->score) return;
+
+    search->score = score;
+    free(search->best);
+    search->best = xstrdup(candidate);
+}
+
 static char *nearest_command(const char *name) {
+    Nearest search = {name, strlen(name) <= 3 ? 1 : 2, 0, NULL};
+    search.score = search.limit + 1;
+
     StrList names;
     sl_init(&names);
     keyword_names(&names);
@@ -915,24 +934,19 @@ static char *nearest_command(const char *name) {
     coreutil_names(&names);
     function_names(&names);
     alias_list(&names);
-    path_commands(&names);
-
-    int limit = strlen(name) <= 3 ? 1 : 2;
-    int best_score = limit + 1;
-    char *best = NULL;
 
     for (size_t i = 0; i < names.len; i++) {
-        char *eq = strchr(names.items[i], '=');
-        if (eq) *eq = '\0';
-        int score = edit_distance(name, names.items[i], limit);
-        if (score < best_score) {
-            best_score = score;
-            free(best);
-            best = xstrdup(names.items[i]);
-        }
+        char *quote = strchr(names.items[i], '=');
+        if (quote) *quote = '\0';
+        nearest_consider(&search, names.items[i]);
     }
     sl_free(&names);
-    return best;
+
+    ensure_command_cache();
+    for (size_t i = 0; i < command_cache.len; i++)
+        nearest_consider(&search, command_cache.items[i]);
+
+    return search.best;
 }
 
 static void report_not_found(const char *name) {
