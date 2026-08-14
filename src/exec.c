@@ -1022,44 +1022,40 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     Function *f = function_find(argv[0]);
     BuiltinFn builtin = f ? NULL : builtin_lookup(argv[0]);
 
-    if (f || builtin) {
+    char path[PATH_BUF] = "";
+    BuiltinFn fallback = NULL;
+    int resolved = 0;
+
+    if (!f && !builtin) {
+        resolved = coreutil_preferred(argv[0]) ? 0 : resolve_command(argv[0], path, sizeof(path));
+        fallback = resolved ? NULL : coreutil_lookup(argv[0]);
+    }
+
+    if (resolved && !is_shell_script(path)) {
+        status = run_program(path, argv, argc, &io, background, async_out);
+    } else {
         FdSave save;
         int redirected = !io_is_default(&io);
         if (redirected) fds_apply(&io, &save);
-        status = f ? call_function(f, &args) : builtin(argc, argv);
-        if (redirected) fds_restore(&save);
-    } else {
-        char path[PATH_BUF] = "";
-        int preferred = coreutil_preferred(argv[0]);
-        int resolved = preferred ? 0 : resolve_command(argv[0], path, sizeof(path));
-        BuiltinFn fallback = resolved ? NULL : coreutil_lookup(argv[0]);
 
-        if (fallback) {
-            FdSave save;
-            int redirected = !io_is_default(&io);
-            if (redirected) fds_apply(&io, &save);
+        if (f) {
+            status = call_function(f, &args);
+        } else if (builtin) {
+            status = builtin(argc, argv);
+        } else if (fallback) {
             status = fallback(argc, argv);
-            if (redirected) fds_restore(&save);
-        } else if (!resolved) {
-            FdSave save;
-            int redirected = !io_is_default(&io);
-            if (redirected) fds_apply(&io, &save);
-            report_not_found(argv[0]);
-            if (redirected) fds_restore(&save);
-            status = 127;
-        } else if (is_shell_script(path)) {
-            FdSave save;
-            int redirected = !io_is_default(&io);
-            if (redirected) fds_apply(&io, &save);
+        } else if (resolved) {
             StrList script_args;
             sl_init(&script_args);
             for (int i = 1; i < argc; i++) sl_push_copy(&script_args, argv[i]);
             status = exec_script_file(path, &script_args);
             sl_free(&script_args);
-            if (redirected) fds_restore(&save);
         } else {
-            status = run_program(path, argv, argc, &io, background, async_out);
+            report_not_found(argv[0]);
+            status = 127;
         }
+
+        if (redirected) fds_restore(&save);
     }
 
     for (size_t i = 0; i < saved_names.len; i++) {
