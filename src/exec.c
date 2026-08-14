@@ -665,6 +665,7 @@ static int edit_distance(const char *a, const char *b, int limit) {
     size_t lb = strlen(b);
     if (lb > 96 || la > lb + (size_t)limit || lb > la + (size_t)limit) return limit + 1;
 
+    int before[98];
     int previous[98];
     int current[98];
     for (size_t j = 0; j <= lb; j++) previous[j] = (int)j;
@@ -676,8 +677,13 @@ static int edit_distance(const char *a, const char *b, int limit) {
             int best = previous[j] + 1;
             if (current[j - 1] + 1 < best) best = current[j - 1] + 1;
             if (previous[j - 1] + cost < best) best = previous[j - 1] + cost;
+            if (i > 1 && j > 1 && tolower((unsigned char)a[i - 1]) == tolower((unsigned char)b[j - 2]) &&
+                tolower((unsigned char)a[i - 2]) == tolower((unsigned char)b[j - 1]) &&
+                before[j - 2] + 1 < best)
+                best = before[j - 2] + 1;
             current[j] = best;
         }
+        memcpy(before, previous, sizeof(int) * (lb + 1));
         memcpy(previous, current, sizeof(int) * (lb + 1));
     }
     return previous[lb];
