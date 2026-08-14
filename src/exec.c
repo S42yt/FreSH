@@ -712,11 +712,11 @@ static char *nearest_command(const char *name) {
 }
 
 static void report_not_found(const char *name) {
-    char *near = nearest_command(name);
-    if (near) shell_error("%s: command not found\n  did you mean %s", name, near);
+    char *closest = nearest_command(name);
+    if (closest) shell_error("%s: command not found\n  did you mean %s", name, closest);
     else shell_error("%s: command not found\n  if it is installed, run rehash so FreSH sees it",
                      name);
-    free(near);
+    free(closest);
 }
 
 static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) {
