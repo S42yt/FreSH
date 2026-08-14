@@ -92,9 +92,11 @@ large repositories if you notice the marker lagging behind.
 Colour is disabled automatically when output is redirected, so
 `ls > files.txt` never writes escape codes into the file.
 
-While you type, a command that can be run is bright green and one that cannot
-is red, so a typo shows before you press Enter. Keywords such as `if`, `for`
-and `done` are green as well, and Tab completes them like any other word.
+While you type, a command that can be run is bright green. A word is only red
+once it cannot become a real command, so a half typed name stays plain and a
+genuine typo turns red. Keywords such as `if`, `for` and `done` are green,
+function definitions like `name()` are green, and a redirect target such as
+`> /dev/null` is left plain rather than treated as a command.
 
 ### History
 
