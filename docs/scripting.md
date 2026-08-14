@@ -521,16 +521,32 @@ done
 
 ## Debugging
 
-There is no `set -x`. The quickest way to see what a line expands to is to
-echo it:
+`set -x` traces every command to stderr, and `set -e` stops at the first
+failure. To see what a single line expands to, echo it:
 
 ```sh
 echo "argument is [$1], path is [$(pwd)]"
 ```
 
 A syntax error is reported before anything runs, because the whole script is
-parsed first. If a script fails immediately with `unexpected end of input`,
-look for an unclosed quote, `fi`, `done` or `esac`.
+parsed first. The message names the script, the line, what is missing and how
+that construct is written:
+
+```
+FreSH: deploy.frsh: line 12: this if has no fi
+  close it with fi, and note that it is fi rather than end or endif
+```
+
+Line numbers count the lines the parser saw, so a here document body shifts
+the ones after it.
+
+A command that cannot be found suggests the nearest name it knows, which
+covers a swapped pair of letters:
+
+```
+FreSH: gti: command not found
+  did you mean git
+```
 
 Scripts saved with Windows line endings work fine, carriage returns are
 treated as whitespace.
