@@ -23,6 +23,7 @@
 #include "foreign.h"
 #include "parser.h"
 #include "regex.h"
+#include "style.h"
 #include "table.h"
 #include "shell.h"
 #include "vars.h"
