@@ -48,9 +48,13 @@ static void check_syntax(const char *path, StrList *problems) {
         char *newline = strchr(error, '\n');
         if (newline) *newline = '\0';
 
+        const char *leaf = strrchr(path, '\\');
+        const char *slash = strrchr(path, '/');
+        if (slash > leaf) leaf = slash;
+
         StrBuf problem;
         sb_init(&problem);
-        sb_printf(&problem, "%s: %s", path, error);
+        sb_printf(&problem, "%s: %s", leaf ? leaf + 1 : path, error);
         sl_push(problems, sb_take(&problem));
     }
     free(error);

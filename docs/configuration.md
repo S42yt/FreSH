@@ -80,6 +80,29 @@ The dirty marker costs one `git status` per prompt, run on a background
 thread with a short cache, so it never blocks typing. Turn it off on very
 large repositories if you notice the marker lagging behind.
 
+## Checking it
+
+```sh
+fresh doctor
+```
+
+It parses `~/.freshrc` and tells you the line a mistake sits on, and it checks
+that the theme and every plugin you named actually exist. When something is
+wrong an interactive shell prints the same report as it starts, so a broken
+configuration announces itself instead of quietly doing half of what you asked.
+
+```
+       __        FreSH 26.9.0
+      /\ \       C:/Users/you/.freshrc
+     /  \ \
+    / /\ \ \     ✗  1 problem in the configuration
+   /_/  \_\_\
+  .freshrc: line 3: this if has no fi
+```
+
+`fresh check` is the same command. It exits non zero when it finds something,
+so a script can rely on it.
+
 ### Editing
 
 | Variable | Default | Meaning |

@@ -141,8 +141,9 @@ static const HelpEntry ENTRIES[] = {
      "Arguments arrive as $1 $2 and $@, and local keeps a variable inside.\n"
      "  greet() { echo \"hi $1\"; }"},
 
-    {"fresh", "fresh [version|update [--check]]", "about this shell, and updating it",
+    {"fresh", "fresh [version|doctor|update [--check]]", "about this shell, and looking after it",
      "  fresh                 version, paths, theme and plugins\n"
+     "  fresh doctor          check ~/.freshrc and say where it breaks\n"
      "  fresh update          fetch and install the newest release\n"
      "  fresh update --check  only say whether there is one"},
 
