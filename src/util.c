@@ -114,16 +114,25 @@ int read_line(FILE *f, StrBuf *out) {
 
     int c;
     int any = 0;
-    while ((c = fgetc(f)) != EOF) {
+    int ended = 0;
+
+    _lock_file(f);
+    while ((c = _fgetc_nolock(f)) != EOF) {
         any = 1;
         if (c == '\n') {
-            if (out->len && out->data[out->len - 1] == '\r') {
-                out->len--;
-                out->data[out->len] = '\0';
-            }
-            return 1;
+            ended = 1;
+            break;
         }
         sb_putc(out, (char)c);
+    }
+    _unlock_file(f);
+
+    if (ended) {
+        if (out->len && out->data[out->len - 1] == '\r') {
+            out->len--;
+            out->data[out->len] = '\0';
+        }
+        return 1;
     }
     return any ? 2 : 0;
 }
@@ -148,7 +157,7 @@ void sl_clear(StrList *l) {
 
 void sl_push(StrList *l, char *s) {
     if (l->len + 1 >= l->cap) {
-        l->cap *= 2;
+        l->cap = l->cap ? l->cap * 2 : 8;
         l->items = xrealloc(l->items, l->cap * sizeof(char *));
     }
     l->items[l->len++] = s;

@@ -837,13 +837,6 @@ static HANDLE spawn_process(char *command_line, IoSet *io, int *status) {
     return pi.hProcess;
 }
 
-static char **argv_from_list(const StrList *list) {
-    char **argv = xmalloc((list->len + 1) * sizeof(char *));
-    for (size_t i = 0; i < list->len; i++) argv[i] = list->items[i];
-    argv[list->len] = NULL;
-    return argv;
-}
-
 static int is_assignment(const char *word) {
     if (!isalpha((unsigned char)*word) && *word != '_') return 0;
     const char *p = word;
@@ -1154,10 +1147,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         return expand_substitution_status();
     }
 
-    StrList saved_names;
-    StrList saved_values;
-    sl_init(&saved_names);
-    sl_init(&saved_values);
+    StrList saved_names = {NULL, 0, 0};
+    StrList saved_values = {NULL, 0, 0};
     for (size_t i = 0; i < first; i++) {
         char *eq = strchr(words.items[i], '=');
         *eq = '\0';
@@ -1168,12 +1159,10 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         *eq = '=';
     }
 
-    StrList args;
-    sl_init(&args);
-    for (size_t i = first; i < words.len; i++) sl_push_copy(&args, words.items[i]);
-
-    int argc = (int)args.len;
-    char **argv = argv_from_list(&args);
+    int argc = (int)(words.len - first);
+    char **argv = xmalloc((size_t)(argc + 1) * sizeof(char *));
+    for (int i = 0; i < argc; i++) argv[i] = words.items[first + (size_t)i];
+    argv[argc] = NULL;
     int status = 0;
 
     if (shell.xtrace) {
@@ -1217,7 +1206,11 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         if (redirected) fds_apply(&io, &save);
 
         if (f) {
+            StrList args;
+            sl_init(&args);
+            for (int i = 0; i < argc; i++) sl_push_copy(&args, argv[i]);
             status = call_function(f, &args);
+            sl_free(&args);
         } else if (builtin) {
             status = builtin(argc, argv);
         } else if (fallback) {
@@ -1248,7 +1241,6 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     if (argc > 0) var_set("_", argv[argc - 1]);
 
     free(argv);
-    sl_free(&args);
     sl_free(&saved_names);
     sl_free(&saved_values);
     sl_free(&words);
