@@ -527,6 +527,7 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
         t.text = scan_word(&p, &t.quoted, incomplete);
         if (!t.text || !*t.text) {
             free(t.text);
+            if (!*p) break;
             p++;
             continue;
         }

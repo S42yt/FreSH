@@ -27,6 +27,7 @@ jobs:
         run: |
           mkdir -p fuzz/work/parser fuzz/work/regex fuzz/work/awk
           cp fuzz/corpus/parser/* fuzz/work/parser/
+          cp fuzz/crashes/* fuzz/work/parser/ 2> /dev/null || true
           cp fuzz/corpus/regex/* fuzz/work/regex/
           cp fuzz/corpus/awk/* fuzz/work/awk/
           cp tests/diff/cases/*.sh fuzz/work/parser/
