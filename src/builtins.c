@@ -1023,12 +1023,13 @@ static int *shopt_slot(const char *name) {
     if (strcmp(name, "globstar") == 0) return &shell.globstar;
     if (strcmp(name, "nullglob") == 0) return &shell.nullglob;
     if (strcmp(name, "dotglob") == 0) return &shell.dotglob;
+    if (strcmp(name, "nocasematch") == 0) return &shell.nocasematch;
     if (strcmp(name, "extglob") == 0) return NULL;
     return NULL;
 }
 
 static int builtin_shopt(int argc, char **argv) {
-    static const char *KNOWN[] = {"globstar", "nullglob", "dotglob", "extglob", NULL};
+    static const char *KNOWN[] = {"globstar", "nullglob", "dotglob", "extglob", "nocasematch", NULL};
 
     int setting = 0;
     int clearing = 0;

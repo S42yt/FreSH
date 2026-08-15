@@ -63,6 +63,12 @@ static void note_meta(Expander *ex, const char *text, size_t len) {
     }
 }
 
+static int is_separator(char c) {
+    const char *ifs = var_get("IFS");
+    if (!ifs) return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    return *ifs && strchr(ifs, c) != NULL;
+}
+
 static void field_add_split(Expander *ex, const char *text) {
     if (!text) return;
     note_meta(ex, text, strlen(text));
@@ -72,13 +78,13 @@ static void field_add_split(Expander *ex, const char *text) {
     }
     const char *p = text;
     while (*p) {
-        if (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+        if (is_separator(*p)) {
             if (ex->has_content) field_flush(ex);
             p++;
             continue;
         }
         const char *start = p;
-        while (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') p++;
+        while (*p && !is_separator(*p)) p++;
         field_add(ex, start, (size_t)(p - start));
     }
 }
@@ -180,10 +186,10 @@ static int expand_array_body(const char *body, StrList *out) {
     if ((*source == '@' || *source == '*') && (source[1] == ':' || source[1] == '\0')) {
         StrList all;
         sl_init(&all);
-        for (size_t i = 1; i < shell.params.len; i++) sl_push_copy(&all, shell.params.items[i]);
+        for (size_t i = 0; i < shell.params.len; i++) sl_push_copy(&all, shell.params.items[i]);
 
         if (source[1] == ':') slice_elements(&all, source + 2, out);
-        else for (size_t i = 0; i < all.len; i++) sl_push_copy(out, all.items[i]);
+        else for (size_t i = 1; i < all.len; i++) sl_push_copy(out, all.items[i]);
 
         sl_free(&all);
         return 1;
@@ -1247,6 +1253,11 @@ static long arith_primary(Arith *a) {
     if (isdigit((unsigned char)*a->p)) {
         char *end;
         long value = strtol(a->p, &end, 0);
+        if (*end == '#' && value >= 2 && value <= 36) {
+            long digits = strtol(end + 1, &end, (int)value);
+            a->p = end;
+            return digits;
+        }
         a->p = end;
         return value;
     }

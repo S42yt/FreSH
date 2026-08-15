@@ -28,6 +28,7 @@ typedef struct {
     int globstar;
     int nullglob;
     int dotglob;
+    int nocasematch;
     int condition_depth;
     StrList params;
     char *script_name;

@@ -1536,7 +1536,7 @@ static int bracket_primary(Bracket *b) {
         StrList groups;
         sl_init(&groups);
         for (int i = 0; i < found.count && i < REGEX_GROUPS; i++) {
-            if (found.start[i] < 0) sl_push_copy(&groups, "");
+            if (found.start[i] < 0 || found.end[i] < found.start[i]) sl_push_copy(&groups, "");
             else sl_push(&groups, xstrndup(word + found.start[i],
                                            (size_t)(found.end[i] - found.start[i])));
         }
@@ -1680,6 +1680,11 @@ static int match_extended(const char *pattern, const char *text) {
     return matched;
 }
 
+static int same_char(char a, char b) {
+    if (a == b) return 1;
+    return shell.nocasematch && tolower((unsigned char)a) == tolower((unsigned char)b);
+}
+
 int pattern_match(const char *pattern, const char *text) {
     while (*pattern) {
         if (strchr("?*+@!", *pattern) && pattern[1] == '(') {
@@ -1720,7 +1725,7 @@ int pattern_match(const char *pattern, const char *text) {
             text++;
             continue;
         }
-        if (*pattern != *text) return 0;
+        if (!same_char(*pattern, *text)) return 0;
         pattern++;
         text++;
     }
