@@ -19,7 +19,7 @@ any difference.
 
 ```sh
 scoop bucket add fresh https://github.com/S42yt/FreSH
-scoop install fresh              # or: scoop install fresh-portable
+scoop install fresh/fresh              # or: scoop install fresh/fresh-portable
 ```
 
 Or download `FreSH.exe` from the [releases](https://github.com/S42yt/FreSH/releases)
