@@ -276,8 +276,12 @@ static void element_set(Awk *awk, const char *name, const char *key, const char 
 
 static const char *element_get(Awk *awk, const char *name, const char *key) {
     Variable *v = variable_find(awk, name);
-    if (!v) return "";
-    Element *e = element_find(v, key);
+    Element *e = v ? element_find(v, key) : NULL;
+    if (e) return e->value;
+
+    element_set(awk, name, key, "");
+    v = variable_find(awk, name);
+    e = element_find(v, key);
     return e ? e->value : "";
 }
 
@@ -450,11 +454,11 @@ static void lex_next(Lexer *lx) {
 }
 
 static int is_token(Lexer *lx, const char *text) {
-    return strcmp(lx->token, text) == 0;
+    return lx->type == T_PUNCT && strcmp(lx->token, text) == 0;
 }
 
 static void skip_newlines(Lexer *lx) {
-    while (strcmp(lx->token, "\n") == 0) lex_next(lx);
+    while (is_token(lx, "\n")) lex_next(lx);
 }
 
 static int accept(Lexer *lx, const char *text) {
@@ -1454,7 +1458,7 @@ static void format_into(Awk *awk, StrBuf *out, Expr **list, int count) {
             sb_printf(out, spec, to_number(value));
         } else {
             char adjusted[44];
-            snprintf(adjusted, sizeof(adjusted), "%.*sll%c", (int)(length - 2), spec, conversion);
+            snprintf(adjusted, sizeof(adjusted), "%.*sll%c", (int)(length - 1), spec, conversion);
             sb_printf(out, adjusted, (long long)to_number(value));
         }
     }
@@ -2243,8 +2247,14 @@ int awk_main(int argc, char **argv) {
     awk.skipping = 0;
     awk.loop_signal = LOOP_NONE;
 
+    int reads_input = 0;
+    for (int i = 0; i < awk.rule_count; i++) {
+        if (!awk.rules[i].begin) reads_input = 1;
+    }
+
     int file_index = index;
     int read_any = 0;
+    if (!reads_input) file_index = argc;
 
     for (; file_index < argc && !awk.exiting; file_index++) {
         char *pair = strchr(argv[file_index], '=');
@@ -2267,7 +2277,7 @@ int awk_main(int argc, char **argv) {
         if (input != stdin) fclose(input);
     }
 
-    if (!read_any && !awk.exiting) run_input(&awk, stdin);
+    if (reads_input && !read_any && !awk.exiting) run_input(&awk, stdin);
 
     awk.exiting = 0;
     awk.skipping = 0;

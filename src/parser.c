@@ -121,6 +121,26 @@ static void copy_until(const char **p, StrBuf *sb, char open, char close, int *i
         if (open == '(') {
             if (str_word_at(*p, start, "case")) branching++;
             else if (branching > 0 && str_word_at(*p, start, "esac")) branching--;
+
+            if (c == '\'' || c == '"') {
+                sb_putc(sb, c);
+                (*p)++;
+                while (**p && **p != c) {
+                    if (c == '"' && **p == '\\' && (*p)[1]) {
+                        sb_putc(sb, **p);
+                        (*p)++;
+                    }
+                    sb_putc(sb, **p);
+                    (*p)++;
+                }
+                if (!**p) {
+                    *incomplete = 1;
+                    return;
+                }
+                sb_putc(sb, **p);
+                (*p)++;
+                continue;
+            }
         }
 
         sb_putc(sb, c);
@@ -143,6 +163,27 @@ static void scan_quoted(const char **p, StrBuf *sb, char quote, int *incomplete)
             sb_putc(sb, c);
             sb_putc(sb, (*p)[1]);
             *p += 2;
+            continue;
+        }
+        if (quote == '"' && c == '$' && (*p)[1] == '(') {
+            sb_putc(sb, c);
+            (*p)++;
+            copy_until(p, sb, '(', ')', incomplete);
+            continue;
+        }
+        if (quote == '"' && c == '`') {
+            sb_putc(sb, c);
+            (*p)++;
+            while (**p && **p != '`') {
+                sb_putc(sb, **p);
+                (*p)++;
+            }
+            if (!**p) {
+                *incomplete = 1;
+                return;
+            }
+            sb_putc(sb, **p);
+            (*p)++;
             continue;
         }
         sb_putc(sb, c);

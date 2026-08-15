@@ -21,8 +21,27 @@ permissions:
   contents: write
 
 jobs:
+  expectations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record what real bash does
+        shell: bash
+        run: |
+          bash --version | head -n 1
+          chmod +x tests/diff/*.sh
+          tests/diff/record.sh bash tests/diff/expected
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bash-expectations
+          path: tests/diff/expected
+          retention-days: 7
+
   build:
     runs-on: windows-latest
+    needs: expectations
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,6 +90,18 @@ jobs:
       - name: Test suite
         shell: bash
         run: ./build/FreSH.exe tests/run.frsh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bash-expectations
+          path: tests/diff/expected
+
+      - name: Differential test against bash
+        shell: bash
+        run: |
+          chmod +x tests/diff/*.sh
+          tests/diff/record.sh "$PWD/build/FreSH.exe" tests/diff/actual
+          tests/diff/compare.sh tests/diff/expected tests/diff/actual
 
       - uses: actions/upload-artifact@v4
         if: always()

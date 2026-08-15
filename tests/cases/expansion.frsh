@@ -1,5 +1,10 @@
 suite expansion
 
+check nested_double_quotes "[$(printf '%s' "inner quoted")]" "[inner quoted]"
+check nested_quotes_deep "$(printf '%s' "$(printf '%s' "two deep")")" "two deep"
+check nested_quotes_paren "$(printf '%s' "a ) b")" "a ) b"
+check nested_backquote "[`printf '%s' "in a backquote"`]" "[in a backquote]"
+
 x=hello
 check length "${#x}" 5
 check default "${nope:-fallback}" fallback

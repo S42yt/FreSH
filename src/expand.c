@@ -604,6 +604,23 @@ static const char *scan_balanced(const char *p, char open, char close, StrBuf *i
         if (open == '(' && depth >= 1) {
             if (str_word_at(p, start, "case")) branching++;
             else if (branching > 0 && str_word_at(p, start, "esac")) branching--;
+
+            if (*p == '\'' || *p == '"') {
+                char quote = *p;
+                sb_putc(inner, *p);
+                p++;
+                while (*p && *p != quote) {
+                    if (quote == '"' && *p == '\\' && p[1]) {
+                        sb_putc(inner, *p);
+                        p++;
+                    }
+                    sb_putc(inner, *p);
+                    p++;
+                }
+                if (!*p) return p;
+                sb_putc(inner, *p);
+                continue;
+            }
         }
 
         if (*p == open) {

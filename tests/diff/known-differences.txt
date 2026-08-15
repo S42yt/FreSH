@@ -1,0 +1,7 @@
+# Scripts where FreSH deliberately differs from bash.
+#
+# One line per script: the case name, a tab, and the reason. Every entry here
+# must also be written down in docs/bash.md, so the two never drift apart.
+#
+# An entry is a promise that the difference was looked at and kept on purpose.
+# It is not a place to park a bug.
