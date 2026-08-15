@@ -154,27 +154,23 @@ static void pathext_list(StrList *out) {
     sl_push_copy(out, ".sh");
 }
 
-static int try_with_extensions(const char *base, char *out, size_t out_size, int with_extensions) {
+static int try_with_extensions(const char *base, char *out, size_t out_size,
+                               const StrList *extensions) {
     if (path_is_file(base)) {
         snprintf(out, out_size, "%s", base);
         return 1;
     }
-    if (!with_extensions) return 0;
+    if (!extensions) return 0;
 
-    StrList extensions;
-    sl_init(&extensions);
-    pathext_list(&extensions);
-    int found = 0;
-    for (size_t i = 0; i < extensions.len && !found; i++) {
+    for (size_t i = 0; i < extensions->len; i++) {
         char candidate[PATH_BUF];
-        snprintf(candidate, sizeof(candidate), "%s%s", base, extensions.items[i]);
+        snprintf(candidate, sizeof(candidate), "%s%s", base, extensions->items[i]);
         if (path_is_file(candidate)) {
             snprintf(out, out_size, "%s", candidate);
-            found = 1;
+            return 1;
         }
     }
-    sl_free(&extensions);
-    return found;
+    return 0;
 }
 
 static Table resolution_table;
@@ -199,24 +195,33 @@ static void resolution_remember(const char *name, const char *path) {
 int resolve_command(const char *name, char *out, size_t out_size) {
     if (!name || !*name) return 0;
 
+    StrList extensions;
+    sl_init(&extensions);
+    pathext_list(&extensions);
+
     if (strchr(name, '/') || strchr(name, '\\')) {
         char base[PATH_BUF];
         snprintf(base, sizeof(base), "%s", name);
         path_to_backslashes(base);
-        return try_with_extensions(base, out, out_size, 1);
+        int found = try_with_extensions(base, out, out_size, &extensions);
+        sl_free(&extensions);
+        return found;
     }
 
     const char *remembered = resolution_find(name);
     if (remembered) {
+        sl_free(&extensions);
         if (!*remembered) return 0;
         snprintf(out, out_size, "%s", remembered);
         return 1;
     }
 
     const char *path = var_get("PATH");
-    if (!path) return 0;
+    if (!path) {
+        sl_free(&extensions);
+        return 0;
+    }
 
-    int with_extensions = path_command_exists(name);
     char *copy = xstrdup(path);
     char *cursor = copy;
     char *dir;
@@ -224,10 +229,11 @@ int resolve_command(const char *name, char *out, size_t out_size) {
     while (!found && (dir = str_next_field(&cursor, ';')) != NULL) {
         if (!*dir) continue;
         char *base = path_join(dir, name);
-        found = try_with_extensions(base, out, out_size, with_extensions);
+        found = try_with_extensions(base, out, out_size, &extensions);
         free(base);
     }
     free(copy);
+    sl_free(&extensions);
 
     resolution_remember(name, found ? out : NULL);
     return found;
