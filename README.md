@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Runs bash scripts on Windows, unchanged.</b><br>
-  No WSL, no MSYS2, no Git Bash. One executable, written in C, starts in 42 ms.
+  No WSL, no MSYS2, no Git Bash. One executable, written in C, starts in 22 ms.
 </p>
 
 What "unchanged" means is written down honestly in
@@ -38,15 +38,28 @@ and put it on your `PATH`. Nothing else is needed, and
 
 | Shell | start, run nothing, exit |
 | --- | --- |
-| `cmd /c exit` | 16 ms |
-| **`FreSH -c exit`** | **42 ms** |
-| `bash -c exit` (Git Bash) | 241 ms |
+| `cmd /c exit` | 14 ms |
+| **`FreSH -c exit`** | **22 ms** |
+| `bash -c exit` (Git Bash) | 236 ms |
 | `powershell -c exit` | 271 ms |
 | `pwsh -c exit` | 570 ms |
 
-Best of twenty on an AMD Ryzen 3 7330U, with Defender on, measured by
-`tools/bench.frsh` which measures every shell the same way. The full table,
-including loops, expansion and pipelines, is in
+Starting and exiting is not what a shell is for, though. The same jobs, once
+through `cmd.exe` and once through FreSH:
+
+| Task | cmd | FreSH |
+| --- | --- | --- |
+| print one line | 23 ms | **18 ms** |
+| sort a 2000 line file | 23 ms | **20 ms** |
+| count matching lines in a 2000 line file | 24 ms | **22 ms** |
+
+FreSH wins all three because `sort`, `grep` and `echo` run inside the shell,
+while cmd spawns a process for each. cmd wins the empty case and loses every
+real one.
+
+Best of forty on an AMD Ryzen 3 7330U with Defender on, measured by
+`tools/bench.frsh`, which measures every shell the same way. `FRESH_TIMING=1`
+prints where a start goes. The full table is in
 [benchmarks](docs/benchmarks.md).
 
 ## Two interpreters, written from scratch
@@ -337,6 +350,7 @@ that makes Claude run its shell commands through FreSH instead of PowerShell:
 ```sh
 FreSH script.sh arg1 arg2   # run a script
 FreSH -c "echo hello"       # run one command
+FreSH --norc -c "echo hi"   # skip ~/.freshrc, the theme and the plugins
 FreSH C:\some\folder        # start in a folder
 FreSH --version
 ```

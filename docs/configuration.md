@@ -16,6 +16,21 @@ All of these are created on first run. Deleting `~/.freshrc` and starting the
 shell again gives you a fresh copy of the defaults, which is the easiest way
 to see what changed after an update.
 
+## Skipping it
+
+```sh
+FreSH --norc -c 'echo hi'
+FreSH --norc script.sh
+```
+
+`--norc` starts the shell without reading `~/.freshrc`, the theme or the
+plugins, the way bash skips its rc file for a non interactive shell. It is
+worth about 6 ms and is the right thing for a script in CI that wants the
+shell rather than your setup. `--noprofile` is the same switch.
+
+`FRESH_TIMING=1` prints how long each startup stage took, which is how the
+numbers in [benchmarks](benchmarks.md) were found.
+
 ## Startup order
 
 1. `PATH` gains your user bin folders (`~/bin`, `~/.local/bin`,
