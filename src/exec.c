@@ -2141,6 +2141,23 @@ int exec_line(const char *line) {
     return exec_text(line);
 }
 
+int exec_subshell(const char *text) {
+    char cwd[PATH_BUF];
+    GetCurrentDirectoryA(sizeof(cwd), cwd);
+    void *snapshot = vars_snapshot();
+    int was_running = shell.running;
+
+    int status = exec_text(text);
+    if (!shell.running) {
+        shell.running = was_running;
+        status = shell.last_status;
+    }
+
+    vars_restore(snapshot);
+    SetCurrentDirectoryA(cwd);
+    return status;
+}
+
 int exec_script_file(const char *path, const StrList *args) {
     FILE *f = fopen(path, "rb");
     if (!f) {

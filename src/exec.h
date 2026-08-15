@@ -16,6 +16,7 @@ void exec_cleanup(void);
 int exec_line(const char *line);
 int exec_text(const char *text);
 int exec_bypassing_functions(const char *text);
+int exec_subshell(const char *text);
 int exec_node(Node *node);
 int exec_script_file(const char *path, const StrList *args);
 int capture_command(const char *command, StrBuf *out);
