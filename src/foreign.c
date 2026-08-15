@@ -289,13 +289,32 @@ int builtin_ps1(int argc, char **argv) {
 int builtin_cmd(int argc, char **argv) {
     if (argc < 2) return run_through("cmd.exe", "/d /k");
 
+    int index = 1;
+    int keep_open = 0;
+    if (str_ieq(argv[1], "/c") || str_ieq(argv[1], "-c")) index = 2;
+    else if (str_ieq(argv[1], "/k")) {
+        keep_open = 1;
+        index = 2;
+    }
+    if (index >= argc) return run_through("cmd.exe", keep_open ? "/d /k" : "/d /c");
+
     StrBuf command;
     sb_init(&command);
-    for (int i = 1; i < argc; i++) {
-        if (i > 1) sb_putc(&command, ' ');
+    for (int i = index; i < argc; i++) {
+        if (i > index) sb_putc(&command, ' ');
         sb_puts(&command, argv[i]);
     }
-    int status = foreign_run_cmd(command.data);
+
+    int status;
+    if (keep_open) {
+        StrBuf arguments;
+        sb_init(&arguments);
+        sb_printf(&arguments, "/d /k %s", command.data);
+        status = run_through("cmd.exe", arguments.data);
+        sb_free(&arguments);
+    } else {
+        status = foreign_run_cmd(command.data);
+    }
     sb_free(&command);
     return status;
 }
