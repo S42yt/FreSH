@@ -145,6 +145,9 @@ genuine typo turns red. Keywords such as `if`, `for` and `done` are green,
 function definitions like `name()` are green, and a redirect target such as
 `> /dev/null` is left plain rather than treated as a command.
 
+A variable set in front of a command, as in `FRESH_TIMING=1 FreSH -c exit`, is
+yellow, and the command after it is still coloured as the command it is.
+
 ### History
 
 | Variable | Default | Meaning |
