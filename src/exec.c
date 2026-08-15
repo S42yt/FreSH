@@ -108,6 +108,10 @@ int function_defined(const char *name) {
     return function_find(name) != NULL;
 }
 
+int function_undefine(const char *name) {
+    return table_remove(&function_table, name);
+}
+
 void function_names(StrList *out) {
     table_names(&function_table, out);
 }
@@ -1043,7 +1047,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         shell.trap_debug = handler;
     }
 
-    Node *f = function_find(argv[0]);
+    Node *f = skip_functions ? NULL : function_find(argv[0]);
+    if (skip_functions) skip_functions--;
     BuiltinFn builtin = f ? NULL : builtin_lookup(argv[0]);
 
     char path[PATH_BUF] = "";
@@ -1086,6 +1091,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         if (strcmp(saved_values.items[i], "\x01") == 0) var_unset(saved_names.items[i]);
         else var_set_exported(saved_names.items[i], saved_values.items[i]);
     }
+
+    if (argc > 0) var_set("_", argv[argc - 1]);
 
     free(argv);
     sl_free(&args);
@@ -1521,7 +1528,21 @@ static int bracket_primary(Bracket *b) {
 
     if (strcmp(op, "=") == 0 || strcmp(op, "==") == 0) return pattern_match(right, word);
     if (strcmp(op, "!=") == 0) return !pattern_match(right, word);
-    if (strcmp(op, "=~") == 0) return regex_search(right, word, NULL);
+    if (strcmp(op, "=~") == 0) {
+        RegexMatch found;
+        if (!regex_search(right, word, &found)) return 0;
+
+        StrList groups;
+        sl_init(&groups);
+        for (int i = 0; i < found.count && i < REGEX_GROUPS; i++) {
+            if (found.start[i] < 0) sl_push_copy(&groups, "");
+            else sl_push(&groups, xstrndup(word + found.start[i],
+                                           (size_t)(found.end[i] - found.start[i])));
+        }
+        var_set_array("BASH_REMATCH", &groups, VAR_INDEXED);
+        sl_free(&groups);
+        return 1;
+    }
     if (strcmp(op, "<") == 0) return strcmp(word, right) < 0;
     if (strcmp(op, ">") == 0) return strcmp(word, right) > 0;
     if (strcmp(op, "-eq") == 0) return atol(word) == atol(right);
@@ -2022,6 +2043,15 @@ char *apply_aliases(const char *line) {
         at_command_start = 0;
     }
     return sb_take(&out);
+}
+
+static int skip_functions = 0;
+
+int exec_bypassing_functions(const char *text) {
+    skip_functions++;
+    int status = exec_text(text);
+    if (skip_functions > 0) skip_functions--;
+    return status;
 }
 
 int exec_text(const char *text) {

@@ -15,6 +15,7 @@ void exec_cleanup(void);
 
 int exec_line(const char *line);
 int exec_text(const char *text);
+int exec_bypassing_functions(const char *text);
 int exec_node(Node *node);
 int exec_script_file(const char *path, const StrList *args);
 int capture_command(const char *command, StrBuf *out);
@@ -30,6 +31,7 @@ void path_reload_environment(void);
 
 void function_define(const char *name, Node *body);
 int function_defined(const char *name);
+int function_undefine(const char *name);
 void function_names(StrList *out);
 int function_name_prefix(const char *prefix, size_t length);
 

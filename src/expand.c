@@ -138,11 +138,57 @@ static int split_subscript(const char *body, char *name, size_t name_size, char 
     return 1;
 }
 
+static char *brace_expand(const char *body);
+
+static char *apply_to_element(const char *value, const char *operator_text) {
+    var_set("FRESH_ELEMENT", value);
+
+    StrBuf body;
+    sb_init(&body);
+    sb_puts(&body, "FRESH_ELEMENT");
+    sb_puts(&body, operator_text);
+
+    char *result = brace_expand(body.data);
+    sb_free(&body);
+    return result;
+}
+
+static void slice_elements(StrList *all, const char *spec_text, StrList *out) {
+    char spec[128];
+    snprintf(spec, sizeof(spec), "%s", spec_text);
+    char *cursor = spec;
+    char *offset_text = str_next_field(&cursor, ':');
+    char *length_text = str_next_field(&cursor, ':');
+
+    int ok = 1;
+    long offset = offset_text ? eval_arith(offset_text, &ok) : 0;
+    if (offset < 0) offset += (long)all->len;
+    if (offset < 0) offset = 0;
+    long count = length_text ? eval_arith(length_text, &ok) : (long)all->len - offset;
+    if (count < 0) count = 0;
+
+    for (long i = offset; i < offset + count && i < (long)all->len; i++)
+        if (i >= 0) sl_push_copy(out, all->items[i]);
+}
+
 static int expand_array_body(const char *body, StrList *out) {
     const char *source = body;
     int keys_wanted = 0;
 
     if (*source == '#') return 0;
+
+    if ((*source == '@' || *source == '*') && (source[1] == ':' || source[1] == '\0')) {
+        StrList all;
+        sl_init(&all);
+        for (size_t i = 1; i < shell.params.len; i++) sl_push_copy(&all, shell.params.items[i]);
+
+        if (source[1] == ':') slice_elements(&all, source + 2, out);
+        else for (size_t i = 0; i < all.len; i++) sl_push_copy(out, all.items[i]);
+
+        sl_free(&all);
+        return 1;
+    }
+
     if (*source == '!') {
         keys_wanted = 1;
         source++;
@@ -164,27 +210,16 @@ static int expand_array_body(const char *body, StrList *out) {
     else var_values(name, &all);
 
     const char *after = close + 1;
-    if (*after != ':') {
+    if (!*after) {
         for (size_t i = 0; i < all.len; i++) sl_push_copy(out, all.items[i]);
-        sl_free(&all);
-        return 1;
+    } else if (*after == ':') {
+        slice_elements(&all, after + 1, out);
+    } else {
+        for (size_t i = 0; i < all.len; i++) {
+            char *changed = apply_to_element(all.items[i], after);
+            sl_push(out, changed);
+        }
     }
-
-    char spec[128];
-    snprintf(spec, sizeof(spec), "%s", after + 1);
-    char *cursor = spec;
-    char *offset_text = str_next_field(&cursor, ':');
-    char *length_text = str_next_field(&cursor, ':');
-
-    int ok = 1;
-    long offset = offset_text ? eval_arith(offset_text, &ok) : 0;
-    if (offset < 0) offset += (long)all.len;
-    if (offset < 0) offset = 0;
-    long count = length_text ? eval_arith(length_text, &ok) : (long)all.len - offset;
-    if (count < 0) count = 0;
-
-    for (long i = offset; i < offset + count && i < (long)all.len; i++)
-        if (i >= 0) sl_push_copy(out, all.items[i]);
 
     sl_free(&all);
     return 1;
@@ -275,6 +310,38 @@ static char *brace_expand(const char *body) {
     char name[128];
     char index[128];
 
+    if (body[0] == '#' && (body[1] == '@' || body[1] == '*') && !body[2]) {
+        StrBuf sb;
+        sb_init(&sb);
+        sb_printf(&sb, "%d", shell.params.len > 0 ? (int)shell.params.len - 1 : 0);
+        return sb_take(&sb);
+    }
+
+    if (body[0] == '!' && body[strlen(body) - 1] == '*' && strlen(body) > 2) {
+        char prefix[128];
+        size_t length = strlen(body) - 2;
+        if (length < sizeof(prefix)) {
+            memcpy(prefix, body + 1, length);
+            prefix[length] = '\0';
+
+            StrList names;
+            sl_init(&names);
+            vars_list(&names);
+
+            StrBuf sb;
+            sb_init(&sb);
+            for (size_t i = 0; i < names.len; i++) {
+                char *eq = strchr(names.items[i], '=');
+                if (eq) *eq = '\0';
+                if (strncmp(names.items[i], prefix, length) != 0) continue;
+                if (sb.len > 0) sb_putc(&sb, ' ');
+                sb_puts(&sb, names.items[i]);
+            }
+            sl_free(&names);
+            return sb_take(&sb);
+        }
+    }
+
     if (*body == '!' && (isalpha((unsigned char)body[1]) || body[1] == '_')) {
         const char *target = var_get(body + 1);
         if (!target || !*target) return xstrdup("");
@@ -344,6 +411,25 @@ static char *brace_expand(const char *body) {
     if (name_length > 0 && name_length < sizeof(name) && body[name_length]) {
         char operator = body[name_length];
         const char *rest = body + name_length + 1;
+
+        if (operator == '@' && rest[0] && !rest[1]) {
+            memcpy(name, body, name_length);
+            name[name_length] = '\0';
+            const char *value = var_get(name);
+            const char *text = value ? value : "";
+
+            if (rest[0] == 'U') return change_case(text, 1, 1);
+            if (rest[0] == 'L') return change_case(text, 0, 1);
+            if (rest[0] == 'Q') {
+                StrBuf sb;
+                sb_init(&sb);
+                sb_putc(&sb, '\'');
+                sb_puts(&sb, text);
+                sb_putc(&sb, '\'');
+                return sb_take(&sb);
+            }
+            return xstrdup(text);
+        }
 
         if (strchr("#%/^,:", operator)) {
             memcpy(name, body, name_length);

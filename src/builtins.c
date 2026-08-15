@@ -133,6 +133,16 @@ static int builtin_echo(int argc, char **argv) {
 }
 
 static int builtin_export(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "-p") == 0) {
+        StrList names;
+        sl_init(&names);
+        vars_exported_names(&names);
+        sl_sort(&names);
+        for (size_t i = 0; i < names.len; i++)
+            printf("export %s=\"%s\"\n", names.items[i], var_get(names.items[i]));
+        sl_free(&names);
+        return 0;
+    }
     if (argc < 2) {
         StrList list;
         sl_init(&list);
@@ -156,7 +166,19 @@ static int builtin_export(int argc, char **argv) {
 }
 
 static int builtin_unset(int argc, char **argv) {
-    for (int i = 1; i < argc; i++) var_unset(argv[i]);
+    int functions_only = 0;
+    int variables_only = 0;
+    int index = 1;
+
+    for (; index < argc && argv[index][0] == '-' && argv[index][1]; index++) {
+        if (strchr(argv[index], 'f')) functions_only = 1;
+        if (strchr(argv[index], 'v')) variables_only = 1;
+    }
+
+    for (int i = index; i < argc; i++) {
+        if (!variables_only && function_undefine(argv[i])) continue;
+        if (!functions_only) var_unset(argv[i]);
+    }
     return 0;
 }
 
@@ -177,6 +199,13 @@ static int builtin_set(int argc, char **argv) {
         if (strcmp(argv[i], "--") == 0) {
             i++;
             break;
+        }
+        if (argv[i][1] == 'o' && i + 1 >= argc) {
+            printf("%-12s%s\n", "errexit", shell.errexit ? "on" : "off");
+            printf("%-12s%s\n", "nounset", shell.nounset ? "on" : "off");
+            printf("%-12s%s\n", "xtrace", shell.xtrace ? "on" : "off");
+            printf("%-12s%s\n", "pipefail", shell.pipefail ? "on" : "off");
+            continue;
         }
         if (argv[i][1] == 'o') {
             const char *name = i + 1 < argc ? argv[++i] : "";
@@ -255,9 +284,11 @@ static int builtin_declare(int argc, char **argv) {
     VarKind kind = VAR_SCALAR;
     int local_wanted = 0;
     int integer_wanted = 0;
+    int printing = 0;
     int index = 1;
 
     for (; index < argc && argv[index][0] == '-'; index++) {
+        if (strchr(argv[index], 'p')) printing = 1;
         if (strchr(argv[index], 'A')) kind = VAR_ASSOC;
         if (strchr(argv[index], 'a')) kind = VAR_INDEXED;
         if (strchr(argv[index], 'i')) integer_wanted = 1;
@@ -268,9 +299,25 @@ static int builtin_declare(int argc, char **argv) {
         StrList list;
         sl_init(&list);
         vars_list(&list);
-        for (size_t i = 0; i < list.len; i++) printf("%s\n", list.items[i]);
+        for (size_t i = 0; i < list.len; i++) printf("%s%s\n", printing ? "declare -- " : "", list.items[i]);
         sl_free(&list);
         return 0;
+    }
+
+    if (printing) {
+        int status = 0;
+        for (; index < argc; index++) {
+            if (!var_exists(argv[index])) {
+                shell_error("declare: %s: not found", argv[index]);
+                status = 1;
+                continue;
+            }
+            const char *flags = var_kind(argv[index]) == VAR_ASSOC   ? "-A"
+                                : var_kind(argv[index]) == VAR_INDEXED ? "-a"
+                                                                       : "--";
+            printf("declare %s %s=\"%s\"\n", flags, argv[index], var_get(argv[index]));
+        }
+        return status;
     }
 
     for (; index < argc; index++) {
@@ -308,9 +355,9 @@ static int builtin_trap(int argc, char **argv) {
     TrapSlot slots[8];
     int count = trap_table(slots);
 
-    if (argc < 2) {
+    if (argc < 2 || strcmp(argv[1], "-p") == 0) {
         for (int i = 0; i < count; i++)
-            if (*slots[i].slot) printf("trap '%s' %s\n", *slots[i].slot, slots[i].name);
+            if (*slots[i].slot) printf("trap -- '%s' %s\n", *slots[i].slot, slots[i].name);
         return 0;
     }
 
@@ -532,12 +579,119 @@ static int builtin_which(int argc, char **argv) {
     return status;
 }
 
+static const char *command_kind(const char *name) {
+    if (alias_get(name)) return "alias";
+    if (function_defined(name)) return "function";
+    if (builtin_lookup(name) || coreutil_lookup(name)) return "builtin";
+
+    char path[PATH_BUF];
+    if (resolve_command(name, path, sizeof(path))) return "file";
+    return NULL;
+}
+
 static int builtin_type(int argc, char **argv) {
+    int brief = argc > 1 && strcmp(argv[1], "-t") == 0;
     int status = 0;
-    for (int i = 1; i < argc; i++) {
-        if (describe_command(argv[i], 1) != 0) status = 1;
+
+    for (int i = brief ? 2 : 1; i < argc; i++) {
+        if (!brief) {
+            if (describe_command(argv[i], 1) != 0) status = 1;
+            continue;
+        }
+        const char *kind = command_kind(argv[i]);
+        if (kind) printf("%s\n", kind);
+        else status = 1;
     }
     return status;
+}
+
+static int builtin_command(int argc, char **argv) {
+    int index = 1;
+    int describe = 0;
+
+    for (; index < argc && argv[index][0] == '-' && argv[index][1]; index++) {
+        if (strchr(argv[index], 'v') || strchr(argv[index], 'V')) describe = 1;
+    }
+    if (index >= argc) return 0;
+
+    if (describe) {
+        int status = 0;
+        for (int i = index; i < argc; i++) {
+            const char *kind = command_kind(argv[i]);
+            if (!kind) {
+                status = 1;
+                continue;
+            }
+            if (strcmp(kind, "file") == 0) {
+                char path[PATH_BUF];
+                resolve_command(argv[i], path, sizeof(path));
+                path_to_slashes(path);
+                printf("%s\n", path);
+            } else {
+                printf("%s\n", argv[i]);
+            }
+        }
+        return status;
+    }
+
+    StrBuf line;
+    sb_init(&line);
+    for (int i = index; i < argc; i++) {
+        if (i > index) sb_putc(&line, ' ');
+        sb_puts(&line, argv[i]);
+    }
+    int status = exec_bypassing_functions(line.data);
+    sb_free(&line);
+    return status;
+}
+
+static int builtin_builtin(int argc, char **argv) {
+    if (argc < 2) return 0;
+    BuiltinFn fn = builtin_lookup(argv[1]);
+    if (!fn) fn = coreutil_lookup(argv[1]);
+    if (!fn) {
+        shell_error("builtin: %s: not a shell builtin", argv[1]);
+        return 1;
+    }
+    return fn(argc - 1, argv + 1);
+}
+
+static int builtin_exec(int argc, char **argv) {
+    if (argc < 2) return 0;
+
+    StrBuf line;
+    sb_init(&line);
+    for (int i = 1; i < argc; i++) {
+        if (i > 1) sb_putc(&line, ' ');
+        sb_puts(&line, argv[i]);
+    }
+    int status = exec_text(line.data);
+    sb_free(&line);
+
+    shell.running = 0;
+    shell.last_status = status;
+    return status;
+}
+
+static int builtin_readonly(int argc, char **argv) {
+    if (argc < 2 || strcmp(argv[1], "-p") == 0) {
+        StrList names;
+        sl_init(&names);
+        vars_readonly_names(&names);
+        for (size_t i = 0; i < names.len; i++)
+            printf("readonly %s=\"%s\"\n", names.items[i], var_get(names.items[i]));
+        sl_free(&names);
+        return 0;
+    }
+
+    for (int i = 1; i < argc; i++) {
+        char *eq = strchr(argv[i], '=');
+        char *name = eq ? xstrndup(argv[i], (size_t)(eq - argv[i])) : xstrdup(argv[i]);
+        if (eq) assign_word(argv[i]);
+        var_mark_readonly(name);
+        free(name);
+    }
+    return 0;
 }
 
 static int builtin_clear(int argc, char **argv) {
@@ -1245,6 +1399,8 @@ static const Builtin BUILTINS[] = {
     {"pushd", builtin_pushd},       {"popd", builtin_popd},
     {"dirs", builtin_dirs},         {"mapfile", builtin_mapfile},
     {"readarray", builtin_mapfile}, {"shopt", builtin_shopt},
+    {"command", builtin_command},   {"builtin", builtin_builtin},
+    {"exec", builtin_exec},         {"readonly", builtin_readonly},
     {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},
     {"exit", builtin_exit},         {"have", builtin_have},

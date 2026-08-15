@@ -22,6 +22,7 @@ typedef struct {
     VarKind kind;
     int exported;
     int integer;
+    int readonly;
 } Entry;
 
 typedef struct {
@@ -160,7 +161,13 @@ int var_exists(const char *name) {
 }
 
 void var_set(const char *name, const char *value) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *existing = find(vars, var_count_total, name);
+    if (existing && existing->readonly) {
+        shell_error("%s: is read only", name);
+        return;
+    }
+
+    Entry *e = existing;
     if (!e) {
         e = add(&vars, &var_count_total, &var_cap, name);
         e->exported = getenv(name) != NULL;
@@ -283,6 +290,27 @@ void var_set_element(const char *name, const char *index, const char *value) {
     }
     sl_push_copy(&e->keys, index);
     sl_push_copy(&e->values, value);
+}
+
+void var_mark_readonly(const char *name) {
+    Entry *e = find(vars, var_count_total, name);
+    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    e->readonly = 1;
+}
+
+int var_is_readonly(const char *name) {
+    Entry *e = find(vars, var_count_total, name);
+    return e ? e->readonly : 0;
+}
+
+void vars_readonly_names(StrList *out) {
+    for (size_t i = 0; i < var_count_total; i++)
+        if (vars[i].readonly) sl_push_copy(out, vars[i].name);
+}
+
+void vars_exported_names(StrList *out) {
+    for (size_t i = 0; i < var_count_total; i++)
+        if (vars[i].exported) sl_push_copy(out, vars[i].name);
 }
 
 void var_mark_integer(const char *name) {
