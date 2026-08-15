@@ -1,9 +1,9 @@
 suite bashisms
 
 items=(alpha beta)
-check array_replace "${items[@]/a/X}" "Xlpha betX"
-check array_strip "${items[@]#a}" "lpha beta"
-check array_upper "${items[@]^^}" "ALPHA BETA"
+check array_replace "${items[*]/a/X}" "Xlpha betX"
+check array_strip "${items[*]#a}" "lpha beta"
+check array_upper "${items[*]^^}" "ALPHA BETA"
 
 prefixed_one=1
 prefixed_two=2
@@ -15,8 +15,8 @@ check transform_lower "${word@L}" hi
 check transform_quote "${word@Q}" "'hi'"
 
 set -- a b c d
-check positional_slice "${@:2:2}" "b c"
-check positional_rest "${@:3}" "c d"
+check positional_slice "$(echo ${@:2:2})" "b c"
+check positional_rest "$(echo ${@:3})" "c d"
 check positional_count "${#@}" 4
 
 if [[ abc =~ a(b)(c) ]]; then
@@ -28,7 +28,7 @@ check based_number "$((2#1010))" 10
 check based_hex "$((16#ff))" 255
 
 check declare_prints "$(x=1; declare -p x | grep -c 'x=')" 1
-check export_prints "$(export EXPORTED_ONE=1; export -p | grep -c EXPORTED_ONE)" 1
+check export_prints "$(export EXPORTED_ONE=1; export -p | grep -c '^export EXPORTED_ONE=')" 1
 
 check command_v "$(command -v echo > /dev/null && echo found)" found
 echo() { printf 'shadowed\n'; }

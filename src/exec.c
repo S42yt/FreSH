@@ -1590,6 +1590,25 @@ static int bracket_or(Bracket *b) {
 }
 
 static int evaluate_bracket(const StrList *words) {
+    StrList merged;
+    sl_init(&merged);
+
+    for (size_t i = 0; i < words->len; i++) {
+        sl_push_copy(&merged, words->items[i]);
+        if (strcmp(words->items[i], "=~") != 0) continue;
+
+        StrBuf pattern;
+        sb_init(&pattern);
+        size_t j = i + 1;
+        for (; j < words->len; j++) {
+            if (strcmp(words->items[j], "&&") == 0 || strcmp(words->items[j], "||") == 0) break;
+            sb_puts(&pattern, words->items[j]);
+        }
+        sl_push(&merged, sb_take(&pattern));
+        i = j - 1;
+    }
+    words = &merged;
+
     Bracket b;
     sl_init(&b.words);
     b.pos = 0;
@@ -1607,6 +1626,7 @@ static int evaluate_bracket(const StrList *words) {
 
     int value = bracket_or(&b);
     sl_free(&b.words);
+    sl_free(&merged);
     return value ? 0 : 1;
 }
 
