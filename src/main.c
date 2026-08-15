@@ -196,6 +196,8 @@ static void binary_when_not_a_console(void) {
         if (GetConsoleMode(GetStdHandle(STREAMS[i]), &mode)) continue;
         _setmode(_fileno(files[i]), _O_BINARY);
     }
+    setvbuf(stdout, NULL, _IOFBF, 8192);
+    setvbuf(stderr, NULL, _IONBF, 0);
 }
 
 void shell_init(int interactive) {
@@ -214,8 +216,6 @@ void shell_init(int interactive) {
     exec_init();
     path_reload_environment();
     timing_mark("path");
-    binary_when_not_a_console();
-    timing_mark("descriptors");
 }
 
 void shell_cleanup(void) {
@@ -471,6 +471,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    binary_when_not_a_console();
+    timing_mark("descriptors");
     term_init();
     timing_mark("terminal");
     shell_init(interactive);
