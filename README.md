@@ -119,8 +119,12 @@ FreSH updates itself:
 ```sh
 fresh update           # check github, download and install the newest release
 fresh update --check   # only tell me whether there is one
+fresh update --pre     # take prereleases too
 fresh                  # version, where things live, active theme and plugins
 ```
+
+Prereleases are tagged `26.10.1-prerelease-1` and are never offered by a plain
+`fresh update`, so you only get one by asking.
 
 Installing closes the shell, because Windows will not replace a running
 executable. Open a new one when it is done.
@@ -416,4 +420,8 @@ GNU General Public License v3.0, see [LICENSE](LICENSE).
 
 ## Contributing
 
-Issues and pull requests welcome.
+Issues and pull requests welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the
+branch naming, the commit style, what a change needs to bring with it, and how
+releases are cut. The short version: branch as `feat/`, `fix/`, `perf/`,
+`docs/`, `test/`, `ci/`, `refactor/` or `chore/` followed by kebab case, open a
+pull request, keep CI green.

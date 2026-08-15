@@ -4,10 +4,12 @@ on:
   push:
     branches: [master]
     tags: ['v*']
+  pull_request:
+    branches: [master]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version number, year.major.minor (e.g. 26.1.0)'
+        description: 'Version number, year.major.minor, or year.major.minor-prerelease-n'
         required: true
         default: '26.1.0'
       release_type:
@@ -67,6 +69,14 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+          if [[ "$VERSION" == *-* ]]; then
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+            echo "this is a prerelease: $VERSION"
+          else
+            echo "PRERELEASE=false" >> $GITHUB_ENV
+            echo "this is a release: $VERSION"
+          fi
+
       - name: Stamp version
         shell: bash
         run: |
@@ -120,7 +130,7 @@ jobs:
             build/FreSH-Setup.exe
 
       - name: Update the package manifests
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.PRERELEASE == 'false'
         shell: bash
         run: |
           cat build/SHA256SUMS.txt
@@ -130,6 +140,19 @@ jobs:
           echo "exe   $plain_hash"
           bash tools/manifests.sh "$VERSION" "$setup_hash" "$plain_hash"
           git diff --stat
+
+      - name: Submit the winget packages
+        if: startsWith(github.ref, 'refs/tags/v') && env.PRERELEASE == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "WINGET_TOKEN is not set, so the winget pull requests are not opened"
+            echo "see manifests/README.md for opening them by hand"
+            exit 0
+          fi
+          bash tools/winget-submit.sh "$VERSION"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -147,7 +170,7 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: FreSH v${{ env.VERSION }}
           draft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'draft' }}
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'prerelease' }}
+          prerelease: ${{ env.PRERELEASE == 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'prerelease') }}
           generate_release_notes: true
           files: |
             build/FreSH-Setup.exe
