@@ -30,6 +30,7 @@
 #define HL_KEYWORD "\x1b[32m"
 #define HL_UNKNOWN "\x1b[1;31m"
 #define HL_STRING "\x1b[33m"
+#define HL_ASSIGN "\x1b[33m"
 #define HL_VARIABLE "\x1b[36m"
 #define HL_OPERATOR "\x1b[35m"
 #define HL_OPTION "\x1b[2;37m"
@@ -106,6 +107,20 @@ static int command_pending(const char *word) {
            path_command_prefix(word);
 }
 
+static int assignment_word(const char *word) {
+    if (!isalpha((unsigned char)*word) && *word != '_') return 0;
+
+    const char *p = word;
+    while (isalnum((unsigned char)*p) || *p == '_') p++;
+
+    if (*p == '[') {
+        while (*p && *p != ']') p++;
+        if (*p == ']') p++;
+    }
+    if (*p == '+') p++;
+    return *p == '=';
+}
+
 static void highlight(const char *text, StrBuf *out) {
     const char *p = text;
     int expect_command = 1;
@@ -145,7 +160,11 @@ static void highlight(const char *text, StrBuf *out) {
         while (*p && !isspace((unsigned char)*p) && !strchr("|&;<>'\"$", *p)) p++;
         char *word = xstrndup(start, (size_t)(p - start));
 
-        if (keyword_known(word)) {
+        if (expect_command && assignment_word(word)) {
+            sb_puts(out, HL_ASSIGN);
+            sb_puts(out, word);
+            sb_puts(out, HL_RESET);
+        } else if (keyword_known(word)) {
             sb_puts(out, HL_KEYWORD);
             sb_puts(out, word);
             sb_puts(out, HL_RESET);

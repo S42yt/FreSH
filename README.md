@@ -213,7 +213,8 @@ test at once: [tests](tests/).
 | `Ctrl+D` | exit on an empty line |
 
 Commands are colour highlighted as you type: known commands green, unknown
-red, strings yellow, variables cyan, operators magenta.
+red, strings and variable assignments yellow, variables cyan, operators
+magenta.
 
 ## PowerShell and cmd, still here when you want them
 
