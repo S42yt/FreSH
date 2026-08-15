@@ -596,6 +596,17 @@ static int io_assign(IoSet *io, int fd, HANDLE handle) {
     return 1;
 }
 
+static void fds_discard(FdSave *save) {
+    for (int i = 0; i < 3; i++) {
+        if (save->saved[i] >= 0) _close(save->saved[i]);
+        save->saved[i] = -1;
+    }
+    for (int i = 0; i < save->extra_count; i++) {
+        if (save->extra_saved[i] >= 0) _close(save->extra_saved[i]);
+    }
+    save->extra_count = 0;
+}
+
 static HANDLE null_device(void) {
     static HANDLE cached = NULL;
     if (!cached) {
@@ -1222,7 +1233,10 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
             status = 127;
         }
 
-        if (redirected && !keep_redirections) fds_restore(&save);
+        if (redirected) {
+            if (keep_redirections) fds_discard(&save);
+            else fds_restore(&save);
+        }
         keep_redirections = 0;
     }
 
