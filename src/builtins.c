@@ -21,6 +21,7 @@
 #include "gitinfo.h"
 #include "help.h"
 #include "history.h"
+#include "keys.h"
 #include "prompt.h"
 #include "shell.h"
 #include "style.h"
@@ -1353,6 +1354,53 @@ static int builtin_admin(int argc, char **argv) {
     return status;
 }
 
+static int builtin_bind(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "-l") == 0) {
+        StrList widgets;
+        sl_init(&widgets);
+        widget_names(&widgets);
+        for (size_t i = 0; i < widgets.len; i++) printf("%s\n", widgets.items[i]);
+        sl_free(&widgets);
+        return 0;
+    }
+
+    if (argc > 2 && strcmp(argv[1], "-r") == 0) {
+        if (!bind_remove(argv[2])) {
+            shell_error("bind: %s: not bound", argv[2]);
+            return 1;
+        }
+        return 0;
+    }
+
+    if (argc < 3) {
+        StrList rows;
+        sl_init(&rows);
+        bind_list(&rows);
+        for (size_t i = 0; i < rows.len; i++) printf("  %s\n", rows.items[i]);
+        if (rows.len == 0)
+            printf("  %snothing bound, try bind ctrl+g \"git status\"%s\n", style(S_DIM),
+                   style(S_RESET));
+        sl_free(&rows);
+        return 0;
+    }
+
+    if (!key_code_from_name(argv[1])) {
+        shell_error("bind: %s: not a key\n  try ctrl+<letter>, f1 to f12, home, end or delete",
+                    argv[1]);
+        return 1;
+    }
+
+    StrBuf action;
+    sb_init(&action);
+    for (int i = 2; i < argc; i++) {
+        if (i > 2) sb_putc(&action, ' ');
+        sb_puts(&action, argv[i]);
+    }
+    bind_set(argv[1], action.data);
+    sb_free(&action);
+    return 0;
+}
+
 static int builtin_getopts(int argc, char **argv) {
     if (argc < 3) {
         shell_error("getopts: usage: getopts optstring name [argument ...]");
@@ -1682,6 +1730,7 @@ static const Builtin BUILTINS[] = {
     {"command", builtin_command},   {"builtin", builtin_builtin},
     {"exec", builtin_exec},         {"readonly", builtin_readonly},
     {"z", builtin_jump},            {"copy", builtin_copy},
+    {"bind", builtin_bind},
     {"paste", builtin_paste},       {"copypath", builtin_copypath},
     {"extract", builtin_extract},   {"admin", builtin_admin},
     {"die", builtin_die},

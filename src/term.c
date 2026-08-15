@@ -117,6 +117,18 @@ static int map_extended(int code) {
     case 33: return KEY_WORD_RIGHT;
     case 32: return KEY_WORD_DELETE;
     case 15: return KEY_SHIFT_TAB;
+    case 59: return KEY_F1;
+    case 60: return KEY_F2;
+    case 61: return KEY_F3;
+    case 62: return KEY_F4;
+    case 63: return KEY_F5;
+    case 64: return KEY_F6;
+    case 65: return KEY_F7;
+    case 66: return KEY_F8;
+    case 67: return KEY_F9;
+    case 68: return KEY_F10;
+    case 133: return KEY_F11;
+    case 134: return KEY_F12;
     default: return -1;
     }
 }

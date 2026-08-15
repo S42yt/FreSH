@@ -17,6 +17,7 @@
 #include "exec.h"
 #include "foreign.h"
 #include "history.h"
+#include "keys.h"
 #include "parser.h"
 #include "prompt.h"
 #include "shell.h"
@@ -407,6 +408,30 @@ static void history_step(Editor *editor, int direction) {
     editor_set_text(editor, history_get(index));
 }
 
+static int widget_key(const char *widget, int fallback) {
+    if (strcmp(widget, "accept-line") == 0) return KEY_ENTER;
+    if (strcmp(widget, "beginning-of-line") == 0) return KEY_HOME;
+    if (strcmp(widget, "end-of-line") == 0) return KEY_END;
+    if (strcmp(widget, "backward-char") == 0) return KEY_LEFT;
+    if (strcmp(widget, "forward-char") == 0) return KEY_RIGHT;
+    if (strcmp(widget, "backward-word") == 0) return KEY_WORD_LEFT;
+    if (strcmp(widget, "forward-word") == 0) return KEY_WORD_RIGHT;
+    if (strcmp(widget, "delete-char") == 0) return KEY_DELETE;
+    if (strcmp(widget, "backward-delete") == 0) return KEY_BACKSPACE;
+    if (strcmp(widget, "delete-word") == 0) return KEY_WORD_DELETE;
+    if (strcmp(widget, "backward-kill-word") == 0) return KEY_CTRL_W;
+    if (strcmp(widget, "kill-line") == 0) return KEY_CTRL_K;
+    if (strcmp(widget, "kill-to-start") == 0) return KEY_CTRL_U;
+    if (strcmp(widget, "clear-screen") == 0) return KEY_CTRL_L;
+    if (strcmp(widget, "history-previous") == 0) return KEY_UP;
+    if (strcmp(widget, "history-next") == 0) return KEY_DOWN;
+    if (strcmp(widget, "history-search") == 0) return KEY_CTRL_R;
+    if (strcmp(widget, "complete") == 0) return KEY_TAB;
+    if (strcmp(widget, "accept-suggestion") == 0) return KEY_CTRL_F;
+    if (strcmp(widget, "cancel-line") == 0) return KEY_ESC;
+    return fallback;
+}
+
 char *line_read(int continuation) {
     Editor editor;
     memset(&editor, 0, sizeof(editor));
@@ -431,6 +456,29 @@ char *line_read(int continuation) {
         int key = term_read_key();
         int pasting = term_input_pending();
         int was_tab = key == KEY_TAB;
+
+        BindKind kind = BIND_WIDGET;
+        const char *action = pasting ? NULL : bind_lookup(key, &kind);
+        if (action) {
+            if (kind == BIND_INSERT) {
+                insert_text(&editor, action + 7, strlen(action + 7));
+                update_suggestion(&editor);
+                render(&editor);
+                continue;
+            }
+            if (kind == BIND_RUN) {
+                editor_set_text(&editor, action);
+                finish_line(&editor);
+                result = xstrdup(editor.buffer.data);
+                break;
+            }
+            key = widget_key(action, key);
+            if (key == 0) {
+                render(&editor);
+                continue;
+            }
+            was_tab = key == KEY_TAB;
+        }
 
         if (key == KEY_ENTER || key == KEY_LINE_FEED) {
             finish_line(&editor);
