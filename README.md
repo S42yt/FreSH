@@ -34,6 +34,89 @@ and put it on your `PATH`. Nothing else is needed, and
 [themes](docs/themes.md), [plugins](docs/plugins.md),
 [command reference](docs/commands.md), [how it fails](docs/errors.md).
 
+## Installation
+
+### A package manager
+
+```sh
+scoop bucket add fresh https://github.com/S42yt/FreSH
+scoop install fresh              # the full install
+scoop install fresh-portable     # the single executable
+
+winget install S42yt.FreSH
+winget install S42yt.FreSH.Portable
+```
+
+Both verify the download's hash, and neither shows a SmartScreen prompt.
+
+### Portable
+
+Download `FreSH.exe`, put it anywhere on your `PATH`, run `FreSH`. No installer,
+no registry, no administrator. Settings still live in `~/.freshrc`, and nothing
+about the shell depends on having been installed.
+
+### The installer
+
+![Setup](./assets/FreSH_wizard.png)
+
+1. Download `FreSH-Setup.exe` from the releases page
+2. Run it and pick **Just for me** (no admin) or **For all users**
+3. Say whether FreSH should become your default shell
+4. Open a new terminal and type `FreSH`
+
+The installer registers FreSH the way Windows expects a shell to be
+registered:
+
+- adds a **Windows Terminal profile**, so FreSH sits next to PowerShell in the
+  dropdown
+- optionally makes it the **default profile**, backing up `settings.json` first
+- registers under **App Paths**, so `FreSH` works from the Run dialog
+- adds it to **PATH**
+- adds **Open FreSH here** to the Explorer folder context menu
+- registers FreSH as a handler for `.frsh` and `.sh` scripts
+- creates Start Menu and Desktop shortcuts
+- adds an entry to **Apps & Features** with a working uninstaller
+
+Restart Windows Terminal after installing. Fragments are only read at startup.
+
+Silent install:
+
+```
+FreSH-Setup.exe /silent /user /default
+```
+
+Uninstall from *Settings > Apps > FreSH*, or run `Uninstall-FreSH.exe` from the
+install folder.
+
+### Checking what you downloaded
+
+FreSH is not code signed yet, so Windows shows a SmartScreen prompt the first
+time you run a downloaded binary. Rather than tell you to click through it,
+every release ships `SHA256SUMS.txt` and a signed build provenance statement:
+
+```
+gh attestation verify FreSH.exe --repo S42yt/FreSH
+```
+
+That proves the file came out of a GitHub runner, from this repository, from
+the commit the release names. More in [verifying a download](docs/verifying.md)
+and the [signing policy](docs/code-signing.md).
+
+## Updating
+
+FreSH updates itself:
+
+```sh
+fresh update           # check github, download and install the newest release
+fresh update --check   # only tell me whether there is one
+fresh                  # version, where things live, active theme and plugins
+```
+
+Installing closes the shell, because Windows will not replace a running
+executable. Open a new one when it is done.
+
+
+
 ## Why it is quick
 
 | Shell | start, run nothing, exit |
@@ -252,87 +335,6 @@ External programs are resolved through `PATH` using `PATHEXT`, plus `.frsh`,
 `.ps1` and `.sh`. `.ps1` files are handed to PowerShell, `.bat` and `.cmd` to
 cmd.exe, `.frsh` and `.sh` files are executed by FreSH itself. Full details in
 the [command reference](docs/commands.md).
-
-## Installation
-
-### A package manager
-
-```sh
-scoop bucket add fresh https://github.com/S42yt/FreSH
-scoop install fresh              # the full install
-scoop install fresh-portable     # the single executable
-
-winget install S42yt.FreSH
-winget install S42yt.FreSH.Portable
-```
-
-Both verify the download's hash, and neither shows a SmartScreen prompt.
-
-### Portable
-
-Download `FreSH.exe`, put it anywhere on your `PATH`, run `FreSH`. No installer,
-no registry, no administrator. Settings still live in `~/.freshrc`, and nothing
-about the shell depends on having been installed.
-
-### The installer
-
-![Setup](./assets/FreSH_wizard.png)
-
-1. Download `FreSH-Setup.exe` from the releases page
-2. Run it and pick **Just for me** (no admin) or **For all users**
-3. Say whether FreSH should become your default shell
-4. Open a new terminal and type `FreSH`
-
-The installer registers FreSH the way Windows expects a shell to be
-registered:
-
-- adds a **Windows Terminal profile**, so FreSH sits next to PowerShell in the
-  dropdown
-- optionally makes it the **default profile**, backing up `settings.json` first
-- registers under **App Paths**, so `FreSH` works from the Run dialog
-- adds it to **PATH**
-- adds **Open FreSH here** to the Explorer folder context menu
-- registers FreSH as a handler for `.frsh` and `.sh` scripts
-- creates Start Menu and Desktop shortcuts
-- adds an entry to **Apps & Features** with a working uninstaller
-
-Restart Windows Terminal after installing. Fragments are only read at startup.
-
-Silent install:
-
-```
-FreSH-Setup.exe /silent /user /default
-```
-
-Uninstall from *Settings > Apps > FreSH*, or run `Uninstall-FreSH.exe` from the
-install folder.
-
-### Checking what you downloaded
-
-FreSH is not code signed yet, so Windows shows a SmartScreen prompt the first
-time you run a downloaded binary. Rather than tell you to click through it,
-every release ships `SHA256SUMS.txt` and a signed build provenance statement:
-
-```
-gh attestation verify FreSH.exe --repo S42yt/FreSH
-```
-
-That proves the file came out of a GitHub runner, from this repository, from
-the commit the release names. More in [verifying a download](docs/verifying.md)
-and the [signing policy](docs/code-signing.md).
-
-## Updating
-
-FreSH updates itself:
-
-```sh
-fresh update           # check github, download and install the newest release
-fresh update --check   # only tell me whether there is one
-fresh                  # version, where things live, active theme and plugins
-```
-
-Installing closes the shell, because Windows will not replace a running
-executable. Open a new one when it is done.
 
 ## Claude Code
 
