@@ -17,3 +17,7 @@ by hand.
 Installing through Scoop also sidesteps the SmartScreen prompt that an
 unsigned download shows, because Scoop verifies the hash itself. See
 [verifying a download](../docs/verifying.md).
+
+Unlike winget, this works straight from this repository: a Scoop bucket is a
+git repository, while winget searches an index Microsoft hosts. The state of
+the winget packages is in [manifests](../manifests/README.md).

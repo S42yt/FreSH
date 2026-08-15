@@ -39,12 +39,13 @@ since whoever replaced the file could replace the list too. Prefer
 ## Package managers
 
 ```
+scoop bucket add fresh https://github.com/S42yt/FreSH
 scoop install fresh
-winget install S42yt.FreSH
 ```
 
-Both verify the hash before installing and neither shows a SmartScreen prompt,
-so this is the least friction if you already have one of them.
+Scoop checks the hash before installing and shows no SmartScreen prompt, so it
+is the least friction if you already have it. A winget package is prepared but
+not yet in Microsoft's index, see [manifests](../manifests/README.md).
 
 ## Signing
 

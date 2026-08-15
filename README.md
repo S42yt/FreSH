@@ -20,8 +20,6 @@ any difference.
 ```sh
 scoop bucket add fresh https://github.com/S42yt/FreSH
 scoop install fresh              # or: scoop install fresh-portable
-
-winget install S42yt.FreSH       # or: winget install S42yt.FreSH.Portable
 ```
 
 Or download `FreSH.exe` from the [releases](https://github.com/S42yt/FreSH/releases)
@@ -36,18 +34,30 @@ and put it on your `PATH`. Nothing else is needed, and
 
 ## Installation
 
-### A package manager
+### Scoop
 
 ```sh
 scoop bucket add fresh https://github.com/S42yt/FreSH
 scoop install fresh              # the full install
 scoop install fresh-portable     # the single executable
-
-winget install S42yt.FreSH
-winget install S42yt.FreSH.Portable
 ```
 
-Both verify the download's hash, and neither shows a SmartScreen prompt.
+Scoop verifies the hash itself, so there is no SmartScreen prompt. A Scoop
+bucket is just a git repository, which is why this works straight from here.
+
+### winget
+
+Not yet. `winget install S42yt.FreSH` searches Microsoft's community index,
+which FreSH has not been submitted to, so it answers *no package found*. The
+manifests are written, validated and laid out the way that index expects, in
+[manifests](manifests/), so from a clone this works today:
+
+```powershell
+winget install --manifest manifests\S42yt.FreSH\26.10.0
+```
+
+This section loses the "not yet" when the pull request to
+`microsoft/winget-pkgs` is merged.
 
 ### Portable
 
