@@ -10,8 +10,7 @@ check awk_fields "$(awk '{ print $2, $1 }' "$work/data.txt" | head -n 1)" "1 alp
 check awk_nr "$(awk 'END { print NR }' "$work/data.txt")" 3
 check awk_nf "$(awk 'NR == 1 { print NF }' "$work/data.txt")" 2
 check awk_pattern "$(awk '$2 > 2 { print $1 }' "$work/data.txt")" gamma
-check awk_begin_end "$(awk 'BEGIN { print "start" } END { print "stop" }' < /dev/null)" "start
-stop"
+check awk_begin_end "$(awk 'BEGIN { print "start" } END { print "stop" }' < /dev/null | tr '\n' '-')" "start-stop-"
 
 check awk_undefined_function "$(awk 'BEGIN { nosuchfn() }' 2>&1 | grep -c 'undefined function')" 1
 check awk_undefined_status "$(awk 'BEGIN { nosuchfn() }' 2> /dev/null; echo $?)" 2
@@ -101,8 +100,7 @@ check awk_uninitialised "$(awk 'BEGIN { print n + 0, "[" n "]" }')" "0 []"
 check awk_string_compare "$(awk 'BEGIN { print ("abc" < "abd") }')" 1
 check awk_numeric_compare "$(awk 'BEGIN { print (10 > 9) }')" 1
 check awk_getline_var "$(printf 'x\ny\n' | awk 'NR == 1 { getline line; print line }')" y
-check awk_range_pattern "$(printf '1\n2\n3\n4\n' | awk '/2/,/3/')" "2
-3"
+check awk_range_pattern "$(printf '1\n2\n3\n4\n' | awk '/2/,/3/' | tr '\n' ',')" "2,3,"
 check awk_comment "$(awk 'BEGIN { print "ok" } # trailing comment')" ok
 
 rm -r "$work"

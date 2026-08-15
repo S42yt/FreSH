@@ -120,6 +120,7 @@ typedef struct {
     int type;
     int failed;
     int after_value;
+    int no_redirect_compare;
 } Lexer;
 
 enum { LOOP_NONE, LOOP_BREAK, LOOP_CONTINUE };
@@ -533,8 +534,11 @@ static Expr *parse_primary(Lexer *lx) {
         return e;
     }
     if (is_token(lx, "(")) {
+        int guarded = lx->no_redirect_compare;
+        lx->no_redirect_compare = 0;
         lex_next(lx);
         Expr *e = parse_expression(lx);
+        lx->no_redirect_compare = guarded;
         if (is_token(lx, ",")) {
             Expr *group = expr_new(E_SUBSCRIPT);
             group->text = NULL;
@@ -723,8 +727,8 @@ static Expr *parse_compare(Lexer *lx) {
         return e;
     }
 
-    while (is_token(lx, "<") || is_token(lx, ">") || is_token(lx, "<=") || is_token(lx, ">=") ||
-           is_token(lx, "==") || is_token(lx, "!=")) {
+    while (is_token(lx, "<") || is_token(lx, "<=") || is_token(lx, ">=") || is_token(lx, "==") ||
+           is_token(lx, "!=") || (is_token(lx, ">") && !lx->no_redirect_compare)) {
         Expr *e = expr_new(E_BINARY);
         snprintf(e->op, sizeof(e->op), "%s", lx->token);
         lex_next(lx);
@@ -836,12 +840,14 @@ static Stmt *parse_block(Lexer *lx) {
 }
 
 static void parse_output_list(Lexer *lx, Stmt *s) {
+    lx->no_redirect_compare = 1;
     while (lx->type != T_END && !is_token(lx, ";") && !is_token(lx, "}") && !is_token(lx, "\n") &&
            !is_token(lx, ">") && !is_token(lx, ">>") && !is_token(lx, "|")) {
         s->list = xrealloc(s->list, (size_t)(s->count + 1) * sizeof(Expr *));
         s->list[s->count++] = parse_expression(lx);
         if (!accept(lx, ",")) break;
     }
+    lx->no_redirect_compare = 0;
 
     if (is_token(lx, ">") || is_token(lx, ">>") || is_token(lx, "|")) {
         s->name = xstrdup(lx->token);

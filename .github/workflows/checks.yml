@@ -1,0 +1,70 @@
+name: Fuzz and sanitizers
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the fuzz targets
+        run: |
+          clang --version | head -n 1
+          chmod +x fuzz/build.sh
+          fuzz/build.sh
+
+      - name: Run the corpus under the sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          mkdir -p fuzz/work/parser fuzz/work/regex fuzz/work/awk
+          cp fuzz/corpus/parser/* fuzz/work/parser/
+          cp fuzz/corpus/regex/* fuzz/work/regex/
+          cp fuzz/corpus/awk/* fuzz/work/awk/
+          cp tests/diff/cases/*.sh fuzz/work/parser/
+          cp tests/cases/*.frsh fuzz/work/parser/
+          fuzz/build/fuzz_parser fuzz/work/parser
+          fuzz/build/fuzz_regex fuzz/work/regex
+          ( cd fuzz/work/awk && ../../build/fuzz_awk . )
+
+  fuzz:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fuzz_parser, fuzz_regex, fuzz_awk]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the fuzz targets
+        run: |
+          chmod +x fuzz/build.sh
+          fuzz/build.sh
+
+      - name: Fuzz ${{ matrix.target }}
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          name=${{ matrix.target }}
+          corpus=fuzz/corpus/${name#fuzz_}
+          mkdir -p fuzz/run
+          cd fuzz/run
+          ../../fuzz/build/$name ../../$corpus \
+            -max_total_time=300 -timeout=10 -rss_limit_mb=2048 -print_final_stats=1
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: crash-${{ matrix.target }}
+          path: fuzz/run
+          retention-days: 30

@@ -1,0 +1,5 @@
+cmd <(echo a) >(cat) 2>&1 >>file &
+if [[ $a =~ ^(x|y)+$ ]] && [ -f "$b" ]; then :; fi
+for (( i = 0; i < 3; i++ )); do echo $i; done | sort -u
+{ echo a; echo b; } 3< in 4> out
+: ${undefined:?message} ${x//a/b} ${!prefix*}

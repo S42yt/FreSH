@@ -1,0 +1,7 @@
+echo "[$(printf '%s' "nested \"quotes\"")]" | cat > out.txt
+a=(one two three); echo "${a[@]:1:2}" ${a[*]} ${#a[@]}
+case $x in a|b) echo hi;; *) echo "$( echo ) )" ;; esac
+f() { local v=$(( 1 + 2 )); echo ${v:-x} >&2; }
+while read -r l; do :; done <<'EOF'
+body
+EOF

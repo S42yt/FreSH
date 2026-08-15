@@ -1,0 +1,4 @@
+BEGIN { FS = ":"; while ((getline line) > 0) n++ }
+/start/,/stop/ { s = s $1; gsub(/x*/, "&&", s) }
+function helper(a, b) { return sprintf("%5.2f", a / (b ? b : 1)) }
+END { for (k in counts) printf "%s\t%d\n", k, counts[k] }
