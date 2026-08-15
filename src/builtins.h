@@ -13,6 +13,7 @@ typedef int (*BuiltinFn)(int argc, char **argv);
 
 BuiltinFn builtin_lookup(const char *name);
 void builtin_names(StrList *out);
+void visits_record(const char *directory);
 int builtin_name_prefix(const char *prefix, size_t length);
 void builtin_complete(const char *prefix, size_t length, StrList *out);
 

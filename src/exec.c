@@ -1061,7 +1061,12 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         fallback = resolved ? NULL : coreutil_lookup(argv[0]);
     }
 
-    if (resolved && !is_shell_script(path)) {
+    if (!f && !builtin && !fallback && !resolved && argc == 1 &&
+        option_enabled("FRESH_AUTOCD", 1) && path_is_dir(argv[0])) {
+        char *arguments[2] = {"cd", argv[0]};
+        BuiltinFn enter = builtin_lookup("cd");
+        status = enter(2, arguments);
+    } else if (resolved && !is_shell_script(path)) {
         status = run_program(path, argv, argc, &io, background, async_out);
     } else {
         FdSave save;

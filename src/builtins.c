@@ -32,7 +32,11 @@
 
 static void sync_cwd(void) {
     char cwd[PATH_BUF];
-    if (GetCurrentDirectoryA(sizeof(cwd), cwd)) var_set_exported("PWD", cwd);
+    if (GetCurrentDirectoryA(sizeof(cwd), cwd)) {
+        var_set_exported("PWD", cwd);
+        path_to_slashes(cwd);
+        visits_record(cwd);
+    }
     git_invalidate();
 }
 
@@ -1074,6 +1078,272 @@ static int builtin_shopt(int argc, char **argv) {
     return status;
 }
 
+static char *visits_path(void) {
+    return config_path(".fresh_visits");
+}
+
+void visits_record(const char *directory) {
+    if (!option_enabled("FRESH_JUMP", 1)) return;
+
+    char *path = visits_path();
+    StrList lines;
+    sl_init(&lines);
+
+    FILE *f = fopen(path, "rb");
+    int seen = 0;
+    if (f) {
+        char line[PATH_BUF + 32];
+        while (fgets(line, sizeof(line), f)) {
+            line[strcspn(line, "\r\n")] = '\0';
+            if (!*line) continue;
+
+            char *bar = strrchr(line, '|');
+            if (!bar) continue;
+            *bar = '\0';
+
+            long score = atol(bar + 1);
+            if (_stricmp(line, directory) == 0) {
+                score += 10;
+                seen = 1;
+            } else if (score > 1) {
+                score = score * 99 / 100;
+            }
+            if (score < 1) continue;
+
+            StrBuf entry;
+            sb_init(&entry);
+            sb_printf(&entry, "%s|%ld", line, score);
+            sl_push(&lines, sb_take(&entry));
+        }
+        fclose(f);
+    }
+
+    if (!seen) {
+        StrBuf entry;
+        sb_init(&entry);
+        sb_printf(&entry, "%s|%d", directory, 10);
+        sl_push(&lines, sb_take(&entry));
+    }
+
+    f = fopen(path, "wb");
+    if (f) {
+        for (size_t i = 0; i < lines.len && i < 500; i++) fprintf(f, "%s\n", lines.items[i]);
+        fclose(f);
+    }
+    sl_free(&lines);
+    free(path);
+}
+
+static int builtin_jump(int argc, char **argv) {
+    char *path = visits_path();
+    FILE *f = fopen(path, "rb");
+    free(path);
+
+    if (!f) {
+        shell_error("z: nowhere has been visited yet");
+        return 1;
+    }
+
+    char best[PATH_BUF] = "";
+    long best_score = 0;
+    StrList listing;
+    sl_init(&listing);
+
+    char line[PATH_BUF + 32];
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        char *bar = strrchr(line, '|');
+        if (!bar) continue;
+        *bar = '\0';
+        long score = atol(bar + 1);
+
+        int wanted = 1;
+        for (int i = 1; i < argc && wanted; i++) {
+            StrBuf pattern;
+            sb_init(&pattern);
+            sb_printf(&pattern, "*%s*", argv[i]);
+            wanted = pattern_match(pattern.data, line);
+            sb_free(&pattern);
+        }
+        if (!wanted) continue;
+
+        if (argc < 2) {
+            StrBuf row;
+            sb_init(&row);
+            sb_printf(&row, "%6ld  %s", score, line);
+            sl_push(&listing, sb_take(&row));
+        }
+        if (score > best_score && path_is_dir(line)) {
+            best_score = score;
+            snprintf(best, sizeof(best), "%s", line);
+        }
+    }
+    fclose(f);
+
+    if (argc < 2) {
+        sl_sort(&listing);
+        for (size_t i = 0; i < listing.len; i++) printf("%s\n", listing.items[i]);
+        sl_free(&listing);
+        return 0;
+    }
+    sl_free(&listing);
+
+    if (!*best) {
+        shell_error("z: %s: no directory remembered", argv[1]);
+        return 1;
+    }
+
+    char native[PATH_BUF];
+    snprintf(native, sizeof(native), "%s", best);
+    path_to_backslashes(native);
+    if (!SetCurrentDirectoryA(native)) {
+        shell_error("z: %s: gone", best);
+        return 1;
+    }
+    printf("%s\n", best);
+    sync_cwd();
+    return 0;
+}
+
+static int builtin_copy(int argc, char **argv) {
+    StrBuf text;
+    sb_init(&text);
+
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
+            if (i > 1) sb_putc(&text, ' ');
+            sb_puts(&text, argv[i]);
+        }
+    } else {
+        char buffer[4096];
+        size_t read;
+        while ((read = fread(buffer, 1, sizeof(buffer), stdin)) > 0) sb_putn(&text, buffer, read);
+        while (text.len > 0 && (text.data[text.len - 1] == '\n' || text.data[text.len - 1] == '\r'))
+            text.data[--text.len] = '\0';
+    }
+
+    int status = 1;
+    if (OpenClipboard(NULL)) {
+        EmptyClipboard();
+        HGLOBAL block = GlobalAlloc(GMEM_MOVEABLE, text.len + 1);
+        if (block) {
+            memcpy(GlobalLock(block), text.data, text.len + 1);
+            GlobalUnlock(block);
+            SetClipboardData(CF_TEXT, block);
+            status = 0;
+        }
+        CloseClipboard();
+    }
+    if (status) shell_error("copy: the clipboard would not open");
+    sb_free(&text);
+    return status;
+}
+
+static int builtin_paste(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    if (!OpenClipboard(NULL)) {
+        shell_error("paste: the clipboard would not open");
+        return 1;
+    }
+    HANDLE data = GetClipboardData(CF_TEXT);
+    if (data) {
+        const char *text = GlobalLock(data);
+        if (text) {
+            printf("%s\n", text);
+            GlobalUnlock(data);
+        }
+    }
+    CloseClipboard();
+    return 0;
+}
+
+static int builtin_copypath(int argc, char **argv) {
+    char cwd[PATH_BUF];
+    if (argc > 1) {
+        snprintf(cwd, sizeof(cwd), "%s", argv[1]);
+        char full[PATH_BUF];
+        if (GetFullPathNameA(cwd, sizeof(full), full, NULL)) snprintf(cwd, sizeof(cwd), "%s", full);
+    } else if (!GetCurrentDirectoryA(sizeof(cwd), cwd)) {
+        return 1;
+    }
+    path_to_slashes(cwd);
+
+    char *arguments[2] = {"copy", cwd};
+    return builtin_copy(2, arguments);
+}
+
+static int builtin_extract(int argc, char **argv) {
+    if (argc < 2) {
+        shell_error("extract: usage: extract <archive> [<directory>]");
+        return 2;
+    }
+
+    const char *archive = argv[1];
+    if (!path_is_file(archive)) {
+        shell_error("extract: %s: no such file", archive);
+        return 1;
+    }
+    const char *into = argc > 2 ? argv[2] : ".";
+    const char *ext = path_ext(archive);
+
+    StrBuf command;
+    sb_init(&command);
+    if (str_ieq(ext, ".zip")) {
+        sb_printf(&command,
+                  "powershell.exe -NoLogo -NoProfile -Command \"Expand-Archive -LiteralPath '%s' "
+                  "-DestinationPath '%s' -Force\"",
+                  archive, into);
+    } else if (str_ieq(ext, ".gz") || str_ieq(ext, ".tgz") || str_ieq(ext, ".bz2") ||
+               str_ieq(ext, ".xz") || str_ieq(ext, ".tar")) {
+        sb_printf(&command, "tar -x -f \"%s\" -C \"%s\"", archive, into);
+    } else if (str_ieq(ext, ".7z") || str_ieq(ext, ".rar")) {
+        sb_printf(&command, "7z x \"%s\" -o\"%s\"", archive, into);
+    } else {
+        shell_error("extract: %s: unknown archive kind", ext);
+        sb_free(&command);
+        return 1;
+    }
+
+    int status = exec_text(command.data);
+    sb_free(&command);
+    return status;
+}
+
+static int builtin_admin(int argc, char **argv) {
+    char exe[PATH_BUF];
+    GetModuleFileNameA(NULL, exe, sizeof(exe));
+
+    StrBuf parameters;
+    sb_init(&parameters);
+    if (argc > 1) {
+        sb_puts(&parameters, "-c \"");
+        for (int i = 1; i < argc; i++) {
+            if (i > 1) sb_putc(&parameters, ' ');
+            sb_puts(&parameters, argv[i]);
+        }
+        sb_putc(&parameters, '"');
+    }
+
+    char directory[PATH_BUF];
+    GetCurrentDirectoryA(sizeof(directory), directory);
+
+    SHELLEXECUTEINFOA info;
+    memset(&info, 0, sizeof(info));
+    info.cbSize = sizeof(info);
+    info.lpVerb = "runas";
+    info.lpFile = exe;
+    info.lpParameters = parameters.len ? parameters.data : NULL;
+    info.lpDirectory = directory;
+    info.nShow = SW_SHOWNORMAL;
+
+    int status = ShellExecuteExA(&info) ? 0 : 1;
+    if (status) shell_error("admin: the elevated shell was refused");
+    sb_free(&parameters);
+    return status;
+}
+
 static int builtin_getopts(int argc, char **argv) {
     if (argc < 3) {
         shell_error("getopts: usage: getopts optstring name [argument ...]");
@@ -1402,6 +1672,9 @@ static const Builtin BUILTINS[] = {
     {"readarray", builtin_mapfile}, {"shopt", builtin_shopt},
     {"command", builtin_command},   {"builtin", builtin_builtin},
     {"exec", builtin_exec},         {"readonly", builtin_readonly},
+    {"z", builtin_jump},            {"copy", builtin_copy},
+    {"paste", builtin_paste},       {"copypath", builtin_copypath},
+    {"extract", builtin_extract},   {"admin", builtin_admin},
     {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},
     {"exit", builtin_exit},         {"have", builtin_have},
