@@ -52,7 +52,36 @@ static const HelpEntry ENTRIES[] = {
      "    *)        die \"unknown: $1\" ;;\n"
      "  esac"},
 
+    {"admin", "admin [<command> ...]", "open a FreSH that can write anywhere",
+     "Windows asks for consent, so it cannot be silent.\n"
+     "  admin              a new elevated shell here\n"
+     "  admin fresh update run one command elevated"},
+
     {"clear", "clear", "wipe the screen", NULL},
+
+    {"command", "command [-v] <name> [<argument> ...]", "run past a function of the same name",
+     "  -v   say what would run instead of running it"},
+
+    {"copy", "copy [<text> ...]", "put text on the clipboard",
+     "With no argument it takes what comes down the pipe.\n"
+     "  ls | copy"},
+
+    {"copypath", "copypath [<file>]", "put the full path on the clipboard",
+     "With no argument it takes the current directory."},
+
+    {"dirs", "dirs [-c]", "the directory stack",
+     "  -c   forget it\n"
+     "The current directory is first, then what pushd saved."},
+
+    {"extract", "extract <archive> [<directory>]", "unpack an archive",
+     "Knows zip, tar, gz, tgz, bz2, xz, 7z and rar.\n"
+     "The directory is created when it does not exist.\n"
+     "  extract release.tar.gz build"},
+
+    {"getopts", "getopts <optstring> <name> [<argument> ...]", "read the options of a script",
+     "A letter followed by : in the optstring takes a value, which lands in OPTARG.\n"
+     "Start the optstring with : to report errors yourself.\n"
+     "  while getopts ab:c flag; do case $flag in a) ... ;; esac; done"},
 
     {"cmd", "cmd [<command> ...]", "run a command in cmd.exe",
      "With no argument it opens an interactive cmd.exe.\n"
@@ -128,6 +157,30 @@ static const HelpEntry ENTRIES[] = {
      "  if have gcc; then cc=gcc; else cc=clang; fi"},
 
     {"jobs", "jobs", "background jobs, running or stopped", NULL},
+
+    {"mapfile", "mapfile [-t] [<name>]", "read the input into an array",
+     "  -t   drop the newline from each line\n"
+     "readarray is the same command. The default name is MAPFILE."},
+
+    {"paste", "paste", "print what is on the clipboard", NULL},
+
+    {"popd", "popd", "go back to the directory pushd saved", NULL},
+
+    {"pushd", "pushd [<directory>]", "go somewhere and remember where you were",
+     "With no argument it swaps the top two entries.\n"
+     "  pushd ../build   then   popd"},
+
+    {"readonly", "readonly [-p] [<name>[=<value>] ...]", "a variable that cannot change again",
+     "  -p   list what is already read only"},
+
+    {"shopt", "shopt [-s|-u|-q] [<option> ...]", "switch a shell option",
+     "  -s   set        -u   unset        -q   say nothing, use the status\n"
+     "  globstar     ** walks the tree\n"
+     "  nullglob     a pattern that matches nothing disappears\n"
+     "  dotglob      * also matches names starting with a dot\n"
+     "  extglob      ?( *( +( @( and !( groups\n"
+     "  nocasematch  patterns ignore case\n"
+     "With no option it lists them all."},
 
     {"local", "local <name>[=<value>] ...", "a variable that belongs to this function",
      "The previous value comes back when the function returns."},
@@ -310,6 +363,11 @@ static const HelpEntry ENTRIES[] = {
     {"wc", "wc [-l] [-w] [-c] [<file> ...]", "count lines, words and characters", NULL},
     {"while", "while <command>; do <commands>; done", "loop while a command keeps succeeding",
      "  while read line; do echo \"$line\"; done < file"},
+    {"z", "z [<word> ...]", "jump to a directory you have used before",
+     "Every word has to appear somewhere in the path, and the place you use most wins.\n"
+     "With no word it lists what it remembers.\n"
+     "  z fresh src\n"
+     "Set FRESH_JUMP=0 in ~/.freshrc to stop recording."},
     {"wget", "wget [-O <file>] <url>", "download a url",
      "  -O   the name to save it as"},
     {"whoami", "whoami", "your user name", NULL},

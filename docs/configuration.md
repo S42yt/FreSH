@@ -88,6 +88,8 @@ large repositories if you notice the marker lagging behind.
 | `FRESH_HIGHLIGHT` | `1` | colour the command line as you type |
 | `FRESH_SUGGEST` | `1` | grey inline suggestion from history |
 | `FRESH_FOREIGN` | `1` | send PowerShell cmdlets and cmd builtins to their own shell |
+| `FRESH_AUTOCD` | `1` | a directory name on its own becomes a `cd` |
+| `FRESH_JUMP` | `1` | remember visited directories for `z` |
 
 Colour is disabled automatically when output is redirected, so
 `ls > files.txt` never writes escape codes into the file.

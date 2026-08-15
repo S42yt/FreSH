@@ -44,6 +44,20 @@ than rejected, so check this page when a script behaves oddly.
 | `test expr` / `[ expr ]` | | see [scripting](scripting.md#conditionals) |
 | `true` / `false` | | |
 | `:` | | the null command, always succeeds, the same as `true` |
+| `getopts optstring name` | | parses options, sets `OPTIND` and `OPTARG` |
+| `pushd [dir]` / `popd` / `dirs` | `-c` | the directory stack, no argument swaps the top two |
+| `mapfile` / `readarray` | `-t` | read the input into an array, `-t` drops the newlines |
+| `shopt` | `-s` `-u` `-q` | `globstar` `nullglob` `dotglob` `extglob` `nocasematch` |
+| `command name` | `-v` | run past a function of the same name, `-v` says what it is |
+| `builtin name` | | run the builtin even when a function shadows it |
+| `exec command` | | run it and leave |
+| `readonly [name=value]` | `-p` | a variable that cannot be changed again |
+| `time pipeline` | | how long it took, on stderr |
+| `z [word ...]` | | jump to a directory you have used, see [shortcuts](shortcuts.md) |
+| `copy` / `paste` | | the Windows clipboard |
+| `copypath [file]` | | put the full path on the clipboard |
+| `extract archive [dir]` | | unpack zip, tar, gz, bz2, xz, 7z or rar |
+| `admin [command]` | | reopen FreSH elevated |
 | `history [n]` | `-c` | `-c` clears |
 | `which name...` | | path of a command |
 | `type name...` | | says whether it is an alias, function, builtin or file |

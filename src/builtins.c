@@ -1205,6 +1205,14 @@ static int builtin_jump(int argc, char **argv) {
     return 0;
 }
 
+static int clipboard_open(void) {
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (OpenClipboard(NULL)) return 1;
+        Sleep(20);
+    }
+    return 0;
+}
+
 static int builtin_copy(int argc, char **argv) {
     StrBuf text;
     sb_init(&text);
@@ -1223,7 +1231,7 @@ static int builtin_copy(int argc, char **argv) {
     }
 
     int status = 1;
-    if (OpenClipboard(NULL)) {
+    if (clipboard_open()) {
         EmptyClipboard();
         HGLOBAL block = GlobalAlloc(GMEM_MOVEABLE, text.len + 1);
         if (block) {
@@ -1243,7 +1251,7 @@ static int builtin_paste(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    if (!OpenClipboard(NULL)) {
+    if (!clipboard_open()) {
         shell_error("paste: the clipboard would not open");
         return 1;
     }
@@ -1287,6 +1295,7 @@ static int builtin_extract(int argc, char **argv) {
     }
     const char *into = argc > 2 ? argv[2] : ".";
     const char *ext = path_ext(archive);
+    if (argc > 2 && !path_is_dir(into)) path_mkdirs(into);
 
     StrBuf command;
     sb_init(&command);
