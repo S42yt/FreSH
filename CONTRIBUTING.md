@@ -166,9 +166,21 @@ and `autoupdate` pointing at the release tags and at `SHA256SUMS.txt`.
 
 winget does not, and there is no way to make it. Microsoft's index takes one
 pull request per package per version, so the release workflow opens them with
-`tools/winget-submit.sh`. That needs a personal access token with `repo` scope
-stored as the `WINGET_TOKEN` secret, because forking and opening a pull request
-against another repository is more than the token a workflow gets by default
-can do. Without the secret the step says so and is skipped, and the pull
-requests are opened by hand as [manifests/README.md](manifests/README.md)
-describes.
+`tools/winget-submit.sh`.
+
+That needs a GitHub personal access token, stored as the `WINGET_TOKEN` secret.
+The token a workflow gets by default only reaches this repository, and the
+script has to fork `microsoft/winget-pkgs`, push to that fork and open a pull
+request against a repository the project does not own.
+
+Make a **classic** token with the **`public_repo`** scope, which is the least it
+can be given: a fine grained token cannot be granted pull request write on a
+repository you do not own, and `repo` would also hand it every private
+repository you have.
+
+```sh
+gh secret set WINGET_TOKEN --repo S42yt/FreSH
+```
+
+Without the secret the step says so and is skipped, and the pull requests are
+opened by hand as [manifests/README.md](manifests/README.md) describes.

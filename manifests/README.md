@@ -33,10 +33,23 @@ winget validate --manifest manifests\S42yt.FreSH\26.10.0
 ## Getting into the community index
 
 Submitting means opening a pull request against `microsoft/winget-pkgs` with
-these files copied to `manifests/s/S42yt/FreSH/<version>/`. A bot validates
-the installer, a moderator reviews it, and once it is merged
-`winget install S42yt.FreSH` works for everyone. Later versions are the same
-pull request with a new directory, which `wingetcreate update` can open.
+these files copied to `manifests/s/S42yt/FreSH/<version>/`. A bot validates the
+installer, a moderator reviews it, and once it is merged
+`winget install S42yt.FreSH` works for everyone. Every later version is another
+pull request with another directory; there is no way to have winget follow
+releases on its own, which is where it differs from the Scoop bucket.
+
+`tools/winget-submit.sh <version>` does all of that, for both packages, and the
+release workflow runs it on a stable tag when the `WINGET_TOKEN` secret is set.
+That secret is a GitHub personal access token, classic, with the `public_repo`
+scope, because forking and opening a pull request against a repository the
+project does not own is beyond the token a workflow is given by default. To run
+it by hand:
+
+```sh
+gh auth login
+bash tools/winget-submit.sh 26.10.0
+```
 
 Until that lands, the ways to install are in the
 [README](../README.md#installation): the installer, the portable exe, or the
