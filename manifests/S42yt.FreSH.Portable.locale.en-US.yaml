@@ -1,5 +1,5 @@
 PackageIdentifier: S42yt.FreSH.Portable
-PackageVersion: 26.9.0
+PackageVersion: 26.10.0
 PackageLocale: en-US
 Publisher: Musa Bostanci
 PublisherUrl: https://github.com/S42yt
@@ -22,6 +22,6 @@ Tags:
   - terminal
   - cli
   - portable
-ReleaseNotesUrl: https://github.com/S42yt/FreSH/releases/tag/v26.9.0
+ReleaseNotesUrl: https://github.com/S42yt/FreSH/releases/tag/v26.10.0
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0

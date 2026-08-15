@@ -1,5 +1,5 @@
 PackageIdentifier: S42yt.FreSH
-PackageVersion: 26.9.0
+PackageVersion: 26.10.0
 PackageLocale: en-US
 Publisher: Musa Bostanci
 PublisherUrl: https://github.com/S42yt
@@ -23,7 +23,7 @@ Tags:
   - zsh
   - terminal
   - cli
-ReleaseNotesUrl: https://github.com/S42yt/FreSH/releases/tag/v26.9.0
+ReleaseNotesUrl: https://github.com/S42yt/FreSH/releases/tag/v26.10.0
 Documentations:
   - DocumentLabel: Documentation
     DocumentUrl: https://github.com/S42yt/FreSH/tree/master/docs
