@@ -7,9 +7,14 @@
 #ifndef FRESH_FUZZ_WINDOWS_H
 #define FRESH_FUZZ_WINDOWS_H
 
+#include <stdio.h>
 #include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#define _lock_file(f) flockfile(f)
+#define _unlock_file(f) funlockfile(f)
+#define _fgetc_nolock(f) getc_unlocked(f)
 
 typedef unsigned long DWORD;
 
