@@ -125,7 +125,7 @@ jobs:
         run: |
           setup_hash=$(grep 'FreSH-Setup.exe' build/SHA256SUMS.txt | cut -d' ' -f1)
           plain_hash=$(grep ' FreSH.exe' build/SHA256SUMS.txt | cut -d' ' -f1)
-          tools/manifests.sh "$VERSION" "$setup_hash" "$plain_hash"
+          bash tools/manifests.sh "$VERSION" "$setup_hash" "$plain_hash"
           git diff --stat
 
       - uses: actions/upload-artifact@v4
