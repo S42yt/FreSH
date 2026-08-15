@@ -96,9 +96,13 @@ Every behavioural change gets a test, in the same pull request.
 ## Pull requests
 
 CI runs the build, the test suite, the bash differential and the fuzz corpus
-under the address and undefined sanitizers on every pull request. All of it is
-green before a merge, and no it does not get merged red with a follow up
-promised.
+under the address and undefined sanitizers on every pull request, and on
+master. All of it is green before a merge, and no it does not get merged red
+with a follow up promised.
+
+A branch on its own does not build, so open the pull request early if you want
+CI on it; a draft is fine. Running it on both the branch and the pull request
+would only build everything twice.
 
 Say in the description what changed and how you know it works. A measurement
 beats an adjective: `docs/benchmarks.md` was written that way, and every
