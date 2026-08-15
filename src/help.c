@@ -57,6 +57,15 @@ static const HelpEntry ENTRIES[] = {
      "  admin              a new elevated shell here\n"
      "  admin fresh update run one command elevated"},
 
+    {"bind", "bind [<key> <action>] | -l | -r <key>", "put a key to work",
+     "The action is an editing action, a command to run, or insert:<text> to type it.\n"
+     "  bind ctrl+g \"git status\"\n"
+     "  bind f5 insert:\"make \"\n"
+     "  bind ctrl+a beginning-of-line\n"
+     "  -l   list the editing actions      -r   give the key back\n"
+     "Keys read as you say them: ctrl+<letter>, f1 to f12, home, end, delete.\n"
+     "Put the lines in ~/.freshrc to keep them."},
+
     {"clear", "clear", "wipe the screen", NULL},
 
     {"command", "command [-v] <name> [<argument> ...]", "run past a function of the same name",

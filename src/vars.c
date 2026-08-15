@@ -23,6 +23,7 @@ typedef struct {
     int exported;
     int integer;
     int readonly;
+    int nameref;
 } Entry;
 
 typedef struct {
@@ -142,7 +143,21 @@ static const char *dynamic_value(const char *name) {
     return NULL;
 }
 
+void var_mark_nameref(const char *name) {
+    Entry *e = find(vars, var_count_total, name);
+    if (e) e->nameref = 1;
+}
+
+static const char *follow_nameref(const char *name, int depth) {
+    if (depth > 8) return name;
+    Entry *e = find(vars, var_count_total, name);
+    if (!e || !e->nameref || !e->value || !*e->value) return name;
+    return follow_nameref(e->value, depth + 1);
+}
+
 const char *var_get(const char *name) {
+    name = follow_nameref(name, 0);
+
     Entry *e = find(vars, var_count_total, name);
     if (e) {
         if (e->kind != VAR_SCALAR) return e->values.len > 0 ? e->values.items[0] : "";
@@ -161,6 +176,8 @@ int var_exists(const char *name) {
 }
 
 void var_set(const char *name, const char *value) {
+    name = follow_nameref(name, 0);
+
     Entry *existing = find(vars, var_count_total, name);
     if (existing && existing->readonly) {
         shell_error("%s: is read only", name);

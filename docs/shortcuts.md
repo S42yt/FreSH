@@ -58,6 +58,48 @@ admin fresh update        # run one command elevated
 
 Windows asks for consent, so this cannot be silent.
 
+## Keys of your own
+
+`bind` puts any key to work. Put the lines in `~/.freshrc` to keep them.
+
+```sh
+bind ctrl+g "git status"        # press it, the command runs
+bind f5 "build.frsh"
+bind ctrl+o insert:"docker "    # types the text, leaves the cursor after it
+bind ctrl+a beginning-of-line   # move an editing action somewhere else
+bind                            # what is bound
+bind -l                         # the actions you can bind
+bind -r ctrl+g                  # give the key back
+```
+
+Keys are named the way you say them: `ctrl+a` to `ctrl+z`, `f1` to `f12`,
+`home`, `end`, `delete`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`,
+`tab`, `shift+tab`, `enter`, `escape`, `backspace`, and `ctrl+left`,
+`ctrl+right`, `ctrl+delete`.
+
+The actions:
+
+| Action | Does |
+| --- | --- |
+| `accept-line` | run what is typed |
+| `beginning-of-line` / `end-of-line` | jump to either end |
+| `backward-char` / `forward-char` | one character |
+| `backward-word` / `forward-word` | one word |
+| `delete-char` / `backward-delete` | remove one character |
+| `delete-word` / `backward-kill-word` | remove one word |
+| `kill-line` / `kill-to-start` | cut to the end or the start |
+| `history-previous` / `history-next` | walk history |
+| `history-search` | search it |
+| `complete` | the Tab completion |
+| `accept-suggestion` | take the grey suggestion |
+| `clear-screen` | wipe the screen |
+| `cancel-line` | throw the line away |
+
+Anything that is not an action and does not start with `insert:` is a command,
+so `bind f2 "fresh update"` works as it reads. A binding wins over the built in
+meaning of that key, so bind carefully: `bind ctrl+c "echo hi"` takes away the
+way to interrupt.
+
 ## Already there
 
 - **Tab** completes commands, files, variables and the flags a command's help

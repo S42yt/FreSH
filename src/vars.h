@@ -33,6 +33,7 @@ void var_set_array(const char *name, const StrList *values, VarKind kind);
 void var_mark_integer(const char *name);
 int var_is_integer(const char *name);
 void var_mark_readonly(const char *name);
+void var_mark_nameref(const char *name);
 int var_is_readonly(const char *name);
 void vars_readonly_names(StrList *out);
 void vars_exported_names(StrList *out);

@@ -275,12 +275,20 @@ static int builtin_let(int argc, char **argv) {
 }
 
 static int builtin_local(int argc, char **argv) {
-    for (int i = 1; i < argc; i++) {
+    int reference = 0;
+    int index = 1;
+
+    for (; index < argc && argv[index][0] == '-' && argv[index][1]; index++) {
+        if (strchr(argv[index], 'n')) reference = 1;
+    }
+
+    for (int i = index; i < argc; i++) {
         char *eq = strchr(argv[i], '=');
         char *name = eq ? xstrndup(argv[i], (size_t)(eq - argv[i])) : xstrdup(argv[i]);
         var_make_local(name);
-        free(name);
         if (eq) assign_word(argv[i]);
+        if (reference) var_mark_nameref(name);
+        free(name);
     }
     return 0;
 }
@@ -289,6 +297,7 @@ static int builtin_declare(int argc, char **argv) {
     VarKind kind = VAR_SCALAR;
     int local_wanted = 0;
     int integer_wanted = 0;
+    int reference_wanted = 0;
     int printing = 0;
     int index = 1;
 
@@ -297,6 +306,7 @@ static int builtin_declare(int argc, char **argv) {
         if (strchr(argv[index], 'A')) kind = VAR_ASSOC;
         if (strchr(argv[index], 'a')) kind = VAR_INDEXED;
         if (strchr(argv[index], 'i')) integer_wanted = 1;
+        if (strchr(argv[index], 'n')) reference_wanted = 1;
         if (strchr(argv[index], 'g')) local_wanted = 0;
     }
 
@@ -331,6 +341,7 @@ static int builtin_declare(int argc, char **argv) {
         if (local_wanted) var_make_local(name);
         if (kind != VAR_SCALAR) var_declare(name, kind);
         if (integer_wanted) var_mark_integer(name);
+        if (reference_wanted) var_mark_nameref(name);
         free(name);
         if (eq) assign_word(argv[index]);
     }
