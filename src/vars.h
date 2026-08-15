@@ -38,6 +38,7 @@ int var_is_readonly(const char *name);
 void vars_readonly_names(StrList *out);
 void vars_exported_names(StrList *out);
 void var_set_element(const char *name, const char *index, const char *value);
+int var_unset_element(const char *name, const char *index);
 const char *var_get_element(const char *name, const char *index);
 void var_values(const char *name, StrList *out);
 void var_keys(const char *name, StrList *out);

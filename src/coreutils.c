@@ -75,8 +75,12 @@ static int core_cat(int argc, char **argv) {
             continue;
         }
         if (numbered) {
-            char line[LINE_MAX_LEN];
-            while (fgets(line, sizeof(line), f)) printf("%6d  %s", ++line_number, line);
+            StrBuf line;
+            sb_init(&line);
+            int kind;
+            while ((kind = read_line(f, &line)) != 0)
+                printf("%6d  %s%s", ++line_number, line.data, kind == 1 ? "\n" : "");
+            sb_free(&line);
         } else {
             char buffer[4096];
             size_t n;
@@ -124,32 +128,36 @@ static int core_head_tail(int argc, char **argv, int is_head) {
         }
         if (multiple) printf("==> %s <==\n", name);
 
+        StrBuf line;
+        sb_init(&line);
+
         if (is_head) {
-            char line[LINE_MAX_LEN];
             int printed = 0;
-            while (printed < count && fgets(line, sizeof(line), f)) {
-                fputs(line, stdout);
+            int kind;
+            while (printed < count && (kind = read_line(f, &line)) != 0) {
+                fputs(line.data, stdout);
+                if (kind == 1) fputc('\n', stdout);
                 printed++;
             }
         } else {
             char **ring = xmalloc((size_t)count * sizeof(char *));
             for (int r = 0; r < count; r++) ring[r] = NULL;
             int total = 0;
-            char line[LINE_MAX_LEN];
-            while (fgets(line, sizeof(line), f)) {
+            while (read_line(f, &line) != 0) {
                 int slot = total % count;
                 free(ring[slot]);
-                ring[slot] = xstrdup(line);
+                ring[slot] = xstrdup(line.data);
                 total++;
             }
             int available = total < count ? total : count;
             for (int r = 0; r < available; r++) {
                 int slot = (total - available + r) % count;
-                if (ring[slot]) fputs(ring[slot], stdout);
+                if (ring[slot]) printf("%s\n", ring[slot]);
             }
             for (int r = 0; r < count; r++) free(ring[r]);
             free(ring);
         }
+        sb_free(&line);
         close_input(f);
         i++;
     } while (i < argc);
@@ -218,13 +226,15 @@ static int line_matches(const char *line, const char *pattern, int ignore_case, 
 
     if (!ignore_case) return regex_search(pattern, line, NULL);
 
-    char lowered_line[LINE_MAX_LEN];
-    char lowered_pattern[LINE_MAX_LEN];
-    snprintf(lowered_line, sizeof(lowered_line), "%s", line);
-    snprintf(lowered_pattern, sizeof(lowered_pattern), "%s", pattern);
+    char *lowered_line = xstrdup(line);
+    char *lowered_pattern = xstrdup(pattern);
     for (char *p = lowered_line; *p; p++) *p = (char)tolower((unsigned char)*p);
     for (char *p = lowered_pattern; *p; p++) *p = (char)tolower((unsigned char)*p);
-    return regex_search(lowered_pattern, lowered_line, NULL);
+
+    int matched = regex_search(lowered_pattern, lowered_line, NULL);
+    free(lowered_line);
+    free(lowered_pattern);
+    return matched;
 }
 
 static int core_grep(int argc, char **argv) {
@@ -259,18 +269,19 @@ static int core_grep(int argc, char **argv) {
             index++;
             continue;
         }
-        char line[LINE_MAX_LEN];
+        StrBuf line;
+        sb_init(&line);
         long number = 0;
         long matches = 0;
-        while (fgets(line, sizeof(line), f)) {
+        while (read_line(f, &line) != 0) {
             number++;
-            strip_newline(line);
-            int matched = line_matches(line, pattern, ignore_case, fixed);
+            int matched = line_matches(line.data, pattern, ignore_case, fixed);
             if (invert) matched = !matched;
             if (!matched) continue;
             matches++;
             found_any = 1;
             if (quiet) {
+                sb_free(&line);
                 close_input(f);
                 sb_free(&expression);
                 return 0;
@@ -278,8 +289,9 @@ static int core_grep(int argc, char **argv) {
             if (count_only || list_files) continue;
             if (multiple && name) printf("%s:", name);
             if (numbered) printf("%ld:", number);
-            printf("%s\n", line);
+            printf("%s\n", line.data);
         }
+        sb_free(&line);
         close_input(f);
 
         if (count_only) {
@@ -310,11 +322,10 @@ static void read_all_lines(int argc, char **argv, int start, StrList *out) {
         const char *name = index < argc ? argv[index] : NULL;
         FILE *f = open_input(name);
         if (f) {
-            char line[LINE_MAX_LEN];
-            while (fgets(line, sizeof(line), f)) {
-                strip_newline(line);
-                sl_push_copy(out, line);
-            }
+            StrBuf line;
+            sb_init(&line);
+            while (read_line(f, &line) != 0) sl_push_copy(out, line.data);
+            sb_free(&line);
             close_input(f);
         }
         index++;
@@ -1102,15 +1113,16 @@ static int core_xargs(int argc, char **argv) {
         sb_puts(&command, "echo");
     }
 
-    char line[LINE_MAX_LEN];
-    while (fgets(line, sizeof(line), stdin)) {
-        strip_newline(line);
-        if (!*line) continue;
+    StrBuf line;
+    sb_init(&line);
+    while (read_line(stdin, &line) != 0) {
+        if (!line.len) continue;
         sb_putc(&command, ' ');
         sb_putc(&command, '"');
-        sb_puts(&command, line);
+        sb_puts(&command, line.data);
         sb_putc(&command, '"');
     }
+    sb_free(&line);
 
     int status = exec_text(command.data);
     sb_free(&command);

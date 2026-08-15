@@ -56,7 +56,7 @@ static void field_add(Expander *ex, const char *text, size_t len) {
 
 static void note_meta(Expander *ex, const char *text, size_t len) {
     for (size_t i = 0; i < len; i++) {
-        if (text[i] == '*' || text[i] == '?') {
+        if (text[i] == '*' || text[i] == '?' || text[i] == '[') {
             ex->meta = 1;
             return;
         }
@@ -69,6 +69,16 @@ static int is_separator(char c) {
     return *ifs && strchr(ifs, c) != NULL;
 }
 
+static int is_blank_separator(char c) {
+    return (c == ' ' || c == '\t' || c == '\n' || c == '\r') && is_separator(c);
+}
+
+static char separator_join(void) {
+    const char *ifs = var_get("IFS");
+    if (!ifs) return ' ';
+    return *ifs ? *ifs : '\0';
+}
+
 static void field_add_split(Expander *ex, const char *text) {
     if (!text) return;
     note_meta(ex, text, strlen(text));
@@ -76,16 +86,22 @@ static void field_add_split(Expander *ex, const char *text) {
         field_add(ex, text, strlen(text));
         return;
     }
+
     const char *p = text;
-    while (*p) {
-        if (is_separator(*p)) {
-            if (ex->has_content) field_flush(ex);
-            p++;
-            continue;
-        }
+    while (*p && is_blank_separator(*p)) p++;
+    if (!*p) return;
+
+    for (;;) {
         const char *start = p;
         while (*p && !is_separator(*p)) p++;
         field_add(ex, start, (size_t)(p - start));
+        if (!*p) return;
+
+        while (*p && is_blank_separator(*p)) p++;
+        if (*p && is_separator(*p)) p++;
+        while (*p && is_blank_separator(*p)) p++;
+        if (!*p) return;
+        field_flush(ex);
     }
 }
 
@@ -109,7 +125,14 @@ static char *special_value(char c) {
     case '#':
         sb_printf(&sb, "%d", shell.params.len > 0 ? (int)shell.params.len - 1 : 0);
         break;
-    case '*':
+    case '*': {
+        char separator = separator_join();
+        for (size_t i = 1; i < shell.params.len; i++) {
+            if (i > 1 && separator) sb_putc(&sb, separator);
+            sb_puts(&sb, shell.params.items[i]);
+        }
+        break;
+    }
     case '@':
         for (size_t i = 1; i < shell.params.len; i++) {
             if (i > 1) sb_putc(&sb, ' ');
@@ -493,16 +516,28 @@ static char *brace_expand(const char *body) {
                 return result;
             }
 
-            if (operator == ':' && (isdigit((unsigned char)*rest) || *rest == ' ')) {
+            if (operator == ':' && *rest && !strchr("-+=?", *rest)) {
                 char *spec = expand_single(rest);
-                long offset = atol(spec);
-                const char *comma = strchr(spec, ':');
+                char *split = strchr(spec, ':');
+                if (split) *split = '\0';
+
+                int ok = 1;
                 long total = (long)strlen(text);
+                long offset = eval_arith(spec, &ok);
+                long length = split ? eval_arith(split + 1, &ok) : total;
+
+                if (!ok) {
+                    shell_error("${%s}: bad substring expression", body);
+                    shell.last_status = 1;
+                    free(spec);
+                    free(text);
+                    return xstrdup("");
+                }
+
                 if (offset < 0) offset += total;
                 if (offset < 0) offset = 0;
                 if (offset > total) offset = total;
-
-                long length = comma ? atol(comma + 1) : total - offset;
+                if (!split) length = total - offset;
                 if (length < 0) length = total - offset + length;
                 if (length < 0) length = 0;
                 if (offset + length > total) length = total - offset;
@@ -546,6 +581,18 @@ static char *brace_expand(const char *body) {
             char *fallback = expand_single(rest);
             var_set(var_name, fallback);
             result = fallback;
+        } else {
+            result = xstrdup(value);
+        }
+    } else if (op == '?') {
+        if (empty) {
+            char *message = expand_single(rest);
+            shell_error("%s: %s", var_name,
+                        *message ? message : "parameter null or not set");
+            free(message);
+            shell.last_status = 1;
+            if (!shell.interactive) shell.running = 0;
+            result = xstrdup("");
         } else {
             result = xstrdup(value);
         }
@@ -651,6 +698,13 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         *p = after;
         int ok = 1;
         long value = eval_arith(inner.data, &ok);
+        if (!ok) {
+            shell_error("$((%s)): bad arithmetic expression", inner.data);
+            shell.last_status = 1;
+            if (!shell.interactive) shell.running = 0;
+            sb_free(&inner);
+            return;
+        }
         sb_free(&inner);
         char buffer[32];
         snprintf(buffer, sizeof(buffer), "%ld", value);
@@ -689,13 +743,21 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         sl_init(&elements);
         if (expand_array_body(inner.data, &elements)) {
             int joined = in_quotes && strstr(inner.data, "[*]") != NULL;
+            char separator = separator_join();
             for (size_t i = 0; i < elements.len; i++) {
                 if (i > 0) {
-                    if (joined) field_add(ex, " ", 1);
-                    else field_flush(ex);
+                    if (joined) {
+                        if (separator) field_add(ex, &separator, 1);
+                    } else {
+                        field_flush(ex);
+                    }
                 }
-                field_add(ex, elements.items[i], strlen(elements.items[i]));
-                if (in_quotes) ex->quoted = 1;
+                if (in_quotes) {
+                    field_add(ex, elements.items[i], strlen(elements.items[i]));
+                    ex->quoted = 1;
+                } else {
+                    field_add_split(ex, elements.items[i]);
+                }
             }
             if (elements.len == 0 && in_quotes) ex->has_content = 0;
             sl_free(&elements);
@@ -711,14 +773,18 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         free(result);
         return;
     }
-    if (c == '@' && in_quotes) {
+    if (c == '@') {
         (*p)++;
         for (size_t i = 1; i < shell.params.len; i++) {
             if (i > 1) field_flush(ex);
-            field_add(ex, shell.params.items[i], strlen(shell.params.items[i]));
-            ex->quoted = 1;
+            if (in_quotes) {
+                field_add(ex, shell.params.items[i], strlen(shell.params.items[i]));
+                ex->quoted = 1;
+            } else {
+                field_add_split(ex, shell.params.items[i]);
+            }
         }
-        if (shell.params.len <= 1) ex->has_content = 1;
+        if (shell.params.len <= 1 && in_quotes) ex->has_content = 1;
         return;
     }
     if (isalpha((unsigned char)c) || c == '_') {
@@ -917,9 +983,23 @@ void brace_expand_word(const char *word, StrList *out) {
     int high = 0;
     int given_step = 0;
     char extra = 0;
-    int fields = sscanf(body, "%d..%d..%d%c", &low, &high, &given_step, &extra);
-    int simple = fields == 3 ? 0 : sscanf(body, "%d..%d%c", &low, &high, &extra) == 2;
-    if (fields == 3 || simple) {
+    char from = 0;
+    char to = 0;
+    char letter_extra = 0;
+    int letters = sscanf(body, "%c..%c%c", &from, &to, &letter_extra) == 2 &&
+                  isalpha((unsigned char)from) && isalpha((unsigned char)to);
+
+    int fields = letters ? 0 : sscanf(body, "%d..%d..%d%c", &low, &high, &given_step, &extra);
+    int simple = letters || fields == 3 ? 0 : sscanf(body, "%d..%d%c", &low, &high, &extra) == 2;
+
+    if (letters) {
+        int direction = from <= to ? 1 : -1;
+        for (char value = from;; value = (char)(value + direction)) {
+            char single[2] = {value, '\0'};
+            sl_push_copy(&pieces, single);
+            if (value == to) break;
+        }
+    } else if (fields == 3 || simple) {
         int width = 0;
         const char *dots = strstr(body, "..");
         if (dots) {
@@ -1112,24 +1192,37 @@ char *expand_single(const char *word) {
 
 static void glob_one_level(const char *pattern, StrList *matches) {
     char normalized[PATH_BUF];
-    snprintf(normalized, sizeof(normalized), "%s", pattern);
+    if ((size_t)snprintf(normalized, sizeof(normalized), "%s", pattern) >= sizeof(normalized)) {
+        shell_error("%s: pattern is too long to expand", pattern);
+        return;
+    }
     path_to_backslashes(normalized);
 
     char *slash = strrchr(normalized, '\\');
     char dir[PATH_BUF] = "";
+    const char *leaf = normalized;
     if (slash) {
         size_t dir_len = (size_t)(slash - normalized) + 1;
         memcpy(dir, normalized, dir_len);
         dir[dir_len] = '\0';
+        leaf = slash + 1;
     }
 
+    char search[PATH_BUF];
+    snprintf(search, sizeof(search), "%s*", dir);
+
     WIN32_FIND_DATAA data;
-    HANDLE find = FindFirstFileA(normalized, &data);
+    HANDLE find = FindFirstFileA(search, &data);
     if (find == INVALID_HANDLE_VALUE) return;
+
+    int folding = shell.nocasematch;
+    shell.nocasematch = 1;
 
     do {
         if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
-        if (data.cFileName[0] == '.' && !shell.dotglob && !strchr(pattern, '.')) continue;
+        if (data.cFileName[0] == '.' && leaf[0] != '.' && !shell.dotglob) continue;
+        if (!pattern_match(leaf, data.cFileName)) continue;
+
         StrBuf sb;
         sb_init(&sb);
         sb_puts(&sb, dir);
@@ -1137,6 +1230,8 @@ static void glob_one_level(const char *pattern, StrList *matches) {
         if (strchr(pattern, '/')) path_to_slashes(sb.data);
         sl_push(matches, sb_take(&sb));
     } while (FindNextFileA(find, &data));
+
+    shell.nocasematch = folding;
     FindClose(find);
 }
 

@@ -116,7 +116,7 @@ typedef struct Function {
 
 typedef struct {
     const char *source;
-    char token[256];
+    char token[4096];
     int type;
     int failed;
     int after_value;
@@ -401,7 +401,8 @@ static void lex_scan(Lexer *lx) {
             lx->token[length++] = *p++;
         }
         lx->token[length] = '\0';
-        if (*p == '"') p++;
+        if (*p != '"') lx->failed = 1;
+        else p++;
         lx->type = T_STRING;
         lx->source = p;
         return;
@@ -415,7 +416,8 @@ static void lex_scan(Lexer *lx) {
             lx->token[length++] = *p++;
         }
         lx->token[length] = '\0';
-        if (*p == '/') p++;
+        if (*p != '/') lx->failed = 1;
+        else p++;
         lx->type = T_REGEX;
         lx->source = p;
         return;
@@ -2055,7 +2057,7 @@ static void run_rules(Awk *awk, int begin, int end) {
     }
 }
 
-static void parse_program(Awk *awk, const char *program) {
+static int parse_program(Awk *awk, const char *program) {
     Lexer lx;
     memset(&lx, 0, sizeof(lx));
     lx.source = program;
@@ -2115,6 +2117,7 @@ static void parse_program(Awk *awk, const char *program) {
     }
 
     if (lx.failed) shell_error("awk: the program has a syntax error");
+    return !lx.failed;
 }
 
 static char *read_program_file(const char *path) {
@@ -2246,8 +2249,12 @@ int awk_main(int argc, char **argv) {
         sb_puts(&program, argv[index++]);
     }
 
-    parse_program(&awk, program.data ? program.data : "");
+    int parsed = parse_program(&awk, program.data ? program.data : "");
     sb_free(&program);
+    if (!parsed) {
+        awk.exiting = 1;
+        awk.status = 2;
+    }
 
     run_rules(&awk, 1, 0);
     awk.skipping = 0;
@@ -2287,7 +2294,7 @@ int awk_main(int argc, char **argv) {
 
     awk.exiting = 0;
     awk.skipping = 0;
-    run_rules(&awk, 0, 1);
+    if (parsed) run_rules(&awk, 0, 1);
     arena_reset(&awk);
 
     fflush(stdout);

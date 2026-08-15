@@ -378,20 +378,24 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
         }
         if (*p == '(' && p[1] == '(') {
             int depth = 0;
-            const char *q = p;
-            while (*q) {
-                if (*q == '(') depth++;
-                else if (*q == ')') {
-                    depth--;
-                    if (depth == 0) { q++; break; }
+            const char *end = NULL;
+            for (const char *q = p; *q; q++) {
+                if (*q == '(') {
+                    depth++;
+                    continue;
                 }
-                q++;
+                if (*q != ')') continue;
+                if (depth == 2 && q[1] == ')') {
+                    end = q + 2;
+                    break;
+                }
+                if (--depth < 2) break;
             }
-            if (depth == 0) {
+            if (end) {
                 Token t = {T_ARITH, NULL, 0, 0, R_IN};
-                t.text = xstrndup(p + 2, (size_t)(q - p) - 4);
+                t.text = xstrndup(p + 2, (size_t)(end - p) - 4);
                 token_push(out, t);
-                p = q;
+                p = end;
                 continue;
             }
         }
@@ -437,7 +441,8 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             Token t = {T_REDIR, NULL, 0, 0, R_HEREDOC};
             t.fd = 0;
             p += 2;
-            if (*p == '-') p++;
+            int strip_tabs = *p == '-';
+            if (strip_tabs) p++;
             while (*p == ' ' || *p == '\t') p++;
 
             int quoted = 0;
@@ -461,6 +466,9 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             sb_init(&body);
             while (*scan) {
                 const char *line_start = scan;
+                if (strip_tabs)
+                    while (*line_start == '\t') line_start++;
+                scan = line_start;
                 while (*scan && *scan != '\n') scan++;
                 size_t line_length = (size_t)(scan - line_start);
                 char *line = xstrndup(line_start, line_length);
@@ -874,6 +882,15 @@ static Node *parse_test(Parser *ps) {
             sl_push_copy(&node->words, t->redir == R_IN ? "<" : ">");
             if (t->text && *t->text) sl_push_copy(&node->words, t->text);
             break;
+        case T_AMP:
+        case T_SEMI:
+        case T_SEMI_AMP:
+        case T_DSEMI:
+        case T_ARITH:
+            fail_hint(ps, ps->pos, "that cannot go inside [[ ]]",
+                      "[[ ]] takes tests joined by && , || and ! , and ends with ]]");
+            node_free(node);
+            return NULL;
         default: break;
         }
         advance(ps);

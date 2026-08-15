@@ -108,6 +108,26 @@ char *sb_take(StrBuf *sb) {
     return p;
 }
 
+int read_line(FILE *f, StrBuf *out) {
+    sb_clear(out);
+    if (!f) return 0;
+
+    int c;
+    int any = 0;
+    while ((c = fgetc(f)) != EOF) {
+        any = 1;
+        if (c == '\n') {
+            if (out->len && out->data[out->len - 1] == '\r') {
+                out->len--;
+                out->data[out->len] = '\0';
+            }
+            return 1;
+        }
+        sb_putc(out, (char)c);
+    }
+    return any ? 2 : 0;
+}
+
 void sl_init(StrList *l) {
     l->cap = 8;
     l->len = 0;

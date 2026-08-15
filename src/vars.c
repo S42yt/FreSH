@@ -310,6 +310,24 @@ void var_set_element(const char *name, const char *index, const char *value) {
     sl_push_copy(&e->values, value);
 }
 
+int var_unset_element(const char *name, const char *index) {
+    Entry *e = find(vars, var_count_total, name);
+    if (!e || e->kind == VAR_SCALAR) return 0;
+
+    int position = index_position(e, index);
+    if (position < 0) return 0;
+
+    free(e->keys.items[position]);
+    free(e->values.items[position]);
+    memmove(e->keys.items + position, e->keys.items + position + 1,
+            (e->keys.len - (size_t)position - 1) * sizeof(char *));
+    memmove(e->values.items + position, e->values.items + position + 1,
+            (e->values.len - (size_t)position - 1) * sizeof(char *));
+    e->keys.len--;
+    e->values.len--;
+    return 1;
+}
+
 void var_mark_readonly(const char *name) {
     Entry *e = find(vars, var_count_total, name);
     if (!e) e = add(&vars, &var_count_total, &var_cap, name);

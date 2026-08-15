@@ -603,7 +603,11 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
         }
 
         char native[PATH_BUF];
-        snprintf(native, sizeof(native), "%s", target);
+        if ((size_t)snprintf(native, sizeof(native), "%s", target) >= sizeof(native)) {
+            shell_error("%s: path is too long to redirect to", target);
+            free(target);
+            return 0;
+        }
         free(target);
         path_to_backslashes(native);
 
@@ -880,18 +884,24 @@ static int substitute_processes(StrList *words, Substitution *pending, int max) 
         char *word = words->items[i];
         int output = strncmp(word, ">(", 2) == 0;
         int input = strncmp(word, "<(", 2) == 0;
-        if ((!input && !output) || count >= max) continue;
+        if (!input && !output) continue;
 
         size_t length = strlen(word);
         if (length < 3 || word[length - 1] != ')') continue;
+
+        if (count >= max) {
+            shell_error("%s: a command cannot have more than %d process substitutions", word, max);
+            return count;
+        }
 
         char *command = xstrndup(word + 2, length - 3);
         char directory[PATH_BUF];
         char file[PATH_BUF];
         if (!GetTempPathA(sizeof(directory), directory) ||
             !GetTempFileNameA(directory, "frps", 0, file)) {
+            shell_error("%s: could not make a temporary file for the substitution", word);
             free(command);
-            continue;
+            return count;
         }
 
         if (input) {
@@ -1193,7 +1203,16 @@ static int flatten_pipeline(Node *node, Node **stages, int max) {
     return count;
 }
 
+static int pipeline_length(Node *node) {
+    return node->kind == N_PIPE ? pipeline_length(node->left) + 1 : 1;
+}
+
 static int exec_pipeline(Node *node, int background) {
+    if (pipeline_length(node) > MAX_STAGES) {
+        shell_error("a pipeline cannot have more than %d stages", MAX_STAGES);
+        return 1;
+    }
+
     Node *stages[MAX_STAGES];
     int count = flatten_pipeline(node, stages, MAX_STAGES);
 
@@ -1318,14 +1337,15 @@ typedef struct {
     int stopped;
 } Job;
 
-static Job jobs[MAX_STAGES];
+static Job *jobs = NULL;
 static int job_count = 0;
+static int job_cap = 0;
 static int next_job_id = 1;
 
 static void job_add(HANDLE process, const char *command) {
-    if (job_count >= MAX_STAGES) {
-        CloseHandle(process);
-        return;
+    if (job_count + 1 > job_cap) {
+        job_cap = job_cap ? job_cap * 2 : 16;
+        jobs = xrealloc(jobs, (size_t)job_cap * sizeof(Job));
     }
     jobs[job_count].id = next_job_id++;
     jobs[job_count].pid = GetProcessId(process);
@@ -1758,10 +1778,18 @@ int pattern_match(const char *pattern, const char *text) {
             int matched = 0;
             while (*pattern && (*pattern != ']' || pattern == class_start)) {
                 if (pattern[1] == '-' && pattern[2] && pattern[2] != ']') {
-                    if (*text >= pattern[0] && *text <= pattern[2]) matched = 1;
+                    char low = pattern[0];
+                    char high = pattern[2];
+                    if (*text >= low && *text <= high) matched = 1;
+                    if (shell.nocasematch) {
+                        char folded = (char)(isupper((unsigned char)*text)
+                                                 ? tolower((unsigned char)*text)
+                                                 : toupper((unsigned char)*text));
+                        if (folded >= low && folded <= high) matched = 1;
+                    }
                     pattern += 3;
                 } else {
-                    if (*text == *pattern) matched = 1;
+                    if (*text == *pattern || same_char(*pattern, *text)) matched = 1;
                     pattern++;
                 }
             }
@@ -1843,6 +1871,7 @@ static int exec_switch(Node *node) {
     case N_ARITH: {
         int ok = 1;
         long value = eval_arith(node->name, &ok);
+        if (!ok) shell_error("((%s)): bad arithmetic expression", node->name);
         status = ok && value != 0 ? 0 : 1;
         break;
     }

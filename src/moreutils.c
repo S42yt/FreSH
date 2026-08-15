@@ -62,11 +62,10 @@ static void read_lines(int argc, char **argv, int start, StrList *out) {
         const char *name = index < argc ? argv[index] : NULL;
         FILE *f = open_input(name);
         if (f) {
-            char line[LINE_MAX_LEN];
-            while (fgets(line, sizeof(line), f)) {
-                line[strcspn(line, "\r\n")] = '\0';
-                sl_push_copy(out, line);
-            }
+            StrBuf line;
+            sb_init(&line);
+            while (read_line(f, &line) != 0) sl_push_copy(out, line.data);
+            sb_free(&line);
             close_input(f);
         }
         index++;
@@ -142,8 +141,7 @@ static int more_sed(int argc, char **argv) {
         return 2;
     }
 
-    char script[LINE_MAX_LEN];
-    snprintf(script, sizeof(script), "%s", argv[index++]);
+    char *script = xstrdup(argv[index++]);
 
     StrList lines;
     sl_init(&lines);
@@ -161,6 +159,7 @@ static int more_sed(int argc, char **argv) {
             shell_error("sed: unterminated address");
             sb_free(&address);
             sl_free(&lines);
+            free(script);
             return 2;
         }
         *close = '\0';
@@ -186,6 +185,7 @@ static int more_sed(int argc, char **argv) {
             shell_error("sed: unterminated s command");
             sb_free(&address);
             sl_free(&lines);
+            free(script);
             return 2;
         }
         *middle = '\0';
@@ -199,6 +199,7 @@ static int more_sed(int argc, char **argv) {
         shell_error("sed: %c: only s, d and p are supported, with an optional /address/", command);
         sb_free(&address);
         sl_free(&lines);
+        free(script);
         return 2;
     }
 
@@ -242,6 +243,7 @@ static int more_sed(int argc, char **argv) {
     sb_free(&expression);
     sb_free(&address);
     sl_free(&lines);
+    free(script);
     return 0;
 }
 
@@ -258,15 +260,15 @@ static int more_paste(int argc, char **argv) {
         active = 0;
         StrBuf row;
         sb_init(&row);
+        StrBuf line;
+        sb_init(&line);
         for (int i = 0; i < count; i++) {
-            char line[LINE_MAX_LEN] = "";
-            if (files[i] && fgets(line, sizeof(line), files[i])) {
-                line[strcspn(line, "\r\n")] = '\0';
-                active = 1;
-            }
+            sb_clear(&line);
+            if (files[i] && read_line(files[i], &line) != 0) active = 1;
             if (i > 0) sb_putc(&row, '\t');
-            sb_puts(&row, line);
+            sb_puts(&row, line.data);
         }
+        sb_free(&line);
         if (active) printf("%s\n", row.data);
         sb_free(&row);
     }
@@ -289,11 +291,11 @@ static int more_comm(int argc, char **argv) {
     for (int side = 0; side < 2; side++) {
         FILE *f = open_input(names[side]);
         if (!f) continue;
-        char line[LINE_MAX_LEN];
-        while (fgets(line, sizeof(line), f)) {
-            line[strcspn(line, "\r\n")] = '\0';
-            sl_push_copy(side == 0 ? &left : &right, line);
-        }
+        StrBuf line;
+        sb_init(&line);
+        while (read_line(f, &line) != 0)
+            sl_push_copy(side == 0 ? &left : &right, line.data);
+        sb_free(&line);
         close_input(f);
     }
 
@@ -447,11 +449,11 @@ static int more_diff(int argc, char **argv) {
             sl_free(&right);
             return 2;
         }
-        char line[LINE_MAX_LEN];
-        while (fgets(line, sizeof(line), f)) {
-            line[strcspn(line, "\r\n")] = '\0';
-            sl_push_copy(side == 0 ? &left : &right, line);
-        }
+        StrBuf line;
+        sb_init(&line);
+        while (read_line(f, &line) != 0)
+            sl_push_copy(side == 0 ? &left : &right, line.data);
+        sb_free(&line);
         close_input(f);
     }
 

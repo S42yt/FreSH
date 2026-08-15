@@ -8,6 +8,7 @@
 #define FRESH_UTIL_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #define PATH_BUF 1024
 
@@ -37,6 +38,8 @@ void sb_putn(StrBuf *sb, const char *s, size_t n);
 void sb_puts(StrBuf *sb, const char *s);
 void sb_printf(StrBuf *sb, const char *fmt, ...);
 char *sb_take(StrBuf *sb);
+
+int read_line(FILE *f, StrBuf *out);
 
 void sl_init(StrList *l);
 void sl_free(StrList *l);

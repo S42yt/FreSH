@@ -182,7 +182,19 @@ static int builtin_unset(int argc, char **argv) {
 
     for (int i = index; i < argc; i++) {
         if (!variables_only && function_undefine(argv[i])) continue;
-        if (!functions_only) var_unset(argv[i]);
+        if (functions_only) continue;
+
+        char *open = strchr(argv[i], '[');
+        size_t length = strlen(argv[i]);
+        if (open && open != argv[i] && argv[i][length - 1] == ']') {
+            char *name = xstrndup(argv[i], (size_t)(open - argv[i]));
+            char *key = xstrndup(open + 1, length - (size_t)(open - argv[i]) - 2);
+            var_unset_element(name, key);
+            free(name);
+            free(key);
+            continue;
+        }
+        var_unset(argv[i]);
     }
     return 0;
 }
@@ -1009,12 +1021,17 @@ static int builtin_read(int argc, char **argv) {
         fflush(stdout);
     }
 
-    char line[4096];
-    if (!fgets(line, sizeof(line), stdin)) return 1;
-    line[strcspn(line, "\r\n")] = '\0';
+    StrBuf input;
+    sb_init(&input);
+    if (read_line(stdin, &input) == 0) {
+        sb_free(&input);
+        return 1;
+    }
+    char *line = sb_take(&input);
 
     if (index >= argc) {
         var_set("REPLY", line);
+        free(line);
         return 0;
     }
 
@@ -1032,6 +1049,7 @@ static int builtin_read(int argc, char **argv) {
         var_set(argv[i], start);
         if (saved) cursor++;
     }
+    free(line);
     return 0;
 }
 
