@@ -476,7 +476,7 @@ static void fds_apply(const IoSet *io, FdSave *save) {
 
     HANDLE handles[3] = {io->in, io->out, io->err};
     HANDLE defaults[3] = {base.in, base.out, base.err};
-    int flags[3] = {_O_RDONLY, 0, 0};
+    int flags[3] = {_O_RDONLY | _O_BINARY, _O_BINARY, _O_BINARY};
 
     for (int i = 0; i < 3; i++) {
         if (handles[i] == defaults[i]) continue;
