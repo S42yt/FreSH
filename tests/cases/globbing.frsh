@@ -1,0 +1,45 @@
+suite globbing
+
+tree=.fresh-test-tree
+rm -r "$tree" 2> /dev/null
+mkdir -p "$tree/one/two"
+touch "$tree/top.c" "$tree/one/mid.c" "$tree/one/two/deep.c" "$tree/one/two/notes.txt"
+
+set -- "$tree"/*.c
+check plain_glob "$#" 1
+
+set -- "$tree"/**/*.c
+check globstar_off "$#" 1
+
+shopt -s globstar
+set -- "$tree"/**/*.c
+check globstar_on "$#" 3
+shopt -u globstar
+
+set -- "$tree"/*.missing
+check nullglob_off "$#" 1
+check nullglob_off_literal "$1" "$tree/*.missing"
+
+shopt -s nullglob
+set -- "$tree"/*.missing
+check nullglob_on "$#" 0
+shopt -u nullglob
+
+check shopt_reports "$(shopt globstar)" "globstar    off"
+check shopt_sets "$(shopt -s globstar; shopt globstar; shopt -u globstar)" "globstar    on"
+
+check extglob_at "$(case abc in @(abc|xyz)) echo yes ;; esac)" yes
+check extglob_at_other "$(case xyz in @(abc|xyz)) echo yes ;; esac)" yes
+check extglob_at_miss "$(case other in @(abc|xyz)) echo yes ;; *) echo no ;; esac)" no
+check extglob_optional "$(case ac in a?(b)c) echo yes ;; esac)" yes
+check extglob_optional_one "$(case abc in a?(b)c) echo yes ;; esac)" yes
+check extglob_star "$(case axxc in a*(x)c) echo yes ;; esac)" yes
+check extglob_star_none "$(case ac in a*(x)c) echo yes ;; esac)" yes
+check extglob_plus "$(case axc in a+(x)c) echo yes ;; esac)" yes
+check extglob_plus_none "$(case ac in a+(x)c) echo yes ;; *) echo no ;; esac)" no
+check extglob_negate "$(case adc in a!(b)c) echo yes ;; esac)" yes
+check extglob_negate_hit "$(case abc in a!(b)c) echo no ;; *) echo yes ;; esac)" yes
+
+check glob_in_variable_stays "$(x=$tree/*.c; echo "$x")" "$tree/*.c"
+
+rm -r "$tree"

@@ -1,0 +1,54 @@
+suite builtins
+
+parse_flags() {
+  local seen=""
+  local OPTIND=1
+  while getopts ab:c flag; do
+    seen="$seen[$flag${OPTARG:+=$OPTARG}]"
+  done
+  echo "$seen"
+}
+check getopts_simple "$(parse_flags -a)" '[a]'
+check getopts_argument "$(parse_flags -b value)" '[b=value]'
+check getopts_clustered "$(parse_flags -ac)" '[a][c]'
+check getopts_mixed "$(parse_flags -a -b two -c)" '[a][b=two][c]'
+
+start=$(pwd)
+pushd . > /dev/null
+check pushd_returns_zero "$?" 0
+popd > /dev/null
+check popd_restores "$(pwd)" "$start"
+check dirs_prints "$(dirs | wc -w | tr -d ' ')" 1
+
+check random_in_range "$(test $RANDOM -ge 0 && test $RANDOM -lt 32768 && echo yes)" yes
+check seconds_counts "$(test $SECONDS -ge 0 && echo yes)" yes
+check lineno_moves "$(test $LINENO -gt 20 && echo yes)" yes
+
+named() { echo "$FUNCNAME"; }
+check funcname_inside "$(named)" named
+check funcname_outside "${FUNCNAME:-none}" none
+
+false | true
+check pipestatus_first "${PIPESTATUS[0]}" 1
+check pipestatus_last "${PIPESTATUS[1]}" 0
+true | false
+check pipestatus_second "${PIPESTATUS[1]}" 1
+
+printf -v captured '%05.1f' 3.14159
+check printf_into_variable "$captured" 003.1
+printf -v joined '%s-%s' a b
+check printf_into_variable_two "$joined" a-b
+
+check mapfile_count "$(printf 'a\nb\nc\n' | { mapfile -t rows; echo ${#rows[@]}; })" 3
+check mapfile_element "$(printf 'a\nb\n' | { mapfile -t rows; echo ${rows[1]}; })" b
+check readarray_alias "$(printf 'x\n' | { readarray -t r; echo ${r[0]}; })" x
+
+echo contents > .fresh-test-read
+check dollar_less_than "$(<.fresh-test-read)" contents
+rm .fresh-test-read
+
+check case_fallthrough "$(case a in a) echo one ;& b) echo two ;; c) echo three ;; esac | tr '\n' ' ')" 'one two '
+check case_stops_at_break "$(case c in a) echo one ;& c) echo three ;; esac)" three
+check case_inside_substitution "$(case hello in h*) echo matched ;; esac)" matched
+
+check time_reports "$( { time true ; } 2>&1 | grep -c real )" 1
