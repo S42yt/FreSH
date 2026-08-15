@@ -123,8 +123,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          setup_hash=$(grep 'FreSH-Setup.exe' build/SHA256SUMS.txt | cut -d' ' -f1)
-          plain_hash=$(grep ' FreSH.exe' build/SHA256SUMS.txt | cut -d' ' -f1)
+          cat build/SHA256SUMS.txt
+          setup_hash=$(grep -E '[ *]FreSH-Setup\.exe$' build/SHA256SUMS.txt | cut -d' ' -f1)
+          plain_hash=$(grep -E '[ *]FreSH\.exe$' build/SHA256SUMS.txt | cut -d' ' -f1)
+          echo "setup $setup_hash"
+          echo "exe   $plain_hash"
           bash tools/manifests.sh "$VERSION" "$setup_hash" "$plain_hash"
           git diff --stat
 
