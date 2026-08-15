@@ -505,11 +505,13 @@ static void fds_apply(const IoSet *io, FdSave *save) {
             continue;
         save->saved[i] = _dup(i);
         int fd = _open_osfhandle((intptr_t)copy, flags[i]);
-        if (fd >= 0) {
+        if (fd < 0) {
+            CloseHandle(copy);
+            continue;
+        }
+        if (fd != i) {
             _dup2(fd, i);
             _close(fd);
-        } else {
-            CloseHandle(copy);
         }
     }
 
@@ -531,11 +533,13 @@ static void fds_apply(const IoSet *io, FdSave *save) {
             continue;
 
         int fd = _open_osfhandle((intptr_t)copy, _O_BINARY);
-        if (fd >= 0) {
+        if (fd < 0) {
+            CloseHandle(copy);
+            continue;
+        }
+        if (fd != target) {
             _dup2(fd, target);
             _close(fd);
-        } else {
-            CloseHandle(copy);
         }
     }
 }
