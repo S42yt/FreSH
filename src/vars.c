@@ -117,18 +117,45 @@ void vars_cleanup(void) {
     scope_depth = scope_cap = 0;
 }
 
+static const char *dynamic_value(const char *name) {
+    static char buffer[32];
+
+    if (strcmp(name, "RANDOM") == 0) {
+        static int seeded = 0;
+        if (!seeded) {
+            srand((unsigned int)GetTickCount() ^ (unsigned int)GetCurrentProcessId());
+            seeded = 1;
+        }
+        snprintf(buffer, sizeof(buffer), "%d", rand() % 32768);
+        return buffer;
+    }
+    if (strcmp(name, "SECONDS") == 0) {
+        snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)((GetTickCount() - shell.started) / 1000));
+        return buffer;
+    }
+    if (strcmp(name, "LINENO") == 0) {
+        snprintf(buffer, sizeof(buffer), "%d", shell.line);
+        return buffer;
+    }
+    return NULL;
+}
+
 const char *var_get(const char *name) {
     Entry *e = find(vars, var_count_total, name);
     if (e) {
         if (e->kind != VAR_SCALAR) return e->values.len > 0 ? e->values.items[0] : "";
         return e->value ? e->value : "";
     }
+    const char *generated = dynamic_value(name);
+    if (generated) return generated;
+
     const char *env = getenv(name);
     return env ? env : NULL;
 }
 
 int var_exists(const char *name) {
-    return find(vars, var_count_total, name) != NULL || getenv(name) != NULL;
+    return find(vars, var_count_total, name) != NULL || dynamic_value(name) != NULL ||
+           getenv(name) != NULL;
 }
 
 void var_set(const char *name, const char *value) {

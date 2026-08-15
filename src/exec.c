@@ -769,6 +769,10 @@ static int call_function(Node *body, const StrList *args) {
     sl_init(&shell.params);
     for (size_t i = 0; i < args->len; i++) sl_push_copy(&shell.params, args->items[i]);
 
+    const char *previous = var_get("FUNCNAME");
+    char *restore = previous ? xstrdup(previous) : NULL;
+    if (args->len > 0) var_set("FUNCNAME", args->items[0]);
+
     scope_push();
     shell.depth++;
     int status = exec_node(body);
@@ -784,6 +788,13 @@ static int call_function(Node *body, const StrList *args) {
     if (shell.returning) {
         shell.returning = 0;
         status = shell.last_status;
+    }
+
+    if (restore) {
+        var_set("FUNCNAME", restore);
+        free(restore);
+    } else {
+        var_unset("FUNCNAME");
     }
 
     sl_free(&shell.params);
@@ -1244,6 +1255,16 @@ static int exec_pipeline(Node *node, int background) {
     }
 
     for (int i = 0; i < spool_count; i++) temp_release(spools[i]);
+
+    StrList reported;
+    sl_init(&reported);
+    for (int i = 0; i < count; i++) {
+        char text[16];
+        snprintf(text, sizeof(text), "%d", stage_status[i]);
+        sl_push_copy(&reported, text);
+    }
+    var_set_array("PIPESTATUS", &reported, VAR_INDEXED);
+    sl_free(&reported);
 
     if (!background && shell.pipefail) {
         status = 0;
@@ -1760,17 +1781,19 @@ static int exec_switch(Node *node) {
 
     case N_CASE: {
         char *subject = expand_single(node->name);
+        int running_on = 0;
         for (Node *item = node->right; item; item = item->extra) {
-            int matched = 0;
+            int matched = running_on;
             for (size_t i = 0; i < item->words.len && !matched; i++) {
                 char *pattern = expand_single(item->words.items[i]);
                 matched = pattern_match(pattern, subject);
                 free(pattern);
             }
-            if (matched) {
-                status = exec_node(item->right);
-                break;
-            }
+            if (!matched) continue;
+
+            status = exec_node(item->right);
+            if (!item->background) break;
+            running_on = 1;
         }
         free(subject);
         break;

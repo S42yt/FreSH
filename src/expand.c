@@ -464,6 +464,26 @@ static char *brace_expand(const char *body) {
     return result;
 }
 
+static char *read_file_text(const char *path) {
+    char native[PATH_BUF];
+    snprintf(native, sizeof(native), "%s", path);
+    path_to_backslashes(native);
+
+    FILE *f = fopen(native, "rb");
+    if (!f) return xstrdup("");
+
+    StrBuf out;
+    sb_init(&out);
+    char buffer[4096];
+    size_t read;
+    while ((read = fread(buffer, 1, sizeof(buffer), f)) > 0) sb_putn(&out, buffer, read);
+    fclose(f);
+
+    while (out.len > 0 && (out.data[out.len - 1] == '\n' || out.data[out.len - 1] == '\r'))
+        out.data[--out.len] = '\0';
+    return sb_take(&out);
+}
+
 static int substitution_status = 0;
 
 void expand_forget_substitution_status(void) {
@@ -520,7 +540,19 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         StrBuf inner;
         sb_init(&inner);
         *p = scan_balanced(*p, '(', ')', &inner);
-        char *result = capture_trimmed(inner.data);
+
+        char *result;
+        const char *body = inner.data;
+        while (*body == ' ' || *body == '\t') body++;
+        if (*body == '<') {
+            body++;
+            while (*body == ' ' || *body == '\t') body++;
+            char *path = expand_single(body);
+            result = read_file_text(path);
+            free(path);
+        } else {
+            result = capture_trimmed(inner.data);
+        }
         sb_free(&inner);
         if (in_quotes) field_add(ex, result, strlen(result));
         else field_add_split(ex, result);

@@ -162,6 +162,7 @@ void shell_init(int interactive) {
     memset(&shell, 0, sizeof(shell));
     shell.running = 1;
     shell.interactive = interactive;
+    shell.started = GetTickCount();
     sl_init(&shell.params);
 
     char exe[PATH_BUF];

@@ -941,58 +941,67 @@ static int core_find(int argc, char **argv) {
     return 0;
 }
 
-static void printf_escapes(const char *s) {
+static char escape_char(char name) {
+    switch (name) {
+    case 'n': return '\n';
+    case 't': return '\t';
+    case 'r': return '\r';
+    case 'a': return 7;
+    case 'b': return 8;
+    case 'f': return 12;
+    case 'v': return 11;
+    case 'e': return 27;
+    default: return name;
+    }
+}
+
+static void printf_escapes(const char *s, StrBuf *out) {
     for (const char *p = s; *p; p++) {
         if (*p != '\\' || !p[1]) {
-            putchar(*p);
+            sb_putc(out, *p);
             continue;
         }
         p++;
-        switch (*p) {
-        case 'n': putchar('\n'); break;
-        case 't': putchar('\t'); break;
-        case 'r': putchar('\r'); break;
-        case 'a': putchar(7); break;
-        case 'b': putchar(8); break;
-        case 'f': putchar(12); break;
-        case 'v': putchar(11); break;
-        case 'e': putchar(27); break;
-        case '\\': putchar('\\'); break;
-        default: putchar('\\'); putchar(*p); break;
+        if (*p == '\\') sb_putc(out, '\\');
+        else if (strchr("ntrabfve", *p)) sb_putc(out, escape_char(*p));
+        else {
+            sb_putc(out, '\\');
+            sb_putc(out, *p);
         }
     }
 }
 
 static int core_printf(int argc, char **argv) {
     if (argc < 2) return 2;
-    const char *format = argv[1];
-    int next = 2;
+
+    const char *destination = NULL;
+    int start = 1;
+    if (argc > 3 && strcmp(argv[1], "-v") == 0) {
+        destination = argv[2];
+        start = 3;
+    }
+
+    const char *format = argv[start];
+    int next = start + 1;
     int has_conversion = 0;
+
+    StrBuf rendered;
+    sb_init(&rendered);
 
     do {
         for (const char *p = format; *p; p++) {
             if (*p == '\\' && p[1]) {
                 p++;
-                switch (*p) {
-                case 'n': putchar('\n'); break;
-                case 't': putchar('\t'); break;
-                case 'r': putchar('\r'); break;
-                case 'a': putchar(7); break;
-                case 'b': putchar(8); break;
-                case 'f': putchar(12); break;
-                case 'v': putchar(11); break;
-                case 'e': putchar(27); break;
-                case '\\': putchar('\\'); break;
-                default: putchar(*p); break;
-                }
+                if (*p == '\\') sb_putc(&rendered, '\\');
+                else sb_putc(&rendered, escape_char(*p));
                 continue;
             }
             if (*p != '%') {
-                putchar(*p);
+                sb_putc(&rendered, *p);
                 continue;
             }
             if (p[1] == '%') {
-                putchar('%');
+                sb_putc(&rendered, '%');
                 p++;
                 continue;
             }
@@ -1018,7 +1027,7 @@ static int core_printf(int argc, char **argv) {
                 spec[s++] = 'l';
                 spec[s++] = 'd';
                 spec[s] = '\0';
-                printf(spec, strtol(value, NULL, 0));
+                sb_printf(&rendered, spec, strtol(value, NULL, 0));
                 break;
             case 'o':
             case 'u':
@@ -1027,7 +1036,7 @@ static int core_printf(int argc, char **argv) {
                 spec[s++] = 'l';
                 spec[s++] = conv;
                 spec[s] = '\0';
-                printf(spec, strtoul(value, NULL, 0));
+                sb_printf(&rendered, spec, strtoul(value, NULL, 0));
                 break;
             case 'f':
             case 'e':
@@ -1036,25 +1045,29 @@ static int core_printf(int argc, char **argv) {
             case 'G':
                 spec[s++] = conv;
                 spec[s] = '\0';
-                printf(spec, atof(value));
+                sb_printf(&rendered, spec, atof(value));
                 break;
             case 'c':
                 spec[s++] = 'c';
                 spec[s] = '\0';
-                printf(spec, value[0]);
+                sb_printf(&rendered, spec, value[0]);
                 break;
             case 'b':
-                printf_escapes(value);
+                printf_escapes(value, &rendered);
                 break;
             case 's':
             default:
                 spec[s++] = 's';
                 spec[s] = '\0';
-                printf(spec, value);
+                sb_printf(&rendered, spec, value);
                 break;
             }
         }
     } while (next < argc && has_conversion);
+
+    if (destination) var_set(destination, rendered.data);
+    else fwrite(rendered.data, 1, rendered.len, stdout);
+    sb_free(&rendered);
     return 0;
 }
 

@@ -865,6 +865,192 @@ static int builtin_read(int argc, char **argv) {
     return 0;
 }
 
+static int builtin_getopts(int argc, char **argv) {
+    if (argc < 3) {
+        shell_error("getopts: usage: getopts optstring name [argument ...]");
+        return 2;
+    }
+
+    const char *spec = argv[1];
+    const char *name = argv[2];
+    int silent = spec[0] == ':';
+    if (silent) spec++;
+
+    StrList args;
+    sl_init(&args);
+    if (argc > 3) {
+        for (int i = 3; i < argc; i++) sl_push_copy(&args, argv[i]);
+    } else {
+        for (size_t i = 1; i < shell.params.len; i++) sl_push_copy(&args, shell.params.items[i]);
+    }
+
+    const char *stored = var_get("OPTIND");
+    long position = stored ? atol(stored) : 1;
+    if (position < 1) position = 1;
+
+    const char *inside = var_get("FRESH_OPTCHAR");
+    long letter = inside ? atol(inside) : 1;
+    if (letter < 1) letter = 1;
+
+    int status = 1;
+    var_set("OPTARG", "");
+
+    while ((size_t)position <= args.len) {
+        const char *word = args.items[position - 1];
+        if (word[0] != '-' || !word[1]) break;
+        if (strcmp(word, "--") == 0) {
+            position++;
+            break;
+        }
+
+        char option = word[letter];
+        if (!option) {
+            position++;
+            letter = 1;
+            continue;
+        }
+        letter++;
+
+        const char *found = strchr(spec, option);
+        char text[2] = {option, '\0'};
+
+        if (!found || option == ':') {
+            var_set(name, "?");
+            if (silent) var_set("OPTARG", text);
+            else shell_error("getopts: illegal option -- %c", option);
+            status = 0;
+            break;
+        }
+
+        if (found[1] == ':') {
+            const char *value = NULL;
+            if (word[letter]) {
+                value = word + letter;
+            } else if ((size_t)position < args.len) {
+                position++;
+                value = args.items[position - 1];
+            }
+            position++;
+            letter = 1;
+
+            if (!value) {
+                var_set(name, silent ? ":" : "?");
+                if (silent) var_set("OPTARG", text);
+                else shell_error("getopts: option requires an argument -- %c", option);
+                status = 0;
+                break;
+            }
+            var_set("OPTARG", value);
+        } else if (!word[letter]) {
+            position++;
+            letter = 1;
+        }
+
+        var_set(name, text);
+        status = 0;
+        break;
+    }
+
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%ld", position);
+    var_set("OPTIND", buffer);
+    snprintf(buffer, sizeof(buffer), "%ld", letter);
+    var_set("FRESH_OPTCHAR", buffer);
+
+    sl_free(&args);
+    return status;
+}
+
+static StrList directory_stack;
+
+static int builtin_pushd(int argc, char **argv) {
+    char cwd[PATH_BUF];
+    if (!GetCurrentDirectoryA(sizeof(cwd), cwd)) return 1;
+    path_to_slashes(cwd);
+
+    const char *target = argc > 1 ? argv[1] : NULL;
+    if (!target) {
+        if (directory_stack.len == 0) {
+            shell_error("pushd: no other directory");
+            return 1;
+        }
+        char *previous = directory_stack.items[directory_stack.len - 1];
+        char *swap = xstrdup(previous);
+        free(previous);
+        directory_stack.items[directory_stack.len - 1] = xstrdup(cwd);
+        int failed = !SetCurrentDirectoryA(swap);
+        if (failed) shell_error("pushd: %s: no such directory", swap);
+        free(swap);
+        return failed;
+    }
+
+    char native[PATH_BUF];
+    snprintf(native, sizeof(native), "%s", target);
+    path_to_backslashes(native);
+    if (!SetCurrentDirectoryA(native)) {
+        shell_error("pushd: %s: no such directory", target);
+        return 1;
+    }
+    sl_push_copy(&directory_stack, cwd);
+    return 0;
+}
+
+static int builtin_popd(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    if (directory_stack.len == 0) {
+        shell_error("popd: the stack is empty");
+        return 1;
+    }
+    char *target = directory_stack.items[--directory_stack.len];
+    char native[PATH_BUF];
+    snprintf(native, sizeof(native), "%s", target);
+    path_to_backslashes(native);
+
+    int failed = !SetCurrentDirectoryA(native);
+    if (failed) shell_error("popd: %s: no such directory", target);
+    free(target);
+    return failed;
+}
+
+static int builtin_dirs(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "-c") == 0) {
+        sl_clear(&directory_stack);
+        return 0;
+    }
+
+    char cwd[PATH_BUF];
+    if (GetCurrentDirectoryA(sizeof(cwd), cwd)) {
+        path_to_slashes(cwd);
+        printf("%s", cwd);
+    }
+    for (size_t i = directory_stack.len; i > 0; i--) printf(" %s", directory_stack.items[i - 1]);
+    printf("\n");
+    return 0;
+}
+
+static int builtin_mapfile(int argc, char **argv) {
+    int strip = 0;
+    int index = 1;
+    for (; index < argc && argv[index][0] == '-'; index++) {
+        if (strchr(argv[index], 't')) strip = 1;
+    }
+    const char *name = index < argc ? argv[index] : "MAPFILE";
+
+    StrList rows;
+    sl_init(&rows);
+    char line[LINE_MAX_LEN];
+    while (fgets(line, sizeof(line), stdin)) {
+        if (strip) line[strcspn(line, "\r\n")] = '\0';
+        sl_push_copy(&rows, line);
+    }
+
+    var_set_array(name, &rows, VAR_INDEXED);
+    sl_free(&rows);
+    return 0;
+}
+
 static int builtin_return(int argc, char **argv) {
     shell.returning = 1;
     return argc > 1 ? atoi(argv[1]) : shell.last_status;
@@ -1001,7 +1187,10 @@ static const Builtin BUILTINS[] = {
     {"continue", builtin_continue}, {"declare", builtin_declare},
     {"describe", builtin_describe},
     {"local", builtin_local},       {"typeset", builtin_declare},
-    {"let", builtin_let},
+    {"let", builtin_let},           {"getopts", builtin_getopts},
+    {"pushd", builtin_pushd},       {"popd", builtin_popd},
+    {"dirs", builtin_dirs},         {"mapfile", builtin_mapfile},
+    {"readarray", builtin_mapfile},
     {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},
     {"exit", builtin_exit},         {"have", builtin_have},

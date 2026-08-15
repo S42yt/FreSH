@@ -24,7 +24,8 @@ typedef enum {
     T_REDIR,
     T_LPAREN,
     T_RPAREN,
-    T_ARITH
+    T_ARITH,
+    T_SEMI_AMP
 } TokenType;
 
 typedef struct {
@@ -298,6 +299,12 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             Token t = {T_AMP, NULL, 0, 0, R_IN};
             token_push(out, t);
             p++;
+            continue;
+        }
+        if (*p == ';' && p[1] == '&') {
+            Token t = {T_SEMI_AMP, NULL, 0, 0, R_IN};
+            token_push(out, t);
+            p += 2;
             continue;
         }
         if (*p == ';' && p[1] == ';') {
@@ -760,7 +767,12 @@ static Node *parse_case(Parser *ps) {
 
         const char *stop[] = {"esac", NULL};
         item->right = parse_list(ps, stop);
-        if (peek(ps)->type == T_DSEMI) advance(ps);
+        if (peek(ps)->type == T_SEMI_AMP) {
+            item->background = 1;
+            advance(ps);
+        } else if (peek(ps)->type == T_DSEMI) {
+            advance(ps);
+        }
 
         *slot = item;
         slot = &item->extra;

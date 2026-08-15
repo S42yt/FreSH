@@ -23,6 +23,8 @@ typedef struct {
     int xtrace;
     int nounset;
     int pipefail;
+    int line;
+    unsigned long started;
     int condition_depth;
     StrList params;
     char *script_name;
