@@ -8,16 +8,8 @@ scoop install fresh            # the installer, registers FreSH as a shell
 scoop install fresh-portable   # the single executable, nothing registered
 ```
 
-Both manifests are stamped with the version and the SHA-256 of the release by
-`tools/manifests.sh`, which the release workflow runs after it has built and
-hashed the binaries. `checkver` and `autoupdate` point at the release tags and
-at `SHA256SUMS.txt`, so a future release is picked up without editing anything
-by hand.
+`checkver` and `autoupdate` point at the release tags and at `SHA256SUMS.txt`,
+so a new release is picked up without editing anything by hand.
 
-Installing through Scoop also sidesteps the SmartScreen prompt that an
-unsigned download shows, because Scoop verifies the hash itself. See
+Scoop verifies the hash itself, so there is no SmartScreen prompt. See
 [verifying a download](../docs/verifying.md).
-
-Unlike winget, this works straight from this repository: a Scoop bucket is a
-git repository, while winget searches an index Microsoft hosts. The state of
-the winget packages is in [manifests](../manifests/README.md).
