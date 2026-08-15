@@ -1040,7 +1040,7 @@ static int builtin_mapfile(int argc, char **argv) {
 
     StrList rows;
     sl_init(&rows);
-    char line[LINE_MAX_LEN];
+    char line[4096];
     while (fgets(line, sizeof(line), stdin)) {
         if (strip) line[strcspn(line, "\r\n")] = '\0';
         sl_push_copy(&rows, line);

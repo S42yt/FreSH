@@ -6,6 +6,7 @@
 
 #include "vars.h"
 
+#include "shell.h"
 #include "table.h"
 
 #include <stdio.h>
