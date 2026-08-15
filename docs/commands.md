@@ -217,26 +217,26 @@ awk 'BEGIN { print "start" } { print NR ": " NF } END { print "rows " NR }' file
 awk '{ printf "%-10s %5d\n", $1, $2 }' file
 ```
 
-Supported: `BEGIN` and `END`, regular expression and expression patterns,
-fields `$0` to `$NF`, the variables `NR`, `NF`, `FS`, `OFS`, `FILENAME`,
-arithmetic, string and numeric comparison, concatenation, `~` and `!~`,
-assignment including `+=`, `++`, `if`/`else`, `while`, `for`, `next`, `exit`,
-`print` and `printf`, and the functions `length`, `substr`, `index`,
-`toupper`, `tolower` and `int`. `-F` sets the separator, `-v` presets a
-variable.
-
-Arrays, `split`, `in`, `delete`, `for (key in array)`, user defined functions
-with `return`, and `getline` all work:
+Arrays, `split`, `sub`, `gsub`, `match`, `sprintf`, the math functions,
+`system`, `getline`, ranges, `do while`, `break`, `continue`, user functions
+and output redirection all work:
 
 ```sh
 awk '{ total[$1] += $2 } END { for (k in total) print k, total[k] }' data.txt
-awk 'BEGIN { n = split("a:b:c", parts, ":"); print n, parts[2] }'
+awk '{ gsub(/[0-9]+/, "N"); print }' log.txt
+awk 'BEGIN { if (match("hello world", /wor/)) print RSTART, RLENGTH }'
 awk 'function double(x) { return x * 2 } { print double($2) }' data.txt
 awk 'BEGIN { while ((getline line < "notes.txt") > 0) n++; print n }'
+awk '{ print $1 > "names.txt" }' people.txt
+awk -f report.awk data.txt
 ```
 
-Not supported: `cmd | getline`, `printf` into a file, `ENVIRON`, and multiple
-`-f` program files.
+There is no line length limit and no field count limit, a function that does
+not exist is an error rather than an empty string, and a program with a syntax
+error does not run at all.
+
+The whole subset, and everything it does not do, is written down in
+[awk](awk.md). Every feature listed there as working has a test.
 
 ## Not bundled
 

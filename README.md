@@ -5,18 +5,67 @@
 <h1 align="center">FreSH</h1>
 
 <p align="center">
-  A fast, zsh flavoured shell for Windows, written in C with no runtime
-  dependencies.
+  <b>Runs bash scripts on Windows, unchanged.</b><br>
+  No WSL, no MSYS2, no Git Bash. One executable, written in C, starts in 42 ms.
 </p>
 
-No Git Bash, no WSL, no MSYS2. FreSH runs shell scripts itself and brings its
-own unix commands.
+What "unchanged" means is written down honestly in
+[bash compatibility](docs/bash.md): what works, what does not, and why. Every
+line under **Works** has a test, and on every push CI runs the same scripts
+through real bash on Linux and through FreSH on Windows and fails the build on
+any difference.
 
 ![FreSH](./assets/FreSH_tui.png)
 
-**Docs:** [scripting](docs/scripting.md) with `.frsh` files,
-[configuration](docs/configuration.md), [themes](docs/themes.md),
-[plugins](docs/plugins.md), [command reference](docs/commands.md).
+```sh
+scoop bucket add fresh https://github.com/S42yt/FreSH
+scoop install fresh              # or: scoop install fresh-portable
+
+winget install S42yt.FreSH       # or: winget install S42yt.FreSH.Portable
+```
+
+Or download `FreSH.exe` from the [releases](https://github.com/S42yt/FreSH/releases)
+and put it on your `PATH`. Nothing else is needed, and
+[verifying the download](docs/verifying.md) takes one command.
+
+**Docs:** [bash compatibility](docs/bash.md), [awk](docs/awk.md),
+[benchmarks](docs/benchmarks.md), [scripting](docs/scripting.md),
+[configuration](docs/configuration.md), [shortcuts](docs/shortcuts.md),
+[themes](docs/themes.md), [plugins](docs/plugins.md),
+[command reference](docs/commands.md), [how it fails](docs/errors.md).
+
+## Why it is quick
+
+| Shell | start, run nothing, exit |
+| --- | --- |
+| `cmd /c exit` | 16 ms |
+| **`FreSH -c exit`** | **42 ms** |
+| `bash -c exit` (Git Bash) | 241 ms |
+| `powershell -c exit` | 271 ms |
+| `pwsh -c exit` | 570 ms |
+
+Best of twenty on an AMD Ryzen 3 7330U, with Defender on, measured by
+`tools/bench.frsh` which measures every shell the same way. The full table,
+including loops, expansion and pipelines, is in
+[benchmarks](docs/benchmarks.md).
+
+## Two interpreters, written from scratch
+
+FreSH does not shell out for the parts a unix script leans on:
+
+- **`src/awk.c`** is a real awk. A lexer, a recursive descent parser, an AST and
+  a tree walking interpreter, with `sub`, `gsub`, `match`, `sprintf`, ranges,
+  user functions, `getline`, output redirection, and the special variables. The
+  [subset is documented](docs/awk.md) and everything documented has a test.
+- **`src/regex.c`** is a backtracking regular expression engine, shared by
+  `grep`, `sed`, `awk` and `[[ str =~ re ]]`, with basic and extended syntax.
+
+Both are fuzzed with libFuzzer under the address and undefined sanitizers, along
+with the shell's own parser. See [fuzz](fuzz/README.md).
+
+The test suite is written **in FreSH**, using arrays, `${var##*/}`, `source` and
+globbing, and run by FreSH itself, so it is a conformance suite and a dogfood
+test at once: [tests](tests/).
 
 ## What you get
 
@@ -73,7 +122,9 @@ routing off.
 
 ## Themes
 
-Themes are plain FreSH scripts in `~/.fresh/themes`. Six ship with the shell:
+Six themes ship with the shell, they are plain FreSH scripts in
+`~/.fresh/themes`, and writing one is a single file. The details are in
+[themes](docs/themes.md); the short version:
 
 ```
 fresh       two lines, lambda, git branch      (default)
@@ -89,32 +140,14 @@ theme              # list them, the active one is marked
 theme minimal      # switch right now
 ```
 
-Set `FRESH_THEME=minimal` in `~/.freshrc` to keep it, and `theme reset` to
-rewrite the bundled files after an update. Writing your own is one file:
+Set `FRESH_THEME=minimal` in `~/.freshrc` to keep it. Your own theme is one
+file, with zsh style escapes such as `%~`, `%g` and `%F{magenta}`:
 
 ```sh
 # ~/.fresh/themes/mine.theme
 FRESH_PROMPT='%F{magenta}%~%f%g\n%F{white}%#%f '
 FRESH_RPROMPT='%t'
 ```
-
-Prompt escapes:
-
-| Escape | Meaning |
-| --- | --- |
-| `%n` `%m` | user name, host name |
-| `%~` `%d` | short path, full path |
-| `%g` `%b` | git segment with dirty marker, branch name only |
-| `%t` `%D` | time, date |
-| `%?` `%e` | exit code, exit code only when the last command failed |
-| `%#` | prompt character, `FRESH_PROMPT_CHAR` |
-| `%F{green}` `%f` | colour on, colour off |
-| `%K{blue}` `%k` | background on, background off |
-| `%S` `%s` | bold on, bold off |
-| `\n` | new line, the prompt becomes two lines |
-
-Colours are named (`red`, `green`, `brightcyan`, `grey`, ...) or a number from
-0 to 255.
 
 ## Plugins
 
@@ -209,6 +242,27 @@ the [command reference](docs/commands.md).
 
 ## Installation
 
+### A package manager
+
+```sh
+scoop bucket add fresh https://github.com/S42yt/FreSH
+scoop install fresh              # the full install
+scoop install fresh-portable     # the single executable
+
+winget install S42yt.FreSH
+winget install S42yt.FreSH.Portable
+```
+
+Both verify the download's hash, and neither shows a SmartScreen prompt.
+
+### Portable
+
+Download `FreSH.exe`, put it anywhere on your `PATH`, run `FreSH`. No installer,
+no registry, no administrator. Settings still live in `~/.freshrc`, and nothing
+about the shell depends on having been installed.
+
+### The installer
+
 ![Setup](./assets/FreSH_wizard.png)
 
 1. Download `FreSH-Setup.exe` from the releases page
@@ -239,6 +293,20 @@ FreSH-Setup.exe /silent /user /default
 
 Uninstall from *Settings > Apps > FreSH*, or run `Uninstall-FreSH.exe` from the
 install folder.
+
+### Checking what you downloaded
+
+FreSH is not code signed yet, so Windows shows a SmartScreen prompt the first
+time you run a downloaded binary. Rather than tell you to click through it,
+every release ships `SHA256SUMS.txt` and a signed build provenance statement:
+
+```
+gh attestation verify FreSH.exe --repo S42yt/FreSH
+```
+
+That proves the file came out of a GitHub runner, from this repository, from
+the commit the release names. More in [verifying a download](docs/verifying.md)
+and the [signing policy](docs/code-signing.md).
 
 ## Updating
 
@@ -302,6 +370,19 @@ Format before committing:
 ```sh
 astyle --style=google --indent=spaces=4 --suffix=none src/*.c src/*.h
 ```
+
+## Tests
+
+```sh
+FreSH tests/run.frsh                       # the suite, written in FreSH
+tests/diff/record.sh bash tests/diff/expected
+tests/diff/record.sh "$PWD/build/FreSH.exe" tests/diff/actual
+tests/diff/compare.sh tests/diff/expected tests/diff/actual
+fuzz/build.sh && fuzz/build/fuzz_parser -runs=0 fuzz/corpus/parser
+```
+
+CI runs all three on every push: the suite, the bash differential, and the fuzz
+corpus under the address and undefined sanitizers.
 
 ## License
 

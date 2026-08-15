@@ -7,6 +7,12 @@ file is found on `PATH` without typing it.
 This page is the honest inventory. Everything under **Works** has a test in
 `tests/`, so it keeps working.
 
+It is not only checked against what the author believed bash does. Every script
+in [tests/diff](../tests/diff/README.md) is run through real bash on Linux and
+through FreSH on Windows on every push, and any difference in output or exit
+status fails the build. The differences listed at the bottom of this page are
+the ones that survive that check on purpose.
+
 ## Works
 
 ### Expansion
@@ -73,21 +79,50 @@ including `=~` with `BASH_REMATCH`, `-v`, `&&` and `||`.
 History expansion `!!`, `!$`, `!42` and `!prefix`, which print what they
 became before running.
 
+### Descriptors
+
+```sh
+exec 3> log            exec 3>&-            printf 'x\n' >&3
+exec > file            cmd 4< input         cmd 2>&1 >file
+```
+
+Descriptors 3 to 9 work for the shell and its builtins, `exec` with no command
+keeps its redirections, and `N>&-` closes one.
+
+### Words and fields
+
+Splitting follows the bash rules exactly: `IFS` whitespace collapses, each
+non whitespace `IFS` character delimits one field so `a::b` keeps the empty
+one, a quoted `"$*"` and `"${a[*]}"` join with the first character of `IFS`,
+and an unquoted `${a[@]}` splits its elements again.
+
 ## Does not work
 
-- `coproc`, and namerefs (`local -n`).
+- `coproc`.
 - `${!prefix@}` in its array form, and `${v@a}` attribute listing.
-- `bind`, `caps`, `compgen` and `complete`: FreSH has its own completion.
+- `compgen` and `complete`: FreSH has its own completion, and `bind` binds keys
+  in the FreSH way, described in [shortcuts](shortcuts.md).
 - Job control beyond `jobs`, `fg`, `bg`, `wait` and `stop`. Backgrounding a
   bundled command runs it in the foreground, because it runs inside the shell.
 - Signals other than the eight above, which Windows does not deliver.
+- A descriptor above 2 is not passed to an external program. `printf x >&3`
+  works, `some-program.exe >&3` does not, because Windows only inherits the
+  three standard handles.
 
 ## Where FreSH differs on purpose
 
 - Paths use forward slashes, and `\` stays an escape character.
-- `printf` and `echo` always use the built in version, as they do in bash,
-  even when another one is on `PATH`.
-- A quoted `${array[*]}` joins with a space; `IFS` is used for splitting but
-  not for that join.
+- `printf`, `echo`, `find`, `sort` and `awk` always use the built in version,
+  so a script behaves the same on every machine. Call `gawk` or a full path for
+  a different one.
+- `${#v}`, `${v:offset:length}` and `substr` count bytes, not characters, so a
+  string with an umlaut in it measures longer than it looks. Everything else
+  about non ASCII text, including paths, works.
+- Filename matching ignores case, because Windows filenames do. Matching in
+  `case` and `[[ ]]` is case sensitive unless `nocasematch` is set, as in bash.
+- Output to a console keeps Windows line endings; output to a file or a pipe is
+  written as bytes, so a redirected FreSH produces the same file bash does.
 - Line numbers in errors count the lines the parser saw, so a here document
   body shifts the ones after it.
+- An error is louder than in bash in a few places, all listed in
+  [how it fails](errors.md), because a wrong answer is worse than a stop.
