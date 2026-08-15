@@ -52,6 +52,7 @@ static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out)
 static int exec_pipeline(Node *node, int background);
 static void job_add(HANDLE process, const char *command);
 static void resolutions_release(void);
+static int skip_functions = 0;
 
 static StrList temp_free_list;
 static StrList temp_created;
@@ -2044,8 +2045,6 @@ char *apply_aliases(const char *line) {
     }
     return sb_take(&out);
 }
-
-static int skip_functions = 0;
 
 int exec_bypassing_functions(const char *text) {
     skip_functions++;
