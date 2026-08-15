@@ -1,0 +1,108 @@
+suite awk
+
+work=.fresh-test-awk
+rm -r "$work" 2> /dev/null
+mkdir -p "$work"
+
+printf 'alpha 1\nbeta 2\ngamma 3\n' > "$work/data.txt"
+
+check awk_fields "$(awk '{ print $2, $1 }' "$work/data.txt" | head -n 1)" "1 alpha"
+check awk_nr "$(awk 'END { print NR }' "$work/data.txt")" 3
+check awk_nf "$(awk 'NR == 1 { print NF }' "$work/data.txt")" 2
+check awk_pattern "$(awk '$2 > 2 { print $1 }' "$work/data.txt")" gamma
+check awk_begin_end "$(awk 'BEGIN { print "start" } END { print "stop" }' < /dev/null)" "start
+stop"
+
+check awk_undefined_function "$(awk 'BEGIN { nosuchfn() }' 2>&1 | grep -c 'undefined function')" 1
+check awk_undefined_status "$(awk 'BEGIN { nosuchfn() }' 2> /dev/null; echo $?)" 2
+check awk_typo_is_loud "$(awk 'BEGIN { print lenght("abc") }' 2>&1 | grep -c 'lenght')" 1
+
+big=x
+grow=0
+while [ "$grow" -lt 17 ]; do
+  big="$big$big"
+  grow=$((grow + 1))
+done
+printf '%s\n' "$big" > "$work/long.txt"
+check awk_long_record_count "$(awk 'END { print NR }' "$work/long.txt")" 1
+check awk_long_record_length "$(awk '{ print length($0) }' "$work/long.txt")" 131072
+
+check awk_division "$(awk 'BEGIN { print 10 / 4 }')" 2.5
+check awk_field_division "$(echo 9 3 | awk '{ print $1 / $2 }')" 3
+check awk_modulo "$(awk 'BEGIN { print 7 % 3 }')" 1
+check awk_power "$(awk 'BEGIN { print 2 ^ 10 }')" 1024
+check awk_concat_binds_loose "$(awk 'BEGIN { print 1 2 * 3 }')" 16
+check awk_ternary "$(awk 'BEGIN { print 1 < 2 ? "yes" : "no" }')" yes
+check awk_unary_minus "$(awk 'BEGIN { print -3 + 1 }')" -2
+
+check awk_gsub_count "$(awk 'BEGIN { s = "banana"; print gsub(/a/, "o", s) }')" 3
+check awk_gsub_result "$(awk 'BEGIN { s = "banana"; gsub(/a/, "o", s); print s }')" bonono
+check awk_gsub_ampersand "$(awk 'BEGIN { s = "cat"; gsub(/a/, "[&]", s); print s }')" "c[a]t"
+check awk_gsub_literal_ampersand "$(awk 'BEGIN { s = "cat"; gsub(/a/, "\\&", s); print s }')" "c&t"
+check awk_gsub_record "$(echo one two | awk '{ gsub(/o/, "0"); print }')" "0ne tw0"
+check awk_gsub_field "$(echo aa bb | awk '{ gsub(/b/, "z", $2); print }')" "aa zz"
+check awk_gsub_empty_match "$(awk 'BEGIN { s = "ab"; print gsub(/x*/, "-", s) s }')" "3-a-b-"
+check awk_sub_first "$(awk 'BEGIN { s = "aaa"; print sub(/a/, "b", s) s }')" 1baa
+
+check awk_match_position "$(awk 'BEGIN { print match("hello world", /wor/) }')" 7
+check awk_match_rstart "$(awk 'BEGIN { match("hello world", /wor/); print RSTART }')" 7
+check awk_match_rlength "$(awk 'BEGIN { match("hello world", /wor/); print RLENGTH }')" 3
+check awk_match_missing "$(awk 'BEGIN { print match("abc", /zzz/), RSTART, RLENGTH }')" "0 0 -1"
+
+check awk_sprintf "$(awk 'BEGIN { print sprintf("%d %s %5.2f", 7, "x", 3.14159) }')" "7 x  3.14"
+check awk_printf_padding "$(awk 'BEGIN { printf "[%-4s]\n", "ab" }')" "[ab  ]"
+check awk_printf_no_newline "$(awk 'BEGIN { printf "a"; printf "b\n" }')" ab
+
+check awk_break "$(awk 'BEGIN { for (i = 1; i < 10; i++) { if (i == 4) break; s = s i } print s }')" 123
+check awk_continue "$(awk 'BEGIN { for (i = 1; i < 6; i++) { if (i == 3) continue; s = s i } print s }')" 1245
+check awk_while_break "$(awk 'BEGIN { i = 0; while (1) { i++; if (i > 3) break } print i }')" 4
+check awk_do_while "$(awk 'BEGIN { i = 0; do { i++ } while (i < 5); print i }')" 5
+check awk_break_in_for_in "$(awk 'BEGIN { a[1]; a[2]; a[3]; for (k in a) { n++; break } print n }')" 1
+
+check awk_rs "$(printf 'a;b;c' | awk 'BEGIN { RS = ";" } { print NR, $0 }' | tail -n 1)" "3 c"
+check awk_ors "$(printf 'a\nb\n' | awk 'BEGIN { ORS = "-" } { print }')" "a-b-"
+check awk_fnr "$(awk '{ print FILENAME == "" ? "?" : FNR }' "$work/data.txt" "$work/data.txt" | tail -n 1)" 3
+check awk_nr_across_files "$(awk 'END { print NR }' "$work/data.txt" "$work/data.txt")" 6
+check awk_subsep "$(awk 'BEGIN { a[1, 2] = "cell"; for (k in a) { split(k, p, SUBSEP); print p[1] p[2] } }')" 12
+check awk_subsep_in "$(awk 'BEGIN { a[1, 2] = 1; print ((1, 2) in a) }')" 1
+check awk_convfmt "$(awk 'BEGIN { CONVFMT = "%.2f"; print 1 / 3 "" }')" 0.33
+check awk_ofmt "$(awk 'BEGIN { OFMT = "%.3f"; print 1 / 3 }')" 0.333
+
+check awk_sqrt "$(awk 'BEGIN { print sqrt(16) }')" 4
+check awk_exp_log "$(awk 'BEGIN { print int(log(exp(3)) + 0.5) }')" 3
+check awk_atan2 "$(awk 'BEGIN { printf "%.4f\n", atan2(0, -1) }')" 3.1416
+check awk_int "$(awk 'BEGIN { print int(-3.7) }')" -3
+check awk_rand_range "$(awk 'BEGIN { srand(1); r = rand(); print (r >= 0 && r < 1) }')" 1
+check awk_srand_repeats "$(awk 'BEGIN { srand(7); a = rand(); srand(7); b = rand(); print a == b }')" 1
+
+check awk_system_status "$(awk 'BEGIN { print system("exit 3") }')" 3
+check awk_system_output "$(awk 'BEGIN { system("echo from-system") }')" from-system
+
+awk 'BEGIN { print "written" > "'"$work"'/out.txt" }'
+check awk_print_redirect "$(cat "$work/out.txt")" written
+awk 'BEGIN { print "a" > "'"$work"'/two.txt"; print "b" > "'"$work"'/two.txt" }'
+check awk_print_redirect_keeps_open "$(cat "$work/two.txt" | wc -l | tr -d ' ')" 2
+check awk_close_unknown "$(awk 'BEGIN { print close("nothing") }')" -1
+
+printf '{ print $1 }\n' > "$work/prog.awk"
+check awk_program_file "$(awk -f "$work/prog.awk" "$work/data.txt" | head -n 1)" alpha
+
+check awk_field_separator "$(echo a:b:c | awk -F: '{ print $2 }')" b
+check awk_regex_separator "$(echo a1b22c | awk -F'[0-9]+' '{ print $3 }')" c
+check awk_split_regex "$(awk 'BEGIN { n = split("a1b2c", parts, /[0-9]/); print n, parts[3] }')" "3 c"
+
+check awk_assign_record "$(echo one two | awk '{ $0 = "x y z"; print NF }')" 3
+check awk_assign_field_rebuilds "$(echo a b c | awk '{ $2 = "B"; print }')" "a B c"
+check awk_assign_new_field "$(echo a | awk '{ $3 = "c"; print NF, $0 }')" "3 a  c"
+check awk_assign_nf "$(echo a b c d | awk '{ NF = 2; print $0 }')" "a b"
+check awk_array_length "$(awk 'BEGIN { a[1]; a[2]; print length(a) }')" 2
+
+check awk_uninitialised "$(awk 'BEGIN { print n + 0, "[" n "]" }')" "0 []"
+check awk_string_compare "$(awk 'BEGIN { print ("abc" < "abd") }')" 1
+check awk_numeric_compare "$(awk 'BEGIN { print (10 > 9) }')" 1
+check awk_getline_var "$(printf 'x\ny\n' | awk 'NR == 1 { getline line; print line }')" y
+check awk_range_pattern "$(printf '1\n2\n3\n4\n' | awk '/2/,/3/')" "2
+3"
+check awk_comment "$(awk 'BEGIN { print "ok" } # trailing comment')" ok
+
+rm -r "$work"
