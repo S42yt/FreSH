@@ -20,6 +20,7 @@
 #include "vars.h"
 
 #define RELEASE_API "https://api.github.com/repos/S42yt/FreSH/releases/latest"
+#define RELEASE_API_ALL "https://api.github.com/repos/S42yt/FreSH/releases?per_page=1"
 #define RELEASE_PAGE "https://github.com/S42yt/FreSH/releases"
 #define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/FreSH-Setup.exe"
 #define USER_AGENT "FreSH-updater"
@@ -106,10 +107,10 @@ int http_download(const char *url, const char *path) {
     return http_fetch(url, NULL, path);
 }
 
-static int read_latest_version(char *out, size_t out_size) {
+static int read_latest_version(char *out, size_t out_size, int allow_early) {
     StrBuf body;
     sb_init(&body);
-    if (!http_fetch(RELEASE_API, &body, NULL)) {
+    if (!http_fetch(allow_early ? RELEASE_API_ALL : RELEASE_API, &body, NULL)) {
         sb_free(&body);
         return 0;
     }
@@ -141,20 +142,31 @@ static int read_latest_version(char *out, size_t out_size) {
     return out[0] != '\0';
 }
 
-static void split_version(const char *text, int parts[3]) {
+static int split_version(const char *text, int parts[3], int *early) {
     parts[0] = parts[1] = parts[2] = 0;
     sscanf(text, "%d.%d.%d", &parts[0], &parts[1], &parts[2]);
+
+    const char *dash = strchr(text, '-');
+    *early = dash != NULL;
+    if (!dash) return 0;
+
+    const char *last = strrchr(text, '-');
+    return atoi(last + 1);
 }
 
 static int version_newer(const char *candidate, const char *current) {
     int a[3];
     int b[3];
-    split_version(candidate, a);
-    split_version(current, b);
+    int candidate_early = 0;
+    int current_early = 0;
+    int candidate_step = split_version(candidate, a, &candidate_early);
+    int current_step = split_version(current, b, &current_early);
 
     for (int i = 0; i < 3; i++) {
         if (a[i] != b[i]) return a[i] > b[i];
     }
+    if (candidate_early != current_early) return current_early;
+    if (candidate_early) return candidate_step > current_step;
     return 0;
 }
 
@@ -200,14 +212,18 @@ static int install_update(const char *version) {
 
 static int command_update(int argc, char **argv) {
     int check_only = 0;
+    int allow_early = 0;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--check") == 0 || strcmp(argv[i], "-c") == 0) check_only = 1;
+        if (strcmp(argv[i], "--pre") == 0 || strcmp(argv[i], "--prerelease") == 0) allow_early = 1;
     }
 
-    printf("  %schecking for updates%s\n", style(S_DIM), style(S_RESET));
+    printf("  %schecking for %s%s\n", style(S_DIM), allow_early ? "any release, including prereleases"
+                                                                : "updates",
+           style(S_RESET));
 
     char latest[64];
-    if (!read_latest_version(latest, sizeof(latest))) {
+    if (!read_latest_version(latest, sizeof(latest), allow_early)) {
         shell_error("update: could not reach github, see %s", RELEASE_PAGE);
         return 1;
     }
@@ -245,7 +261,7 @@ int builtin_fresh(int argc, char **argv) {
     }
 
     if (argc > 1) {
-        shell_error("fresh: usage: fresh [version | doctor | update [--check]]");
+        shell_error("fresh: usage: fresh [version | doctor | update [--check] [--pre]]");
         return 2;
     }
 
@@ -279,6 +295,7 @@ int builtin_fresh(int argc, char **argv) {
         printf("  %s%-12s%s   %s\n", style(S_ACCENT), art[i], style(S_RESET), info[i]);
     printf("\n  %sfresh update%s checks github and installs the newest release\n", style(S_DIM),
            style(S_RESET));
+    printf("  %sfresh update --pre%s takes prereleases too\n", style(S_DIM), style(S_RESET));
     printf("  %sfresh doctor%s checks your configuration\n", style(S_DIM), style(S_RESET));
     printf("\n");
 
