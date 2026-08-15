@@ -300,29 +300,129 @@ static char *scan_process_substitution(const char **p, int *incomplete) {
     return sb_take(&sb);
 }
 
+static char *heredoc_delimiter(const char **p, int *raw, int *incomplete) {
+    int quoted = 0;
+    char *written = scan_word(p, &quoted, incomplete);
+    *raw = quoted;
+
+    StrBuf clean;
+    sb_init(&clean);
+    for (const char *c = written; *c; c++) {
+        if (*c != '"' && *c != '\'' && *c != '\\') sb_putc(&clean, *c);
+    }
+    free(written);
+    return sb_take(&clean);
+}
+
+static const char *scan_heredoc(const char **p, Token *t, int *incomplete) {
+    int strip_tabs = **p == '-';
+    if (strip_tabs) (*p)++;
+    while (**p == ' ' || **p == '\t') (*p)++;
+
+    int raw = 0;
+    char *delimiter = heredoc_delimiter(p, &raw, incomplete);
+    if (raw) t->redir = R_HEREDOC_RAW;
+
+    const char *rest_of_line = *p;
+    const char *scan = *p;
+    while (*scan && *scan != '\n') scan++;
+    if (*scan == '\n') scan++;
+
+    StrBuf body;
+    sb_init(&body);
+    while (*scan) {
+        const char *line_start = scan;
+        if (strip_tabs)
+            while (*line_start == '\t') line_start++;
+        scan = line_start;
+        while (*scan && *scan != '\n') scan++;
+
+        size_t line_length = (size_t)(scan - line_start);
+        char *line = xstrndup(line_start, line_length);
+        int is_delimiter = strcmp(str_trim(line), delimiter) == 0;
+        free(line);
+
+        if (*scan == '\n') scan++;
+        else if (!is_delimiter) *incomplete = 1;
+
+        if (is_delimiter) break;
+        sb_putn(&body, line_start, line_length);
+        sb_putc(&body, '\n');
+    }
+
+    free(delimiter);
+    t->text = sb_take(&body);
+    *p = rest_of_line;
+    return scan;
+}
+
+static int skip_blanks_and_joins(const char **p, int *incomplete) {
+    while (**p == ' ' || **p == '\t' || **p == '\r') (*p)++;
+
+    if (**p == '\\' && (*p)[1] == '\r' && (*p)[2] == '\n') {
+        *p += 3;
+        return 1;
+    }
+    if (**p == '\\' && (*p)[1] == '\n') {
+        *p += 2;
+        return 1;
+    }
+    if (**p == '\\' && (*p)[1] == '\0') {
+        *incomplete = 1;
+        return -1;
+    }
+    if (**p == '#') {
+        while (**p && **p != '\n') (*p)++;
+        return 1;
+    }
+    return 0;
+}
+
+static int operator_token(const char *p, TokenType *type, int *length) {
+    static const struct {
+        const char *text;
+        TokenType type;
+    } OPERATORS[] = {
+        {"||", T_OR_OR}, {"&&", T_AND_AND}, {";&", T_SEMI_AMP}, {";;", T_DSEMI},
+        {"|", T_PIPE},   {"&", T_AMP},      {";", T_SEMI},      {"(", T_LPAREN},
+        {")", T_RPAREN},
+    };
+
+    for (size_t i = 0; i < sizeof(OPERATORS) / sizeof(OPERATORS[0]); i++) {
+        size_t width = strlen(OPERATORS[i].text);
+        if (strncmp(p, OPERATORS[i].text, width) != 0) continue;
+        *type = OPERATORS[i].type;
+        *length = (int)width;
+        return 1;
+    }
+    return 0;
+}
+
+static const char *arithmetic_end(const char *p) {
+    if (p[0] != '(' || p[1] != '(') return NULL;
+
+    int depth = 0;
+    for (const char *q = p; *q; q++) {
+        if (*q == '(') {
+            depth++;
+            continue;
+        }
+        if (*q != ')') continue;
+        if (depth == 2 && q[1] == ')') return q + 2;
+        if (--depth < 2) return NULL;
+    }
+    return NULL;
+}
+
 static void tokenize(const char *src, TokenList *out, int *incomplete) {
     const char *p = src;
     const char *heredoc_resume = NULL;
     while (*p) {
-        while (*p == ' ' || *p == '\t' || *p == '\r') p++;
-        if (*p == '\\' && p[1] == '\r' && p[2] == '\n') {
-            p += 3;
-            continue;
-        }
-        if (*p == '\\' && p[1] == '\n') {
-            p += 2;
-            continue;
-        }
-        if (*p == '\\' && p[1] == '\0') {
-            *incomplete = 1;
-            break;
-        }
+        int skipped = skip_blanks_and_joins(&p, incomplete);
+        if (skipped > 0) continue;
+        if (skipped < 0) break;
         if (!*p) break;
 
-        if (*p == '#') {
-            while (*p && *p != '\n') p++;
-            continue;
-        }
         if (*p == '\n') {
             Token t = {T_NEWLINE, NULL, 0, 0, R_IN};
             token_push(out, t);
@@ -334,81 +434,22 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             }
             continue;
         }
-        if (*p == '|' && p[1] == '|') {
-            Token t = {T_OR_OR, NULL, 0, 0, R_IN};
+
+        const char *arithmetic = arithmetic_end(p);
+        if (arithmetic) {
+            Token t = {T_ARITH, NULL, 0, 0, R_IN};
+            t.text = xstrndup(p + 2, (size_t)(arithmetic - p) - 4);
             token_push(out, t);
-            p += 2;
+            p = arithmetic;
             continue;
         }
-        if (*p == '&' && p[1] == '&') {
-            Token t = {T_AND_AND, NULL, 0, 0, R_IN};
+
+        TokenType type;
+        int width;
+        if (operator_token(p, &type, &width)) {
+            Token t = {type, NULL, 0, 0, R_IN};
             token_push(out, t);
-            p += 2;
-            continue;
-        }
-        if (*p == '|') {
-            Token t = {T_PIPE, NULL, 0, 0, R_IN};
-            token_push(out, t);
-            p++;
-            continue;
-        }
-        if (*p == '&') {
-            Token t = {T_AMP, NULL, 0, 0, R_IN};
-            token_push(out, t);
-            p++;
-            continue;
-        }
-        if (*p == ';' && p[1] == '&') {
-            Token t = {T_SEMI_AMP, NULL, 0, 0, R_IN};
-            token_push(out, t);
-            p += 2;
-            continue;
-        }
-        if (*p == ';' && p[1] == ';') {
-            Token t = {T_DSEMI, NULL, 0, 0, R_IN};
-            token_push(out, t);
-            p += 2;
-            continue;
-        }
-        if (*p == ';') {
-            Token t = {T_SEMI, NULL, 0, 0, R_IN};
-            token_push(out, t);
-            p++;
-            continue;
-        }
-        if (*p == '(' && p[1] == '(') {
-            int depth = 0;
-            const char *end = NULL;
-            for (const char *q = p; *q; q++) {
-                if (*q == '(') {
-                    depth++;
-                    continue;
-                }
-                if (*q != ')') continue;
-                if (depth == 2 && q[1] == ')') {
-                    end = q + 2;
-                    break;
-                }
-                if (--depth < 2) break;
-            }
-            if (end) {
-                Token t = {T_ARITH, NULL, 0, 0, R_IN};
-                t.text = xstrndup(p + 2, (size_t)(end - p) - 4);
-                token_push(out, t);
-                p = end;
-                continue;
-            }
-        }
-        if (*p == '(') {
-            Token t = {T_LPAREN, NULL, 0, 0, R_IN};
-            token_push(out, t);
-            p++;
-            continue;
-        }
-        if (*p == ')') {
-            Token t = {T_RPAREN, NULL, 0, 0, R_IN};
-            token_push(out, t);
-            p++;
+            p += width;
             continue;
         }
 
@@ -441,55 +482,8 @@ static void tokenize(const char *src, TokenList *out, int *incomplete) {
             Token t = {T_REDIR, NULL, 0, 0, R_HEREDOC};
             t.fd = 0;
             p += 2;
-            int strip_tabs = *p == '-';
-            if (strip_tabs) p++;
-            while (*p == ' ' || *p == '\t') p++;
-
-            int quoted = 0;
-            char *delimiter = scan_word(&p, &quoted, incomplete);
-            if (quoted) t.redir = R_HEREDOC_RAW;
-
-            char *plain = delimiter;
-            StrBuf clean;
-            sb_init(&clean);
-            for (char *c = plain; *c; c++) {
-                if (*c != '"' && *c != '\'' && *c != '\\') sb_putc(&clean, *c);
-            }
-            free(delimiter);
-
-            const char *rest_of_line = p;
-            const char *scan = p;
-            while (*scan && *scan != '\n') scan++;
-            if (*scan == '\n') scan++;
-
-            StrBuf body;
-            sb_init(&body);
-            while (*scan) {
-                const char *line_start = scan;
-                if (strip_tabs)
-                    while (*line_start == '\t') line_start++;
-                scan = line_start;
-                while (*scan && *scan != '\n') scan++;
-                size_t line_length = (size_t)(scan - line_start);
-                char *line = xstrndup(line_start, line_length);
-                char *trimmed = str_trim(line);
-                int is_delimiter = strcmp(trimmed, clean.data) == 0;
-                free(line);
-
-                if (*scan == '\n') scan++;
-                else if (!is_delimiter) *incomplete = 1;
-
-                if (is_delimiter) break;
-                sb_putn(&body, line_start, line_length);
-                sb_putc(&body, '\n');
-            }
-
-            sb_free(&clean);
-            t.text = sb_take(&body);
+            heredoc_resume = scan_heredoc(&p, &t, incomplete);
             token_push(out, t);
-
-            heredoc_resume = scan;
-            p = rest_of_line;
             continue;
         }
 
