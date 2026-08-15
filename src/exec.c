@@ -1971,11 +1971,21 @@ char *apply_aliases(const char *line) {
     const char *p = line;
     int at_command_start = 1;
     int expansions = 0;
+    int case_depth = 0;
+    int in_pattern = 0;
 
     while (*p) {
         if (*p == ' ' || *p == '\t') {
             sb_putc(&out, *p++);
             continue;
+        }
+        if (str_word_at(p, line, "case")) case_depth++;
+        else if (case_depth > 0 && str_word_at(p, line, "esac")) case_depth--;
+        else if (case_depth > 0 && str_word_at(p, line, "in")) in_pattern = 1;
+
+        if (case_depth > 0) {
+            if (*p == ')') in_pattern = 0;
+            else if (*p == ';') in_pattern = 1;
         }
         if (*p == '\'' || *p == '"') {
             char quote = *p;
@@ -1997,7 +2007,7 @@ char *apply_aliases(const char *line) {
             const char *start = p;
             while (*p && !strchr(" \t|&;<>()\n", *p)) p++;
             char *word = xstrndup(start, (size_t)(p - start));
-            const char *value = alias_get(word);
+            const char *value = in_pattern ? NULL : alias_get(word);
             if (value && expansions < 16) {
                 sb_puts(&out, value);
                 expansions++;
