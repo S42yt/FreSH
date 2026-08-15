@@ -1591,6 +1591,26 @@ static const char *group_end(const char *open) {
     return NULL;
 }
 
+static int choice_matches(const StrList *choices, const char *text, size_t length) {
+    char *piece = xstrndup(text, length);
+    int matched = 0;
+    for (size_t i = 0; i < choices->len && !matched; i++)
+        matched = pattern_match(choices->items[i], piece);
+    free(piece);
+    return matched;
+}
+
+static int match_repeats(const StrList *choices, const char *tail, const char *text) {
+    if (pattern_match(tail, text)) return 1;
+
+    size_t length = strlen(text);
+    for (size_t take = 1; take <= length; take++) {
+        if (!choice_matches(choices, text, take)) continue;
+        if (match_repeats(choices, tail, text + take)) return 1;
+    }
+    return 0;
+}
+
 static int match_extended(const char *pattern, const char *text) {
     char kind = pattern[0];
     const char *close = group_end(pattern + 1);
@@ -1611,35 +1631,28 @@ static int match_extended(const char *pattern, const char *text) {
         }
     }
 
-    int matched = 0;
     size_t length = strlen(text);
+    int matched = 0;
 
-    for (size_t take = 0; take <= length && !matched; take++) {
-        char *piece = xstrndup(text, take);
-        int here = 0;
-        for (size_t i = 0; i < choices.len && !here; i++)
-            here = pattern_match(choices.items[i], piece);
-        free(piece);
-
-        if (kind == '!') continue;
-        if (!here) continue;
-        if (kind == '?' && take > 0 && !here) continue;
-        if (pattern_match(tail, text + take)) matched = 1;
-    }
-
-    if (kind == '!') {
-        matched = 0;
+    if (kind == '*') {
+        matched = match_repeats(&choices, tail, text);
+    } else if (kind == '+') {
+        for (size_t take = 1; take <= length && !matched; take++) {
+            if (!choice_matches(&choices, text, take)) continue;
+            matched = match_repeats(&choices, tail, text + take);
+        }
+    } else if (kind == '@' || kind == '?') {
+        if (kind == '?' && pattern_match(tail, text)) matched = 1;
+        for (size_t take = kind == '?' ? 1 : 0; take <= length && !matched; take++) {
+            if (!choice_matches(&choices, text, take)) continue;
+            matched = pattern_match(tail, text + take);
+        }
+    } else {
         for (size_t take = 0; take <= length && !matched; take++) {
-            char *piece = xstrndup(text, take);
-            int here = 0;
-            for (size_t i = 0; i < choices.len && !here; i++)
-                here = pattern_match(choices.items[i], piece);
-            free(piece);
-            if (!here && pattern_match(tail, text + take)) matched = 1;
+            if (choice_matches(&choices, text, take)) continue;
+            matched = pattern_match(tail, text + take);
         }
     }
-
-    if ((kind == '*' || kind == '?') && !matched) matched = pattern_match(tail, text);
 
     sl_free(&choices);
     return matched;

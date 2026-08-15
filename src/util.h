@@ -51,6 +51,7 @@ int str_has_prefix(const char *s, const char *prefix);
 int str_has_suffix_i(const char *s, const char *suffix);
 char *str_trim(char *s);
 char *str_next_field(char **cursor, char separator);
+int str_word_at(const char *p, const char *start, const char *word);
 
 void path_to_slashes(char *p);
 void path_to_backslashes(char *p);

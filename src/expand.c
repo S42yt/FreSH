@@ -503,13 +503,6 @@ static char *capture_trimmed(const char *command) {
     return sb_take(&out);
 }
 
-static int word_at(const char *p, const char *start, const char *word) {
-    size_t length = strlen(word);
-    if (strncmp(p, word, length) != 0) return 0;
-    if (p > start && (isalnum((unsigned char)p[-1]) || p[-1] == '_')) return 0;
-    return !isalnum((unsigned char)p[length]) && p[length] != '_';
-}
-
 static const char *scan_balanced(const char *p, char open, char close, StrBuf *inner) {
     const char *start = p;
     int depth = 0;
@@ -517,8 +510,8 @@ static const char *scan_balanced(const char *p, char open, char close, StrBuf *i
 
     for (; *p; p++) {
         if (open == '(' && depth >= 1) {
-            if (word_at(p, start, "case")) branching++;
-            else if (branching > 0 && word_at(p, start, "esac")) branching--;
+            if (str_word_at(p, start, "case")) branching++;
+            else if (branching > 0 && str_word_at(p, start, "esac")) branching--;
         }
 
         if (*p == open) {

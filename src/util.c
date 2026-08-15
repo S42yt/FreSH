@@ -187,6 +187,13 @@ char *str_next_field(char **cursor, char separator) {
     return start;
 }
 
+int str_word_at(const char *p, const char *start, const char *word) {
+    size_t length = strlen(word);
+    if (strncmp(p, word, length) != 0) return 0;
+    if (p > start && (isalnum((unsigned char)p[-1]) || p[-1] == '_')) return 0;
+    return !isalnum((unsigned char)p[length]) && p[length] != '_';
+}
+
 void path_to_slashes(char *p) {
     for (; *p; p++)
         if (*p == '\\') *p = '/';

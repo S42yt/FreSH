@@ -102,10 +102,14 @@ static int is_delim(char c) {
 }
 
 static void copy_until(const char **p, StrBuf *sb, char open, char close, int *incomplete) {
+    const char *start = *p;
     int depth = 0;
+    int branching = 0;
+
     sb_putc(sb, **p);
     if (**p == open) depth++;
     (*p)++;
+
     while (**p) {
         char c = **p;
         if (c == '\\' && (*p)[1]) {
@@ -114,10 +118,16 @@ static void copy_until(const char **p, StrBuf *sb, char open, char close, int *i
             *p += 2;
             continue;
         }
+        if (open == '(') {
+            if (str_word_at(*p, start, "case")) branching++;
+            else if (branching > 0 && str_word_at(*p, start, "esac")) branching--;
+        }
+
         sb_putc(sb, c);
         (*p)++;
         if (c == open && open != close) depth++;
         else if (c == close) {
+            if (branching > 0 && depth == 1) continue;
             if (--depth <= 0) return;
         }
     }

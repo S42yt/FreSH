@@ -22,7 +22,8 @@ check dirs_prints "$(dirs | wc -w | tr -d ' ')" 1
 
 check random_in_range "$(test $RANDOM -ge 0 && test $RANDOM -lt 32768 && echo yes)" yes
 check seconds_counts "$(test $SECONDS -ge 0 && echo yes)" yes
-check lineno_moves "$(test $LINENO -gt 20 && echo yes)" yes
+lineno_here=$LINENO
+check lineno_tracks_file "$(test "$lineno_here" -gt 20 && echo yes)" yes
 
 named() { echo "$FUNCNAME"; }
 check funcname_inside "$(named)" named
