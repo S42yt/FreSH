@@ -1,0 +1,42 @@
+suite keys
+
+bind ctrl+g "git status"
+check bind_records "$(bind | grep -c 'ctrl+g')" 1
+check bind_shows_action "$(bind | grep -c 'git status')" 1
+
+bind f5 insert:"make "
+check bind_insert "$(bind | grep -c 'insert:make')" 1
+
+bind ctrl+a beginning-of-line
+check bind_widget "$(bind | grep -c 'beginning-of-line')" 1
+
+check bind_lists_widgets "$(bind -l | grep -c 'accept-line')" 1
+check bind_widget_count "$(bind -l | wc -l | tr -d ' ')" 20
+
+bind -r ctrl+g
+check bind_removes "$(bind | grep -c 'ctrl+g')" 0
+check bind_remove_unknown "$(bind -r ctrl+q 2>&1 | grep -c 'not bound')" 1
+
+check bind_rejects_key "$(bind nosuchkey action 2>&1 | grep -c 'not a key')" 1
+check bind_accepts_function_key "$(bind f9 'echo hi'; bind | grep -c f9)" 1
+
+bind -r f5
+bind -r ctrl+a
+bind -r f9
+
+reference_target=first
+holder() {
+  local -n pointer=$1
+  echo "$pointer"
+}
+check nameref_reads "$(holder reference_target)" first
+
+writer() {
+  local -n pointer=$1
+  pointer=second
+}
+writer reference_target
+check nameref_writes "$reference_target" second
+
+check doctor_reports_valid "$(fresh doctor | grep -c 'valid')" 1
+check doctor_status "$(fresh doctor > /dev/null; echo $?)" 0
