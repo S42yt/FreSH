@@ -145,7 +145,8 @@ static const char *dynamic_value(const char *name) {
 
 void var_mark_nameref(const char *name) {
     Entry *e = find(vars, var_count_total, name);
-    if (e) e->nameref = 1;
+    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    e->nameref = 1;
 }
 
 static const char *follow_nameref(const char *name, int depth) {

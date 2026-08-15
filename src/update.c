@@ -13,6 +13,7 @@
 
 #include <wininet.h>
 
+#include "config.h"
 #include "shell.h"
 #include "style.h"
 #include "util.h"
@@ -196,13 +197,22 @@ static int command_update(int argc, char **argv) {
 int builtin_fresh(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "update") == 0) return command_update(argc, argv);
 
+    if (argc > 1 && (strcmp(argv[1], "doctor") == 0 || strcmp(argv[1], "check") == 0)) {
+        StrList problems;
+        sl_init(&problems);
+        int found = config_check(&problems);
+        config_report(found, &problems);
+        sl_free(&problems);
+        return found ? 1 : 0;
+    }
+
     if (argc > 1 && strcmp(argv[1], "version") == 0) {
         printf("%s\n", FRESH_VERSION);
         return 0;
     }
 
     if (argc > 1) {
-        shell_error("fresh: usage: fresh [version | update [--check]]");
+        shell_error("fresh: usage: fresh [version | doctor | update [--check]]");
         return 2;
     }
 
@@ -236,6 +246,7 @@ int builtin_fresh(int argc, char **argv) {
         printf("  %s%-12s%s   %s\n", style(S_ACCENT), art[i], style(S_RESET), info[i]);
     printf("\n  %sfresh update%s checks github and installs the newest release\n", style(S_DIM),
            style(S_RESET));
+    printf("  %sfresh doctor%s checks your configuration\n", style(S_DIM), style(S_RESET));
     printf("\n");
 
     free(rc);

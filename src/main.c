@@ -12,6 +12,7 @@
 #include <string.h>
 #include <windows.h>
 
+#include "config.h"
 #include "exec.h"
 #include "history.h"
 #include "line.h"
@@ -291,8 +292,17 @@ static void show_banner(void) {
            style(S_RESET));
 }
 
+static void warn_about_config(void) {
+    StrList problems;
+    sl_init(&problems);
+    int found = config_check(&problems);
+    if (found) config_report(found, &problems);
+    sl_free(&problems);
+}
+
 static void interactive_loop(void) {
     show_banner();
+    warn_about_config();
 
     while (shell.running) {
         char *line = line_read(0);
