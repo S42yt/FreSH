@@ -705,7 +705,17 @@ static int more_ln(int argc, char **argv) {
 
 static int more_open(int argc, char **argv) {
     const char *target = argc > 1 ? argv[1] : ".";
-    HINSTANCE result = ShellExecuteA(NULL, "open", target, NULL, NULL, SW_SHOWNORMAL);
+
+    typedef HINSTANCE(WINAPI * OpenFn)(HWND, LPCSTR, LPCSTR, LPCSTR, LPCSTR, INT);
+    HMODULE library = LoadLibraryA("shell32.dll");
+    OpenFn shell_open =
+        library ? (OpenFn)(void *)GetProcAddress(library, "ShellExecuteA") : NULL;
+    if (!shell_open) {
+        shell_error("open: %s: cannot open", target);
+        return 1;
+    }
+
+    HINSTANCE result = shell_open(NULL, "open", target, NULL, NULL, SW_SHOWNORMAL);
     if ((INT_PTR)result <= 32) {
         shell_error("open: %s: cannot open", target);
         return 1;

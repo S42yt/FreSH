@@ -144,6 +144,28 @@ void shell_handle_signal(int which) {
     history_save();
 }
 
+static LARGE_INTEGER timing_start;
+static LARGE_INTEGER timing_frequency;
+static int timing_enabled = 0;
+
+static void timing_init(void) {
+    timing_enabled = getenv("FRESH_TIMING") != NULL;
+    if (!timing_enabled) return;
+    QueryPerformanceFrequency(&timing_frequency);
+    QueryPerformanceCounter(&timing_start);
+}
+
+static void timing_mark(const char *label) {
+    if (!timing_enabled) return;
+
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    double micros = (double)(now.QuadPart - timing_start.QuadPart) * 1000000.0 /
+                    (double)timing_frequency.QuadPart;
+    fprintf(stderr, "  %8.0f us  %s\n", micros, label);
+    fflush(stderr);
+}
+
 static void load_rc(void) {
     char *rc = config_path(".freshrc");
     if (!path_is_file(rc)) {
@@ -155,10 +177,14 @@ static void load_rc(void) {
     }
     if (path_is_file(rc)) exec_script_file(rc, NULL);
     free(rc);
+    timing_mark("freshrc");
 
     fresh_home_init();
+    timing_mark("fresh home");
     theme_load_configured();
+    timing_mark("theme");
     plugins_load_configured();
+    timing_mark("plugins");
 }
 
 static void binary_when_not_a_console(void) {
@@ -184,9 +210,12 @@ void shell_init(int interactive) {
     else sl_push_copy(&shell.params, "FreSH");
 
     vars_init();
+    timing_mark("variables");
     exec_init();
     path_reload_environment();
+    timing_mark("path");
     binary_when_not_a_console();
+    timing_mark("descriptors");
 }
 
 void shell_cleanup(void) {
@@ -411,6 +440,9 @@ static LONG WINAPI crash_report(EXCEPTION_POINTERS *info) {
 }
 
 int main(int argc, char *argv[]) {
+    timing_init();
+    timing_mark("entry");
+
     ULONG stack_reserve = 65536;
     SetThreadStackGuarantee(&stack_reserve);
     SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
@@ -440,6 +472,7 @@ int main(int argc, char *argv[]) {
     }
 
     term_init();
+    timing_mark("terminal");
     shell_init(interactive);
 
     if (script && path_is_dir(script)) {
@@ -467,7 +500,9 @@ int main(int argc, char *argv[]) {
         status = shell.last_status;
     }
 
+    timing_mark("command");
     shell_cleanup();
     term_cleanup();
+    timing_mark("exit");
     return status;
 }

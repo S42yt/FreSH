@@ -1380,7 +1380,12 @@ static int builtin_admin(int argc, char **argv) {
     info.lpDirectory = directory;
     info.nShow = SW_SHOWNORMAL;
 
-    int status = ShellExecuteExA(&info) ? 0 : 1;
+    typedef BOOL(WINAPI * ExecuteFn)(SHELLEXECUTEINFOA *);
+    HMODULE shell_library = LoadLibraryA("shell32.dll");
+    ExecuteFn execute =
+        shell_library ? (ExecuteFn)(void *)GetProcAddress(shell_library, "ShellExecuteExA") : NULL;
+
+    int status = execute && execute(&info) ? 0 : 1;
     if (status) shell_error("admin: the elevated shell was refused");
     sb_free(&parameters);
     return status;

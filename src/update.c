@@ -24,25 +24,58 @@
 #define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/FreSH-Setup.exe"
 #define USER_AGENT "FreSH-updater"
 
+typedef HINTERNET(WINAPI *OpenFn)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
+typedef HINTERNET(WINAPI *OpenUrlFn)(HINTERNET, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
+typedef BOOL(WINAPI *QueryFn)(HINTERNET, DWORD, LPVOID, LPDWORD, LPDWORD);
+typedef BOOL(WINAPI *ReadFn)(HINTERNET, LPVOID, DWORD, LPDWORD);
+typedef BOOL(WINAPI *CloseFn)(HINTERNET);
+
+static OpenFn internet_open;
+static OpenUrlFn internet_open_url;
+static QueryFn internet_query;
+static ReadFn internet_read;
+static CloseFn internet_close;
+
+static int wininet_ready(void) {
+    static HMODULE library = NULL;
+    if (library) return internet_open != NULL;
+
+    library = LoadLibraryA("wininet.dll");
+    if (!library) return 0;
+
+    internet_open = (OpenFn)(void *)GetProcAddress(library, "InternetOpenA");
+    internet_open_url = (OpenUrlFn)(void *)GetProcAddress(library, "InternetOpenUrlA");
+    internet_query = (QueryFn)(void *)GetProcAddress(library, "HttpQueryInfoA");
+    internet_read = (ReadFn)(void *)GetProcAddress(library, "InternetReadFile");
+    internet_close = (CloseFn)(void *)GetProcAddress(library, "InternetCloseHandle");
+
+    return internet_open && internet_open_url && internet_query && internet_read && internet_close;
+}
+
 static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
-    HINTERNET session = InternetOpenA(USER_AGENT, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!wininet_ready()) {
+        shell_error("update: this build cannot reach the network");
+        return 0;
+    }
+
+    HINTERNET session = internet_open(USER_AGENT, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
     if (!session) return 0;
 
     DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
                   INTERNET_FLAG_NO_UI | INTERNET_FLAG_SECURE;
-    HINTERNET request = InternetOpenUrlA(session, url, NULL, 0, flags, 0);
+    HINTERNET request = internet_open_url(session, url, NULL, 0, flags, 0);
     if (!request) {
-        InternetCloseHandle(session);
+        internet_close(session);
         return 0;
     }
 
     DWORD status = 0;
     DWORD status_size = sizeof(status);
-    if (HttpQueryInfoA(request, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &status,
+    if (internet_query(request, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &status,
                        &status_size, NULL) &&
         status >= 400) {
-        InternetCloseHandle(request);
-        InternetCloseHandle(session);
+        internet_close(request);
+        internet_close(session);
         return 0;
     }
 
@@ -50,22 +83,22 @@ static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
     if (save_to) {
         file = fopen(save_to, "wb");
         if (!file) {
-            InternetCloseHandle(request);
-            InternetCloseHandle(session);
+            internet_close(request);
+            internet_close(session);
             return 0;
         }
     }
 
     char buffer[8192];
     DWORD read = 0;
-    while (InternetReadFile(request, buffer, sizeof(buffer), &read) && read > 0) {
+    while (internet_read(request, buffer, sizeof(buffer), &read) && read > 0) {
         if (file) fwrite(buffer, 1, read, file);
         else sb_putn(body, buffer, read);
     }
 
     if (file) fclose(file);
-    InternetCloseHandle(request);
-    InternetCloseHandle(session);
+    internet_close(request);
+    internet_close(session);
     return 1;
 }
 
