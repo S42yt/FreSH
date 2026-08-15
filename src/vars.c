@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <windows.h>
 
 typedef struct {
@@ -138,6 +139,19 @@ static const char *dynamic_value(const char *name) {
     }
     if (strcmp(name, "LINENO") == 0) {
         snprintf(buffer, sizeof(buffer), "%d", shell.line);
+        return buffer;
+    }
+    if (strcmp(name, "EPOCHSECONDS") == 0) {
+        snprintf(buffer, sizeof(buffer), "%lld", (long long)time(NULL));
+        return buffer;
+    }
+    if (strcmp(name, "EPOCHREALTIME") == 0) {
+        FILETIME now;
+        GetSystemTimeAsFileTime(&now);
+        unsigned long long ticks =
+            ((unsigned long long)now.dwHighDateTime << 32) | now.dwLowDateTime;
+        unsigned long long micros = ticks / 10ULL - 11644473600000000ULL;
+        snprintf(buffer, sizeof(buffer), "%llu.%06llu", micros / 1000000ULL, micros % 1000000ULL);
         return buffer;
     }
     return NULL;

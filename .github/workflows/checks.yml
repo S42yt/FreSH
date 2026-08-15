@@ -32,9 +32,9 @@ jobs:
           cp fuzz/corpus/awk/* fuzz/work/awk/
           cp tests/diff/cases/*.sh fuzz/work/parser/
           cp tests/cases/*.frsh fuzz/work/parser/
-          fuzz/build/fuzz_parser fuzz/work/parser
-          fuzz/build/fuzz_regex fuzz/work/regex
-          ( cd fuzz/work/awk && ../../build/fuzz_awk . )
+          fuzz/build/fuzz_parser -runs=0 fuzz/work/parser
+          fuzz/build/fuzz_regex -runs=0 fuzz/work/regex
+          ( cd fuzz/work/awk && ../../build/fuzz_awk -runs=0 . )
 
   fuzz:
     runs-on: ubuntu-latest
