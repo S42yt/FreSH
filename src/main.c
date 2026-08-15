@@ -449,6 +449,7 @@ int main(int argc, char *argv[]) {
     SetUnhandledExceptionFilter(crash_report);
 
     int interactive = 1;
+    int read_rc = 1;
     const char *command = NULL;
     const char *script = NULL;
     int script_arg = 0;
@@ -457,11 +458,13 @@ int main(int argc, char *argv[]) {
         if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
             command = argv[++i];
             interactive = 0;
+        } else if (strcmp(argv[i], "--norc") == 0 || strcmp(argv[i], "--noprofile") == 0) {
+            read_rc = 0;
         } else if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
             printf("FreSH %s\n", FRESH_VERSION);
             return 0;
         } else if (strcmp(argv[i], "--help") == 0) {
-            printf("usage: FreSH [-c command] [script [args...]]\n");
+            printf("usage: FreSH [--norc] [-c command] [script [args...]]\n");
             return 0;
         } else {
             script = argv[i];
@@ -485,17 +488,17 @@ int main(int argc, char *argv[]) {
 
     int status = 0;
     if (command) {
-        load_rc();
+        if (read_rc) load_rc();
         status = exec_text(command);
     } else if (script) {
-        load_rc();
+        if (read_rc) load_rc();
         StrList args;
         sl_init(&args);
         for (int i = script_arg; i < argc; i++) sl_push_copy(&args, argv[i]);
         status = exec_script_file(script, &args);
         sl_free(&args);
     } else {
-        load_rc();
+        if (read_rc) load_rc();
         history_load();
         interactive_loop();
         history_save();

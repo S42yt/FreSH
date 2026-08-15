@@ -39,12 +39,11 @@ static BOOL WINAPI ctrl_handler(DWORD type) {
 void term_init(void) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    saved_output_cp = GetConsoleOutputCP();
-    saved_input_cp = GetConsoleCP();
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
-
     if (GetConsoleMode(out, &saved_out_mode)) {
+        saved_output_cp = GetConsoleOutputCP();
+        saved_input_cp = GetConsoleCP();
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
         SetConsoleMode(out, saved_out_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     }
 
