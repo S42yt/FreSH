@@ -21,6 +21,7 @@ typedef struct {
     int has_content;
     int quoted;
     int meta;
+    int bracket;
     StrList *out;
     int split;
     int glob;
@@ -47,6 +48,7 @@ static void field_flush(Expander *ex) {
     ex->has_content = 0;
     ex->quoted = 0;
     ex->meta = 0;
+    ex->bracket = 0;
 }
 
 static void field_add(Expander *ex, const char *text, size_t len) {
@@ -56,10 +58,9 @@ static void field_add(Expander *ex, const char *text, size_t len) {
 
 static void note_meta(Expander *ex, const char *text, size_t len) {
     for (size_t i = 0; i < len; i++) {
-        if (text[i] == '*' || text[i] == '?' || text[i] == '[') {
-            ex->meta = 1;
-            return;
-        }
+        if (text[i] == '*' || text[i] == '?') ex->meta = 1;
+        else if (text[i] == '[') ex->bracket = 1;
+        else if (text[i] == ']' && ex->bracket) ex->meta = 1;
     }
 }
 
@@ -1198,6 +1199,10 @@ static void glob_one_level(const char *pattern, StrList *matches) {
     }
     path_to_backslashes(normalized);
 
+    size_t length = strlen(normalized);
+    int directories_only = length > 1 && normalized[length - 1] == '\\';
+    if (directories_only) normalized[length - 1] = '\0';
+
     char *slash = strrchr(normalized, '\\');
     char dir[PATH_BUF] = "";
     const char *leaf = normalized;
@@ -1221,6 +1226,7 @@ static void glob_one_level(const char *pattern, StrList *matches) {
     do {
         if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
         if (data.cFileName[0] == '.' && leaf[0] != '.' && !shell.dotglob) continue;
+        if (directories_only && !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
         if (!pattern_match(leaf, data.cFileName)) continue;
 
         StrBuf sb;
@@ -1228,6 +1234,7 @@ static void glob_one_level(const char *pattern, StrList *matches) {
         sb_puts(&sb, dir);
         sb_puts(&sb, data.cFileName);
         if (strchr(pattern, '/')) path_to_slashes(sb.data);
+        if (directories_only) sb_putc(&sb, '/');
         sl_push(matches, sb_take(&sb));
     } while (FindNextFileA(find, &data));
 
