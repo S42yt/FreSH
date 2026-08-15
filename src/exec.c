@@ -506,6 +506,16 @@ static void fds_restore(FdSave *save) {
     }
 }
 
+static HANDLE null_device(void) {
+    static HANDLE cached = NULL;
+    if (!cached) {
+        SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+        cached = CreateFileA("nul", GENERIC_READ | GENERIC_WRITE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    }
+    return cached;
+}
+
 static int apply_redirs(Redir *redirs, IoSet *io) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
 
@@ -596,6 +606,15 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
         snprintf(native, sizeof(native), "%s", target);
         free(target);
         path_to_backslashes(native);
+
+        if (_stricmp(native, "nul") == 0) {
+            HANDLE empty = null_device();
+            if (empty == INVALID_HANDLE_VALUE) return 0;
+            if (r->fd == 0) io->in = empty;
+            else if (r->fd == 2) io->err = empty;
+            else io->out = empty;
+            continue;
+        }
 
         HANDLE handle;
         if (r->type == R_IN) {
