@@ -38,8 +38,8 @@ and put it on your `PATH`. Nothing else is needed, and
 
 ```sh
 scoop bucket add fresh https://github.com/S42yt/FreSH
-scoop install fresh              # the full install
-scoop install fresh-portable     # the single executable
+scoop install fresh/fresh              # the full install
+scoop install fresh/fresh-portable     # the single executable
 ```
 
 Scoop verifies the hash itself, so there is no SmartScreen prompt. A Scoop
