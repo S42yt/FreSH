@@ -989,7 +989,7 @@ char *expand_single(const char *word) {
     return sb_take(&joined);
 }
 
-int glob_expand(const char *pattern, StrList *out) {
+static void glob_one_level(const char *pattern, StrList *matches) {
     char normalized[PATH_BUF];
     snprintf(normalized, sizeof(normalized), "%s", pattern);
     path_to_backslashes(normalized);
@@ -1004,25 +1004,70 @@ int glob_expand(const char *pattern, StrList *out) {
 
     WIN32_FIND_DATAA data;
     HANDLE find = FindFirstFileA(normalized, &data);
-    if (find == INVALID_HANDLE_VALUE) return 0;
+    if (find == INVALID_HANDLE_VALUE) return;
 
-    StrList matches;
-    sl_init(&matches);
     do {
         if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
-        if (data.cFileName[0] == '.' && !strchr(pattern, '.')) continue;
+        if (data.cFileName[0] == '.' && !shell.dotglob && !strchr(pattern, '.')) continue;
         StrBuf sb;
         sb_init(&sb);
         sb_puts(&sb, dir);
         sb_puts(&sb, data.cFileName);
         if (strchr(pattern, '/')) path_to_slashes(sb.data);
-        sl_push(&matches, sb_take(&sb));
+        sl_push(matches, sb_take(&sb));
     } while (FindNextFileA(find, &data));
     FindClose(find);
+}
+
+static void glob_walk(const char *base, const char *rest, StrList *matches, int depth) {
+    if (depth > 24) return;
+
+    char pattern[PATH_BUF];
+    snprintf(pattern, sizeof(pattern), "%s%s", base, rest);
+    glob_one_level(pattern, matches);
+
+    char search[PATH_BUF];
+    snprintf(search, sizeof(search), "%s*", base);
+    path_to_backslashes(search);
+
+    WIN32_FIND_DATAA data;
+    HANDLE find = FindFirstFileA(search, &data);
+    if (find == INVALID_HANDLE_VALUE) return;
+
+    do {
+        if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
+        if (data.cFileName[0] == '.' && !shell.dotglob) continue;
+
+        char nested[PATH_BUF];
+        snprintf(nested, sizeof(nested), "%s%s/", base, data.cFileName);
+        glob_walk(nested, rest, matches, depth + 1);
+    } while (FindNextFileA(find, &data));
+    FindClose(find);
+}
+
+int glob_expand(const char *pattern, StrList *out) {
+    StrList matches;
+    sl_init(&matches);
+
+    const char *recursive = shell.globstar ? strstr(pattern, "**") : NULL;
+    if (recursive) {
+        char base[PATH_BUF] = "";
+        size_t prefix = (size_t)(recursive - pattern);
+        if (prefix >= sizeof(base)) prefix = sizeof(base) - 1;
+        memcpy(base, pattern, prefix);
+        base[prefix] = '\0';
+
+        const char *rest = recursive + 2;
+        if (*rest == '/' || *rest == '\\') rest++;
+        glob_walk(base, *rest ? rest : "*", &matches, 0);
+    } else {
+        glob_one_level(pattern, &matches);
+    }
 
     if (matches.len == 0) {
         sl_free(&matches);
-        return 0;
+        return shell.nullglob;
     }
     sl_sort(&matches);
     for (size_t i = 0; i < matches.len; i++) sl_push(out, matches.items[i]);

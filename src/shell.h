@@ -25,6 +25,9 @@ typedef struct {
     int pipefail;
     int line;
     unsigned long started;
+    int globstar;
+    int nullglob;
+    int dotglob;
     int condition_depth;
     StrList params;
     char *script_name;

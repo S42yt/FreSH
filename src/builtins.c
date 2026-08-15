@@ -865,6 +865,60 @@ static int builtin_read(int argc, char **argv) {
     return 0;
 }
 
+static int *shopt_slot(const char *name) {
+    if (strcmp(name, "globstar") == 0) return &shell.globstar;
+    if (strcmp(name, "nullglob") == 0) return &shell.nullglob;
+    if (strcmp(name, "dotglob") == 0) return &shell.dotglob;
+    if (strcmp(name, "extglob") == 0) return NULL;
+    return NULL;
+}
+
+static int builtin_shopt(int argc, char **argv) {
+    static const char *KNOWN[] = {"globstar", "nullglob", "dotglob", "extglob", NULL};
+
+    int setting = 0;
+    int clearing = 0;
+    int quiet = 0;
+    int index = 1;
+
+    for (; index < argc && argv[index][0] == '-'; index++) {
+        if (strchr(argv[index], 's')) setting = 1;
+        if (strchr(argv[index], 'u')) clearing = 1;
+        if (strchr(argv[index], 'q')) quiet = 1;
+    }
+
+    if (index >= argc) {
+        for (int i = 0; KNOWN[i]; i++) {
+            int *slot = shopt_slot(KNOWN[i]);
+            printf("%-12s%s\n", KNOWN[i], !slot || *slot ? "on" : "off");
+        }
+        return 0;
+    }
+
+    int status = 0;
+    for (; index < argc; index++) {
+        int known = 0;
+        for (int i = 0; KNOWN[i]; i++)
+            if (strcmp(KNOWN[i], argv[index]) == 0) known = 1;
+
+        if (!known) {
+            if (!quiet) shell_error("shopt: %s: unknown option", argv[index]);
+            status = 1;
+            continue;
+        }
+
+        int *slot = shopt_slot(argv[index]);
+        if (setting && slot) *slot = 1;
+        else if (clearing && slot) *slot = 0;
+        else if (!setting && !clearing) {
+            int on = !slot || *slot;
+            if (!quiet) printf("%-12s%s\n", argv[index], on ? "on" : "off");
+            if (!on) status = 1;
+        }
+    }
+    return status;
+}
+
 static int builtin_getopts(int argc, char **argv) {
     if (argc < 3) {
         shell_error("getopts: usage: getopts optstring name [argument ...]");
@@ -1190,7 +1244,7 @@ static const Builtin BUILTINS[] = {
     {"let", builtin_let},           {"getopts", builtin_getopts},
     {"pushd", builtin_pushd},       {"popd", builtin_popd},
     {"dirs", builtin_dirs},         {"mapfile", builtin_mapfile},
-    {"readarray", builtin_mapfile},
+    {"readarray", builtin_mapfile}, {"shopt", builtin_shopt},
     {"die", builtin_die},
     {"echo", builtin_echo},         {"eval", builtin_eval},
     {"exit", builtin_exit},         {"have", builtin_have},

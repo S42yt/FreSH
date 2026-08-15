@@ -969,7 +969,9 @@ static Node *parse_simple(Parser *ps) {
 static Node *parse_compound(Parser *ps);
 
 static Node *parse_command(Parser *ps) {
+    size_t start = ps->pos;
     Node *node = parse_compound(ps);
+    if (node) node->line = line_at(ps, start);
     if (node && node->kind != N_SIMPLE) {
         while (peek(ps)->type == T_REDIR) {
             add_redir(node, peek(ps));
@@ -1032,6 +1034,18 @@ static Node *parse_compound(Parser *ps) {
 static Node *parse_pipeline(Parser *ps) {
     int negated = 0;
     Token *first = peek(ps);
+
+    if (first->type == T_WORD && !first->quoted && strcmp(first->text, "time") == 0 &&
+        ps->tokens.items[ps->pos + 1].type == T_WORD) {
+        advance(ps);
+        Node *timed = node_new(N_TIME);
+        timed->right = parse_pipeline(ps);
+        if (!timed->right) {
+            node_free(timed);
+            return NULL;
+        }
+        return timed;
+    }
     if (first->type == T_WORD && !first->quoted && strcmp(first->text, "!") == 0) {
         negated = 1;
         advance(ps);

@@ -46,7 +46,8 @@ typedef enum {
     N_SELECT,
     N_TEST,
     N_ARITH,
-    N_FOR_C
+    N_FOR_C,
+    N_TIME
 } NodeKind;
 
 typedef struct Node {
@@ -58,6 +59,7 @@ typedef struct Node {
     struct Node *extra;
     char *name;
     int background;
+    int line;
 } Node;
 
 Node *parse_string(const char *src, int *incomplete, char **error);

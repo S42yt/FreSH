@@ -985,6 +985,7 @@ static void report_not_found(const char *name) {
 static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) {
     StrList words;
     sl_init(&words);
+    if (node->line > 0) shell.line = node->line;
     expand_forget_substitution_status();
     expand_words(&node->words, &words);
 
@@ -1581,8 +1582,75 @@ static int evaluate_bracket(const StrList *words) {
     return value ? 0 : 1;
 }
 
+static const char *group_end(const char *open) {
+    int depth = 0;
+    for (const char *p = open; *p; p++) {
+        if (*p == '(') depth++;
+        else if (*p == ')' && --depth == 0) return p;
+    }
+    return NULL;
+}
+
+static int match_extended(const char *pattern, const char *text) {
+    char kind = pattern[0];
+    const char *close = group_end(pattern + 1);
+    if (!close) return -1;
+
+    const char *tail = close + 1;
+    StrList choices;
+    sl_init(&choices);
+
+    const char *start = pattern + 2;
+    int depth = 0;
+    for (const char *p = start; p <= close; p++) {
+        if (*p == '(') depth++;
+        else if (*p == ')' && p != close) depth--;
+        if ((*p == '|' && depth == 0) || p == close) {
+            sl_push(&choices, xstrndup(start, (size_t)(p - start)));
+            start = p + 1;
+        }
+    }
+
+    int matched = 0;
+    size_t length = strlen(text);
+
+    for (size_t take = 0; take <= length && !matched; take++) {
+        char *piece = xstrndup(text, take);
+        int here = 0;
+        for (size_t i = 0; i < choices.len && !here; i++)
+            here = pattern_match(choices.items[i], piece);
+        free(piece);
+
+        if (kind == '!') continue;
+        if (!here) continue;
+        if (kind == '?' && take > 0 && !here) continue;
+        if (pattern_match(tail, text + take)) matched = 1;
+    }
+
+    if (kind == '!') {
+        matched = 0;
+        for (size_t take = 0; take <= length && !matched; take++) {
+            char *piece = xstrndup(text, take);
+            int here = 0;
+            for (size_t i = 0; i < choices.len && !here; i++)
+                here = pattern_match(choices.items[i], piece);
+            free(piece);
+            if (!here && pattern_match(tail, text + take)) matched = 1;
+        }
+    }
+
+    if ((kind == '*' || kind == '?') && !matched) matched = pattern_match(tail, text);
+
+    sl_free(&choices);
+    return matched;
+}
+
 int pattern_match(const char *pattern, const char *text) {
     while (*pattern) {
+        if (strchr("?*+@!", *pattern) && pattern[1] == '(') {
+            int result = match_extended(pattern, text);
+            if (result >= 0) return result;
+        }
         if (*pattern == '*') {
             pattern++;
             if (!*pattern) return 1;
@@ -1691,6 +1759,23 @@ static int exec_switch(Node *node) {
         int ok = 1;
         long value = eval_arith(node->name, &ok);
         status = ok && value != 0 ? 0 : 1;
+        break;
+    }
+
+    case N_TIME: {
+        LARGE_INTEGER frequency;
+        LARGE_INTEGER before;
+        LARGE_INTEGER after;
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&before);
+
+        status = exec_node(node->right);
+
+        QueryPerformanceCounter(&after);
+        double seconds = (double)(after.QuadPart - before.QuadPart) / (double)frequency.QuadPart;
+        fflush(stdout);
+        fprintf(stderr, "\nreal\t%dm%.3fs\n", (int)(seconds / 60), seconds - (int)(seconds / 60) * 60);
+        fflush(stderr);
         break;
     }
 

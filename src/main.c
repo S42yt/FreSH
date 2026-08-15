@@ -4,6 +4,7 @@
  * GNU General Public License v3.0 - See LICENSE file for details
  */
 
+#include <ctype.h>
 #include <io.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -199,6 +200,83 @@ static int needs_more_input(const char *text) {
     return incomplete;
 }
 
+static const char *history_match(const char *reference, size_t length) {
+    if (length == 1 && reference[0] == '!') return history_count() > 0 ? history_get(history_count() - 1) : NULL;
+
+    char wanted[128];
+    if (length >= sizeof(wanted)) return NULL;
+    memcpy(wanted, reference, length);
+    wanted[length] = '\0';
+
+    if (isdigit((unsigned char)wanted[0])) {
+        int index = atoi(wanted) - 1;
+        return index >= 0 && index < history_count() ? history_get(index) : NULL;
+    }
+    for (int i = history_count() - 1; i >= 0; i--) {
+        if (strncmp(history_get(i), wanted, length) == 0) return history_get(i);
+    }
+    return NULL;
+}
+
+static char *expand_history(const char *line, int *changed) {
+    StrBuf out;
+    sb_init(&out);
+    char quote = 0;
+
+    for (const char *p = line; *p; p++) {
+        if (quote) {
+            if (*p == quote) quote = 0;
+            sb_putc(&out, *p);
+            continue;
+        }
+        if (*p == '\'' || *p == '"') {
+            quote = *p;
+            sb_putc(&out, *p);
+            continue;
+        }
+        if (*p != '!' || !p[1] || p[1] == ' ' || p[1] == '=') {
+            sb_putc(&out, *p);
+            continue;
+        }
+
+        if (p[1] == '$') {
+            const char *previous = history_count() > 0 ? history_get(history_count() - 1) : NULL;
+            if (previous) {
+                const char *last = strrchr(previous, ' ');
+                sb_puts(&out, last ? last + 1 : previous);
+                *changed = 1;
+            }
+            p++;
+            continue;
+        }
+
+        const char *start = p + 1;
+        size_t length = 0;
+        if (*start == '!') {
+            length = 1;
+        } else {
+            while (start[length] && (isalnum((unsigned char)start[length]) || start[length] == '-' ||
+                                     start[length] == '_' || start[length] == '.'))
+                length++;
+        }
+        if (length == 0) {
+            sb_putc(&out, *p);
+            continue;
+        }
+
+        const char *found = history_match(start, length);
+        if (!found) {
+            shell_error("%.*s: event not found", (int)length + 1, p);
+            sb_free(&out);
+            return NULL;
+        }
+        sb_puts(&out, found);
+        *changed = 1;
+        p += length;
+    }
+    return sb_take(&out);
+}
+
 static void show_banner(void) {
     if (!option_enabled("FRESH_BANNER", 1)) return;
 
@@ -240,7 +318,17 @@ static void interactive_loop(void) {
         }
 
         char *trimmed = str_trim(command.data);
-        if (*trimmed) {
+        if (*trimmed && strchr(trimmed, '!')) {
+            int changed = 0;
+            char *expanded = expand_history(trimmed, &changed);
+            if (expanded) {
+                if (changed) printf("%s\n", expanded);
+                history_add(expanded);
+                history_save();
+                exec_text(expanded);
+                free(expanded);
+            }
+        } else if (*trimmed) {
             history_add(trimmed);
             history_save();
             exec_text(trimmed);
