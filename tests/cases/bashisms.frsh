@@ -1,0 +1,54 @@
+suite bashisms
+
+items=(alpha beta)
+check array_replace "${items[@]/a/X}" "Xlpha betX"
+check array_strip "${items[@]#a}" "lpha beta"
+check array_upper "${items[@]^^}" "ALPHA BETA"
+
+prefixed_one=1
+prefixed_two=2
+check names_by_prefix "$(echo ${!prefixed*})" "prefixed_one prefixed_two"
+
+word=hi
+check transform_upper "${word@U}" HI
+check transform_lower "${word@L}" hi
+check transform_quote "${word@Q}" "'hi'"
+
+set -- a b c d
+check positional_slice "${@:2:2}" "b c"
+check positional_rest "${@:3}" "c d"
+check positional_count "${#@}" 4
+
+if [[ abc =~ a(b)(c) ]]; then
+  check regex_group_one "${BASH_REMATCH[1]}" b
+  check regex_group_two "${BASH_REMATCH[2]}" c
+fi
+
+check based_number "$((2#1010))" 10
+check based_hex "$((16#ff))" 255
+
+check declare_prints "$(x=1; declare -p x | grep -c 'x=')" 1
+check export_prints "$(export EXPORTED_ONE=1; export -p | grep -c EXPORTED_ONE)" 1
+
+check command_v "$(command -v echo > /dev/null && echo found)" found
+echo() { printf 'shadowed\n'; }
+check function_shadows "$(echo hi)" shadowed
+check command_bypasses "$(command echo hi)" hi
+check builtin_bypasses "$(builtin echo hi)" hi
+unset -f echo
+check unset_f_removes "$(echo hi)" hi
+
+readonly LOCKED=first
+check readonly_holds "$(LOCKED=second 2>/dev/null; echo $LOCKED)" first
+
+check type_kind_builtin "$(type -t echo)" builtin
+check type_kind_function "$(f(){ :; }; type -t f)" function
+
+check last_argument "$(echo one two > /dev/null; echo $_)" two
+
+shopt -s nocasematch
+check nocasematch_on "$(case ABC in abc) echo yes ;; *) echo no ;; esac)" yes
+shopt -u nocasematch
+check nocasematch_off "$(case ABC in abc) echo yes ;; *) echo no ;; esac)" no
+
+check ifs_splitting "$(IFS=:; set -- $(echo a:b:c); echo $#)" 3
