@@ -207,6 +207,12 @@ static char *scan_word(const char **p, int *quoted, int *incomplete) {
             else *incomplete = 1;
             continue;
         }
+        if (strchr("?*+@!", c) && (*p)[1] == '(') {
+            sb_putc(&sb, c);
+            (*p)++;
+            copy_until(p, &sb, '(', ')', incomplete);
+            continue;
+        }
         if (c == '$' && (*p)[1] == '(') {
             sb_putc(&sb, '$');
             (*p)++;
