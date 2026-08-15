@@ -6,7 +6,7 @@ OUT=${OUT:-fuzz/build}
 
 FLAGS="-g -O1 -std=c11 -Wall -Wextra -Wno-unused-parameter"
 FLAGS="$FLAGS -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer"
-FLAGS="$FLAGS -Ifuzz -Isrc -D_popen=popen -D_pclose=pclose"
+FLAGS="$FLAGS -Ifuzz -Isrc -D_GNU_SOURCE -D_popen=popen -D_pclose=pclose"
 
 mkdir -p "$OUT"
 

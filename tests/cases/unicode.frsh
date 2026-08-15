@@ -1,0 +1,55 @@
+suite unicode
+
+work=.fresh-test-unicode
+rm -r "$work" 2> /dev/null
+mkdir -p "$work"
+
+start=$(pwd)
+cd "$work"
+
+mkdir -p "Müller" "çalışma" "書類" "emoji-🐟"
+
+echo german > "Müller/Belgeler.txt"
+echo turkish > "çalışma/dosya.txt"
+echo japanese > "書類/文書.txt"
+echo fishy > "emoji-🐟/data.txt"
+
+check unicode_german_read "$(cat "Müller/Belgeler.txt")" german
+check unicode_turkish_read "$(cat "çalışma/dosya.txt")" turkish
+check unicode_japanese_read "$(cat "書類/文書.txt")" japanese
+check unicode_emoji_read "$(cat "emoji-🐟/data.txt")" fishy
+
+check unicode_file_test "$(test -f "Müller/Belgeler.txt" && echo yes)" yes
+check unicode_dir_test "$(test -d "書類" && echo yes)" yes
+
+cd "Müller"
+check unicode_cd "$(basename "$(pwd)")" "Müller"
+cd ..
+
+matches=("çalışma"/*.txt)
+check unicode_glob "${#matches[@]}" 1
+check unicode_glob_name "${matches[0]}" "çalışma/dosya.txt"
+
+all=(*/)
+check unicode_glob_dirs "${#all[@]}" 4
+
+echo appended >> "書類/文書.txt"
+check unicode_append "$(cat "書類/文書.txt" | tail -n 1)" appended
+
+cp "Müller/Belgeler.txt" "書類/kopie.txt"
+check unicode_copy "$(cat "書類/kopie.txt")" german
+
+mv "書類/kopie.txt" "emoji-🐟/moved.txt"
+check unicode_move "$(cat "emoji-🐟/moved.txt")" german
+
+rm "emoji-🐟/moved.txt"
+check unicode_remove "$(test -f "emoji-🐟/moved.txt" || echo gone)" gone
+
+name="Müller"
+check unicode_variable "$name" "Müller"
+check unicode_length "${#name}" 7
+check unicode_echo "$(echo "書類")" "書類"
+check unicode_case "$(case "çalışma" in ç*) echo matched ;; esac)" matched
+
+cd "$start"
+rm -r "$work"

@@ -28,6 +28,22 @@
 #define COLOR_PROMPT "\x1b[97m"
 #define COLOR_ERROR "\x1b[31m"
 
+static int code_point_width(unsigned long code) {
+    if (code < 0x1100) return 1;
+    if (code <= 0x115f) return 2;
+    if (code == 0x2329 || code == 0x232a) return 2;
+    if (code >= 0x2e80 && code <= 0xa4cf && code != 0x303f) return 2;
+    if (code >= 0xac00 && code <= 0xd7a3) return 2;
+    if (code >= 0xf900 && code <= 0xfaff) return 2;
+    if (code >= 0xfe30 && code <= 0xfe6f) return 2;
+    if (code >= 0xff00 && code <= 0xff60) return 2;
+    if (code >= 0xffe0 && code <= 0xffe6) return 2;
+    if (code >= 0x1f300 && code <= 0x1f64f) return 2;
+    if (code >= 0x1f900 && code <= 0x1f9ff) return 2;
+    if (code >= 0x20000 && code <= 0x3fffd) return 2;
+    return 1;
+}
+
 int display_width(const char *text) {
     int width = 0;
     for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
@@ -41,7 +57,27 @@ int display_width(const char *text) {
             continue;
         }
         if ((*p & 0xC0) == 0x80) continue;
-        width++;
+
+        unsigned long code = *p;
+        int extra = 0;
+        if ((*p & 0xE0) == 0xC0) {
+            code = *p & 0x1Fu;
+            extra = 1;
+        } else if ((*p & 0xF0) == 0xE0) {
+            code = *p & 0x0Fu;
+            extra = 2;
+        } else if ((*p & 0xF8) == 0xF0) {
+            code = *p & 0x07u;
+            extra = 3;
+        }
+        for (int i = 1; i <= extra; i++) {
+            if ((p[i] & 0xC0) != 0x80) {
+                extra = i - 1;
+                break;
+            }
+            code = (code << 6) | (unsigned long)(p[i] & 0x3F);
+        }
+        width += code_point_width(code);
     }
     return width;
 }
