@@ -1,0 +1,36 @@
+{
+    "version": "26.9.0",
+    "description": "A fast, zsh flavoured shell for Windows, written in C with no runtime dependencies.",
+    "homepage": "https://github.com/S42yt/FreSH",
+    "license": "GPL-3.0-only",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/S42yt/FreSH/releases/download/v26.9.0/FreSH-Setup.exe#/setup.exe",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+    },
+    "installer": {
+        "script": [
+            "Start-Process -FilePath \"$dir\\setup.exe\" -ArgumentList '/silent','/user' -Wait"
+        ]
+    },
+    "uninstaller": {
+        "script": [
+            "$u = \"$env:LOCALAPPDATA\\FreSH\\Uninstall-FreSH.exe\"",
+            "if (Test-Path $u) { Start-Process -FilePath $u -ArgumentList '/silent' -Wait }"
+        ]
+    },
+    "checkver": {
+        "github": "https://github.com/S42yt/FreSH"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/S42yt/FreSH/releases/download/v$version/FreSH-Setup.exe#/setup.exe"
+            }
+        },
+        "hash": {
+            "url": "https://github.com/S42yt/FreSH/releases/download/v$version/SHA256SUMS.txt"
+        }
+    }
+}

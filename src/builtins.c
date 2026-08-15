@@ -685,7 +685,10 @@ static int builtin_builtin(int argc, char **argv) {
 }
 
 static int builtin_exec(int argc, char **argv) {
-    if (argc < 2) return 0;
+    if (argc < 2) {
+        exec_keep_redirections();
+        return 0;
+    }
 
     StrBuf line;
     sb_init(&line);

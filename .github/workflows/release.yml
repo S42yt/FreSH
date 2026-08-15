@@ -19,6 +19,8 @@ on:
 
 permissions:
   contents: write
+  attestations: write
+  id-token: write
 
 jobs:
   expectations:
@@ -103,6 +105,29 @@ jobs:
           tests/diff/record.sh "$PWD/build/FreSH.exe" tests/diff/actual
           tests/diff/compare.sh tests/diff/expected tests/diff/actual
 
+      - name: Checksums
+        shell: bash
+        run: |
+          cd build
+          sha256sum FreSH.exe FreSH-Setup.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/attest-build-provenance@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          subject-path: |
+            build/FreSH.exe
+            build/FreSH-Setup.exe
+
+      - name: Update the package manifests
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          setup_hash=$(grep 'FreSH-Setup.exe' build/SHA256SUMS.txt | cut -d' ' -f1)
+          plain_hash=$(grep ' FreSH.exe' build/SHA256SUMS.txt | cut -d' ' -f1)
+          tools/manifests.sh "$VERSION" "$setup_hash" "$plain_hash"
+          git diff --stat
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -124,4 +149,5 @@ jobs:
           files: |
             build/FreSH-Setup.exe
             build/FreSH.exe
+            build/SHA256SUMS.txt
           fail_on_unmatched_files: true

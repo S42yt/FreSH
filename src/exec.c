@@ -31,14 +31,26 @@
 #define MAX_STAGES 32
 #define MAX_TRACKED 128
 
+#define EXTRA_FDS 8
+
+typedef struct {
+    int fd;
+    HANDLE handle;
+} ExtraFd;
+
 typedef struct {
     HANDLE in;
     HANDLE out;
     HANDLE err;
+    ExtraFd extra[EXTRA_FDS];
+    int extra_count;
 } IoSet;
 
 typedef struct {
     int saved[3];
+    int extra_fd[EXTRA_FDS];
+    int extra_saved[EXTRA_FDS];
+    int extra_count;
 } FdSave;
 
 static Table function_table;
@@ -54,6 +66,11 @@ static int exec_pipeline(Node *node, int background);
 static void job_add(HANDLE process, const char *command);
 static void resolutions_release(void);
 static int skip_functions = 0;
+static int keep_redirections = 0;
+
+void exec_keep_redirections(void) {
+    keep_redirections = 1;
+}
 
 static StrList temp_free_list;
 static StrList temp_created;
@@ -451,6 +468,7 @@ static void set_inherit(HANDLE handle, int enabled) {
 
 static IoSet io_default(void) {
     IoSet io;
+    memset(&io, 0, sizeof(io));
     io.in = GetStdHandle(STD_INPUT_HANDLE);
     io.out = GetStdHandle(STD_OUTPUT_HANDLE);
     io.err = GetStdHandle(STD_ERROR_HANDLE);
@@ -459,7 +477,8 @@ static IoSet io_default(void) {
 
 static int io_is_default(const IoSet *io) {
     IoSet base = io_default();
-    return io->in == base.in && io->out == base.out && io->err == base.err;
+    return io->in == base.in && io->out == base.out && io->err == base.err &&
+           io->extra_count == 0;
 }
 
 static void discard_stdin_buffer(void) {
@@ -493,6 +512,32 @@ static void fds_apply(const IoSet *io, FdSave *save) {
             CloseHandle(copy);
         }
     }
+
+    save->extra_count = 0;
+    for (int i = 0; i < io->extra_count; i++) {
+        int target = io->extra[i].fd;
+        save->extra_fd[save->extra_count] = target;
+        save->extra_saved[save->extra_count] = _dup(target);
+        save->extra_count++;
+
+        if (io->extra[i].handle == INVALID_HANDLE_VALUE) {
+            _close(target);
+            continue;
+        }
+
+        HANDLE copy;
+        if (!DuplicateHandle(GetCurrentProcess(), io->extra[i].handle, GetCurrentProcess(), &copy,
+                             0, FALSE, DUPLICATE_SAME_ACCESS))
+            continue;
+
+        int fd = _open_osfhandle((intptr_t)copy, _O_BINARY);
+        if (fd >= 0) {
+            _dup2(fd, target);
+            _close(fd);
+        } else {
+            CloseHandle(copy);
+        }
+    }
 }
 
 static void fds_restore(FdSave *save) {
@@ -504,6 +549,47 @@ static void fds_restore(FdSave *save) {
         _dup2(save->saved[i], i);
         _close(save->saved[i]);
     }
+
+    for (int i = 0; i < save->extra_count; i++) {
+        int target = save->extra_fd[i];
+        if (save->extra_saved[i] < 0) {
+            _close(target);
+            continue;
+        }
+        _dup2(save->extra_saved[i], target);
+        _close(save->extra_saved[i]);
+    }
+    save->extra_count = 0;
+}
+
+static int io_assign(IoSet *io, int fd, HANDLE handle) {
+    if (fd == 0) {
+        io->in = handle;
+        return 1;
+    }
+    if (fd == 1) {
+        io->out = handle;
+        return 1;
+    }
+    if (fd == 2) {
+        io->err = handle;
+        return 1;
+    }
+
+    for (int i = 0; i < io->extra_count; i++) {
+        if (io->extra[i].fd != fd) continue;
+        io->extra[i].handle = handle;
+        return 1;
+    }
+
+    if (io->extra_count >= EXTRA_FDS) {
+        shell_error("a command cannot redirect more than %d extra descriptors", EXTRA_FDS);
+        return 0;
+    }
+    io->extra[io->extra_count].fd = fd;
+    io->extra[io->extra_count].handle = handle;
+    io->extra_count++;
+    return 1;
 }
 
 static HANDLE null_device(void) {
@@ -593,12 +679,28 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
         }
 
         if (r->type == R_DUP) {
-            int fd = atoi(target);
-            HANDLE source = fd == 0 ? io->in : (fd == 2 ? io->err : io->out);
-            if (r->fd == 0) io->in = source;
-            else if (r->fd == 2) io->err = source;
-            else io->out = source;
+            HANDLE source;
+            if (strcmp(target, "-") == 0) {
+                source = INVALID_HANDLE_VALUE;
+            } else {
+                int fd = atoi(target);
+                source = fd == 0 ? io->in : (fd == 2 ? io->err : io->out);
+
+                if (fd >= 3) {
+                    intptr_t native = _get_osfhandle(fd);
+                    source = native == -1 ? INVALID_HANDLE_VALUE : (HANDLE)native;
+                }
+                for (int i = 0; i < io->extra_count; i++) {
+                    if (io->extra[i].fd == fd) source = io->extra[i].handle;
+                }
+                if (source == INVALID_HANDLE_VALUE) {
+                    shell_error("%s: bad file descriptor", target);
+                    free(target);
+                    return 0;
+                }
+            }
             free(target);
+            if (!io_assign(io, r->fd, source)) return 0;
             continue;
         }
 
@@ -614,9 +716,7 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
         if (_stricmp(native, "nul") == 0) {
             HANDLE empty = null_device();
             if (empty == INVALID_HANDLE_VALUE) return 0;
-            if (r->fd == 0) io->in = empty;
-            else if (r->fd == 2) io->err = empty;
-            else io->out = empty;
+            if (!io_assign(io, r->fd, empty)) return 0;
             continue;
         }
 
@@ -637,9 +737,7 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
             return 0;
         }
         track_handle(handle);
-        if (r->fd == 0) io->in = handle;
-        else if (r->fd == 2) io->err = handle;
-        else io->out = handle;
+        if (!io_assign(io, r->fd, handle)) return 0;
     }
     return 1;
 }
@@ -1120,7 +1218,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
             status = 127;
         }
 
-        if (redirected) fds_restore(&save);
+        if (redirected && !keep_redirections) fds_restore(&save);
+        keep_redirections = 0;
     }
 
     for (size_t i = 0; i < saved_names.len; i++) {

@@ -5,6 +5,7 @@
  */
 
 #include <ctype.h>
+#include <fcntl.h>
 #include <io.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -160,6 +161,17 @@ static void load_rc(void) {
     plugins_load_configured();
 }
 
+static void binary_when_not_a_console(void) {
+    static const DWORD STREAMS[3] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
+    FILE *files[3] = {stdin, stdout, stderr};
+
+    for (int i = 0; i < 3; i++) {
+        DWORD mode;
+        if (GetConsoleMode(GetStdHandle(STREAMS[i]), &mode)) continue;
+        _setmode(_fileno(files[i]), _O_BINARY);
+    }
+}
+
 void shell_init(int interactive) {
     memset(&shell, 0, sizeof(shell));
     shell.running = 1;
@@ -174,6 +186,7 @@ void shell_init(int interactive) {
     vars_init();
     exec_init();
     path_reload_environment();
+    binary_when_not_a_console();
 }
 
 void shell_cleanup(void) {
