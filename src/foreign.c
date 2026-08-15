@@ -153,6 +153,7 @@ int foreign_run_cmd(const char *command) {
 
 int foreign_route(const char *line, int *status) {
     if (!option_enabled("FRESH_FOREIGN", 1)) return 0;
+    if (strchr(line, '\n')) return 0;
 
     size_t length = 0;
     char *start = first_word(line, &length);
@@ -162,20 +163,17 @@ int foreign_route(const char *line, int *status) {
     memcpy(word, start, length);
     word[length] = '\0';
 
+    int cmdlet = looks_like_cmdlet(word) || list_contains(POWERSHELL_ALIASES, word, 0);
+    int builtin = !cmdlet && list_contains(CMD_BUILTINS, word, 0);
+    if (!cmdlet && !builtin) return 0;
+
     if (builtin_lookup(word) || function_defined(word) || alias_get(word)) return 0;
 
     char resolved[PATH_BUF];
     if (resolve_command(word, resolved, sizeof(resolved))) return 0;
 
-    if (looks_like_cmdlet(word) || list_contains(POWERSHELL_ALIASES, word, 0)) {
-        *status = foreign_run_powershell(line);
-        return 1;
-    }
-    if (list_contains(CMD_BUILTINS, word, 0)) {
-        *status = foreign_run_cmd(line);
-        return 1;
-    }
-    return 0;
+    *status = cmdlet ? foreign_run_powershell(line) : foreign_run_cmd(line);
+    return 1;
 }
 
 static char *cmdlet_cache_path(void) {

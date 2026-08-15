@@ -562,6 +562,7 @@ static char *brace_expand(const char *body) {
     }
 
     char *var_name = xstrndup(body, (size_t)(colon - body));
+    char *special = NULL;
     const char *rest = colon;
     int has_colon = 0;
     if (*rest == ':') {
@@ -569,7 +570,17 @@ static char *brace_expand(const char *body) {
         rest++;
     }
     char op = *rest ? *rest++ : '\0';
-    const char *value = var_get(var_name);
+
+    const char *value;
+    if (isdigit((unsigned char)var_name[0])) {
+        value = param_get(atoi(var_name));
+    } else if (var_name[0] && !var_name[1] && !isalpha((unsigned char)var_name[0]) &&
+               var_name[0] != '_') {
+        special = special_value(var_name[0]);
+        value = special;
+    } else {
+        value = var_get(var_name);
+    }
     int empty = !value || (has_colon && !*value);
 
     char *result = NULL;
@@ -600,6 +611,7 @@ static char *brace_expand(const char *body) {
     } else {
         result = xstrdup(value ? value : "");
     }
+    free(special);
     free(var_name);
     return result;
 }
