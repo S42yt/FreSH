@@ -88,20 +88,22 @@ Set `FRESH_TIMING=1` and FreSH prints how long each stage took:
 
 ```
 $ FRESH_TIMING=1 FreSH --norc -c exit
+     14406 us  before main
          3 us  entry
-       516 us  descriptors
-       747 us  terminal
-      1182 us  variables
-      1483 us  path
-      1902 us  command
-      2111 us  exit
+       182 us  descriptors
+       299 us  terminal
+       472 us  variables
+       525 us  path
+       647 us  command
+       716 us  exit
 ```
 
-About 2 ms is FreSH's own work; with a `.freshrc`, a theme and plugins the
-configuration adds what it costs to run, which `FRESH_TIMING=1` will show per
-stage. The rest of the wall clock time is Windows creating the process and
-loading the image. The `PATH` merge and the registry reads behind it no longer
-appear at all, because they run on first use rather than at startup.
+Under a millisecond is FreSH's own work; with a `.freshrc`, a theme and
+plugins the configuration adds what it costs to run, which `FRESH_TIMING=1`
+will show per stage. The `before main` line is Windows creating the process
+and loading the image, which is where the rest of the wall clock goes. The
+`PATH` merge and the registry reads behind it no longer appear at all, because
+they run on first use rather than at startup.
 
 ## What changed in 26.11
 
@@ -201,24 +203,41 @@ The same three on the benchmark machine land inside a millisecond of each
 other. Startup is Windows creating a process and mapping an image; a language
 cannot move that floor, and neither can a smaller binary.
 
-What did move startup was doing less of it. The `PATH` merge, the registry
-reads behind it, `advapi32` itself and the environment table are all deferred
-now: the merge runs on the first read of `$PATH` or the first command lookup,
-and a shell that never needs them never pays. `FRESH_TIMING=1` on the machine
-above, `--norc -c exit`:
+What did move startup was doing less of it, and then carrying fewer bytes.
 
-| | 26.10 | 26.11 |
-| --- | --- | --- |
-| FreSH's own startup work | 4.2 ms | **2.1 ms** |
-| `FreSH --norc -c exit`, best of 60 | 20.5 ms | **17.8 ms** |
-| `cmd /c exit`, same session | 14.3 ms | 14.7 ms |
+**Doing less.** The `PATH` merge, the registry reads behind it, `advapi32`
+itself and the environment table are all deferred: the merge runs on the first
+read of `$PATH` or the first command lookup, and a shell that never needs them
+never pays. FreSH's own startup work fell from **4.2 ms to 0.7 ms**, measured
+by `FRESH_TIMING=1`, which now also prints the time from process creation to
+`main` so the two costs cannot be confused.
 
-The remaining 3 to 4 ms of gap to `cmd` is not work FreSH does: about 2 ms of
-the wall time is Windows mapping an image it does not keep warm, where
-`cmd.exe` is a small signed system binary that is effectively always cached.
-Closing the gap further means deleting startup work that no longer exists.
-`cmd` keeps the empty case; the [Doing something](#doing-something) table above
-is what happens the moment either shell is asked to do anything.
+**Carrying fewer bytes.** With the shell's own work under a millisecond, an
+experiment settled where the rest goes: a build whose `main` returns
+immediately takes the same wall time as a full `--norc -c exit` run, so the
+whole cost is Windows loading and scanning the image. That cost tracks size at
+roughly 2 ms per 100 KB on the machine above, which is Defender reading
+unsigned code on every launch. So the icon keeps only the sizes Windows
+renders, and `FreSH.exe` went **519 KB to 447 KB**.
+
+Interleaved in one session, best of 60 per round, across rounds:
+
+| | best seen |
+| --- | --- |
+| `cmd /c exit` | 8.1 ms |
+| **`FreSH --norc -c exit`, 26.11** | **11.2 ms** |
+| `FreSH --norc -c exit`, 26.10 | 11.5 ms, and 3 to 7 ms worse under load |
+
+The absolute numbers move several milliseconds with machine load, which is why
+they are given as the best of interleaved rounds rather than a single pair.
+The stable part is the gap: **2 to 3 ms behind `cmd`**, down from 5 to 6, and
+none of it is FreSH's own work any more. What remains is that `cmd.exe` is a
+small signed system binary Windows keeps warm and trusts, and FreSH is a
+447 KB unsigned one Defender reads every time. The honest path to parity is
+code signing, which is [in progress](code-signing.md); the dishonest one is
+asking users to exclude their shell from their antivirus, which FreSH will not
+do. `cmd` keeps the empty case; the [Doing something](#doing-something) table
+above is what happens the moment either shell is asked to do anything.
 
 ## What changed in 26.10
 
