@@ -1,0 +1,90 @@
+name: Rust core against C core
+
+on:
+  push:
+    branches: ['feat/rust-compute-core']
+  workflow_dispatch:
+
+jobs:
+  both:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          update: true
+
+      - name: Add the Rust target the C linker can use
+        shell: bash
+        run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Build with the C core
+        shell: msys2 {0}
+        run: |
+          chmod +x build.sh
+          FRESH_NO_RUST=1 ./build.sh
+          cp build/FreSH.exe build/FreSH-c.exe
+
+      - name: Build with the Rust core
+        shell: msys2 {0}
+        run: |
+          ./build.sh
+          cp build/FreSH.exe build/FreSH-rust.exe
+
+      - name: Sizes and cores
+        shell: bash
+        run: |
+          ls -l build/FreSH-c.exe build/FreSH-rust.exe
+          ./build/FreSH-c.exe --norc -c 'fresh' | grep FreSH
+          ./build/FreSH-rust.exe --norc -c 'fresh' | grep FreSH
+
+      - name: The two agree
+        shell: bash
+        run: |
+          ./build/FreSH-c.exe --norc tests/rust/utils.frsh > c.txt
+          ./build/FreSH-rust.exe --norc tests/rust/utils.frsh > rust.txt
+          if diff -u c.txt rust.txt; then
+            echo "the two cores agree on every line"
+          else
+            echo "::error::the Rust core disagrees with the C core"
+            exit 1
+          fi
+
+      - name: Test suite, both builds
+        shell: bash
+        run: |
+          ./build/FreSH-c.exe tests/run.frsh
+          ./build/FreSH-rust.exe tests/run.frsh
+
+      - name: Benchmark both
+        shell: bash
+        run: |
+          echo "C core:"   | tee utils.txt
+          ./build/FreSH-c.exe --norc tools/bench-utils.frsh 5 | tee -a utils.txt
+          echo "Rust core:" | tee -a utils.txt
+          ./build/FreSH-rust.exe --norc tools/bench-utils.frsh 5 | tee -a utils.txt
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Rust core against C core'
+            echo '```'
+            cat utils.txt 2> /dev/null || echo 'not measured'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: both-cores
+          path: |
+            build/FreSH-c.exe
+            build/FreSH-rust.exe
+            utils.txt
+          retention-days: 30

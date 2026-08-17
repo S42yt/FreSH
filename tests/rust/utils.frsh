@@ -1,0 +1,46 @@
+work=.utils-parity
+rm -r "$work" 2> /dev/null
+mkdir -p "$work"
+
+printf 'pear\nApple\nbanana\napple\nPear\ncherry\nbanana\n' > "$work/words"
+printf '10\n2\n33\n-4\n2\n0\n100\n-4\n' > "$work/numbers"
+printf 'one two three\nfour  five\n\nsix\n' > "$work/text"
+
+echo "-- sort"
+sort "$work/words"
+echo "-- sort -r"
+sort -r "$work/words"
+echo "-- sort -u"
+sort -u "$work/words"
+echo "-- sort -n"
+sort -n "$work/numbers"
+echo "-- sort -nr"
+sort -nr "$work/numbers"
+echo "-- sort -nu"
+sort -nu "$work/numbers"
+echo "-- sort stdin"
+printf 'delta\nalpha\ncharlie\nbravo\n' | sort
+
+echo "-- wc"
+wc -l "$work/text"
+wc -w "$work/text"
+wc -c "$work/text"
+wc "$work/text"
+printf 'a b\nc\n' | wc
+printf '' | wc
+
+echo "-- empty and single"
+printf '' > "$work/empty"
+sort "$work/empty"
+wc -l "$work/empty"
+printf 'only\n' > "$work/one"
+sort "$work/one"
+wc -l "$work/one"
+
+echo "-- no trailing newline"
+printf 'zebra\nyak' > "$work/ragged"
+sort "$work/ragged"
+wc "$work/ragged"
+
+rm -r "$work"
+echo "-- done"
