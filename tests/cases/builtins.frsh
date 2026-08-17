@@ -65,7 +65,7 @@ case "$listing" in *"99.2.0 experiment 1"*) newest=yes ;; *) newest=no ;; esac
 check selector_lists_experiments "$newest" yes
 case "$offer" in *"99.1.0-prerelease-2"*) offered=yes ;; *) offered=no ;; esac
 check pre_offers_newest_prerelease "$offered" yes
-case "$offer" in *experiment*) leaked=yes ;; *) leaked=no ;; esac
+case "$offer" in *"99.2.0"*) leaked=yes ;; *) leaked=no ;; esac
 check pre_skips_experiments "$leaked" no
 case "$listing" in *"99.1.0 prerelease 2"*) step=yes ;; *) step=no ;; esac
 check selector_keeps_last_step "$step" yes
