@@ -63,6 +63,7 @@ static int command_cache_valid = 0;
 
 static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out);
 static int exec_pipeline(Node *node, int background);
+static void spools_close(void);
 static void job_add(HANDLE process, const char *command);
 static void resolutions_release(void);
 static int skip_functions = 0;
@@ -107,6 +108,7 @@ void exec_cleanup(void) {
     table_free(&function_table);
     sl_free(&command_cache);
     resolutions_release();
+    spools_close();
     temp_cleanup();
 }
 
@@ -1282,9 +1284,29 @@ static int stage_runs_in_process(Node *node) {
     return coreutil_lookup(word) != NULL;
 }
 
-static HANDLE open_spool(char **path_out) {
+typedef struct {
+    HANDLE handle;
+    char *path;
+    int busy;
+} Spool;
+
+static Spool spool_pool[MAX_STAGES * 2];
+static int spool_pool_count = 0;
+
+static Spool *spool_acquire(void) {
+    for (int i = 0; i < spool_pool_count; i++) {
+        if (spool_pool[i].busy) continue;
+        Spool *reused = &spool_pool[i];
+        SetFilePointer(reused->handle, 0, NULL, FILE_BEGIN);
+        SetEndOfFile(reused->handle);
+        reused->busy = 1;
+        return reused;
+    }
+
+    if (spool_pool_count == (int)(sizeof(spool_pool) / sizeof(spool_pool[0]))) return NULL;
+
     char *path = temp_acquire();
-    if (!path) return INVALID_HANDLE_VALUE;
+    if (!path) return NULL;
 
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     HANDLE handle = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
@@ -1292,10 +1314,28 @@ static HANDLE open_spool(char **path_out) {
                                 FILE_ATTRIBUTE_TEMPORARY, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         temp_release(path);
-        return INVALID_HANDLE_VALUE;
+        return NULL;
     }
-    *path_out = path;
-    return handle;
+
+    Spool *fresh = &spool_pool[spool_pool_count++];
+    fresh->handle = handle;
+    fresh->path = path;
+    fresh->busy = 1;
+    return fresh;
+}
+
+static void spool_free(Spool *spool) {
+    if (spool) spool->busy = 0;
+}
+
+static void spools_close(void) {
+    for (int i = 0; i < spool_pool_count; i++) {
+        if (spool_pool[i].handle) CloseHandle(spool_pool[i].handle);
+        temp_release(spool_pool[i].path);
+        spool_pool[i].handle = NULL;
+        spool_pool[i].path = NULL;
+    }
+    spool_pool_count = 0;
 }
 
 static HANDLE rewind_spool(HANDLE spool) {
@@ -1334,7 +1374,7 @@ static int exec_pipeline(Node *node, int background) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     HANDLE processes[MAX_STAGES];
     int process_count = 0;
-    char *spools[MAX_STAGES];
+    Spool *spools[MAX_STAGES];
     int spool_count = 0;
     HANDLE stage_input = NULL;
     int mark = tracked_count;
@@ -1348,20 +1388,18 @@ static int exec_pipeline(Node *node, int background) {
         IoSet io = io_default();
         HANDLE read_end = NULL;
         HANDLE write_end = NULL;
-        HANDLE spool = INVALID_HANDLE_VALUE;
-        char *spool_path = NULL;
+        Spool *spool = NULL;
 
         if (stage_input) io.in = stage_input;
 
         if (i < count - 1) {
             if (stage_runs_in_process(stages[i])) {
-                spool = open_spool(&spool_path);
-                if (spool == INVALID_HANDLE_VALUE) {
+                spool = spool_acquire();
+                if (!spool) {
                     shell_error("cannot create pipeline buffer");
                     break;
                 }
-                track_handle(spool);
-                io.out = spool;
+                io.out = spool->handle;
             } else {
                 if (!CreatePipe(&read_end, &write_end, &sa, 0)) {
                     shell_error("cannot create pipe");
@@ -1392,11 +1430,9 @@ static int exec_pipeline(Node *node, int background) {
             stage_input = NULL;
         }
 
-        if (spool != INVALID_HANDLE_VALUE) {
-            stage_input = rewind_spool(spool);
-            untrack_handle(spool);
-            CloseHandle(spool);
-            spools[spool_count++] = spool_path;
+        if (spool) {
+            stage_input = rewind_spool(spool->handle);
+            spools[spool_count++] = spool;
             if (stage_input == INVALID_HANDLE_VALUE) stage_input = NULL;
             else track_handle(stage_input);
         } else {
@@ -1422,7 +1458,7 @@ static int exec_pipeline(Node *node, int background) {
         CloseHandle(processes[i]);
     }
 
-    for (int i = 0; i < spool_count; i++) temp_release(spools[i]);
+    for (int i = 0; i < spool_count; i++) spool_free(spools[i]);
 
     StrList reported;
     sl_init(&reported);
