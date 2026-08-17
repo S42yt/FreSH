@@ -59,6 +59,11 @@ jobs:
           }
           probe '[[ "abc123" == a* ]]; echo $?'
           probe '[[ abc == a* ]]; echo $?'
+          probe '[[ abc == "a*" ]]; echo $?'
+          probe '[[ abc = a* ]]; echo $?'
+          probe 'echo [[ abc == a* ]]'
+          probe 'echo a*'
+          probe 'case abc in a*) echo yes ;; *) echo no ;; esac'
           probe 'echo "[[ ${#x}"'
           probe 'x=5; [[ "$x" == 5 ]]; echo $?'
           probe 'files=(a b c); echo ${#files[@]}'
