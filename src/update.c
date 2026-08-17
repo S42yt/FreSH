@@ -21,6 +21,7 @@
 
 #define RELEASE_API "https://api.github.com/repos/S42yt/FreSH/releases/latest"
 #define RELEASE_API_ALL "https://api.github.com/repos/S42yt/FreSH/releases?per_page=1"
+#define RELEASE_API_LIST "https://api.github.com/repos/S42yt/FreSH/releases?per_page=50"
 #define RELEASE_PAGE "https://github.com/S42yt/FreSH/releases"
 #define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/FreSH-Setup.exe"
 #define USER_AGENT "FreSH-updater"
@@ -210,13 +211,172 @@ static int install_update(const char *version) {
     return 0;
 }
 
+typedef struct {
+    char tag[64];
+    char base[32];
+    int step;
+} Early;
+
+static void early_split(const char *tag, char *base, size_t base_size, int *step) {
+    const char *dash = strchr(tag, '-');
+    size_t length = dash ? (size_t)(dash - tag) : strlen(tag);
+    if (length >= base_size) length = base_size - 1;
+    memcpy(base, tag, length);
+    base[length] = '\0';
+    *step = dash ? atoi(strrchr(tag, '-') + 1) : 0;
+}
+
+static int quoted_field(const char *key, char *out, size_t out_size) {
+    const char *open_quote = strchr(key + strlen("\"tag_name\""), '"');
+    if (!open_quote) return 0;
+    const char *close_quote = strchr(open_quote + 1, '"');
+    if (!close_quote) return 0;
+
+    const char *text = open_quote + 1;
+    size_t length = (size_t)(close_quote - text);
+    if (length >= out_size) length = out_size - 1;
+    memcpy(out, text, length);
+    out[length] = '\0';
+    return (int)(close_quote - key) + 1;
+}
+
+static int marked_prerelease(const char *object, const char *limit) {
+    const char *flag = strstr(object, "\"prerelease\"");
+    if (!flag || (limit && flag > limit)) return 0;
+
+    const char *value = flag + strlen("\"prerelease\"");
+    while (*value == ':' || *value == ' ') value++;
+    return strncmp(value, "true", 4) == 0;
+}
+
+/* Newest first, one entry per version: 26.11.0 prerelease 1, 26.10.1 prerelease 2, and so on. */
+static int read_early_releases(Early *out, int max) {
+    StrBuf body;
+    sb_init(&body);
+    /* A file of releases stands in for github, which is how the tests reach this parser. */
+    const char *fixture = var_get("FRESH_RELEASES_JSON");
+    if (fixture && *fixture) {
+        FILE *file = fopen(fixture, "rb");
+        if (!file) {
+            sb_free(&body);
+            return -1;
+        }
+        char chunk[4096];
+        size_t read;
+        while ((read = fread(chunk, 1, sizeof(chunk), file)) > 0) sb_putn(&body, chunk, read);
+        fclose(file);
+    } else if (!http_fetch(RELEASE_API_LIST, &body, NULL)) {
+        sb_free(&body);
+        return -1;
+    }
+
+    if (!body.data) {
+        sb_free(&body);
+        return 0;
+    }
+
+    int count = 0;
+    const char *scan = body.data;
+    while (count < max) {
+        const char *key = strstr(scan, "\"tag_name\"");
+        if (!key) break;
+
+        char tag[64];
+        int used = quoted_field(key, tag, sizeof(tag));
+        if (!used) break;
+        scan = key + used;
+
+        const char *next = strstr(scan, "\"tag_name\"");
+        if (!marked_prerelease(scan, next)) continue;
+
+        Early found;
+        const char *name = tag[0] == 'v' ? tag + 1 : tag;
+        snprintf(found.tag, sizeof(found.tag), "%s", name);
+        early_split(found.tag, found.base, sizeof(found.base), &found.step);
+
+        int seen = 0;
+        for (int i = 0; i < count; i++) {
+            if (strcmp(out[i].base, found.base) != 0) continue;
+            seen = 1;
+            if (found.step > out[i].step) out[i] = found;
+            break;
+        }
+        if (!seen) out[count++] = found;
+    }
+
+    sb_free(&body);
+    return count;
+}
+
+static int command_pre_selector(int check_only) {
+    Early releases[32];
+    printf("  %sasking github for the prereleases%s\n", style(S_DIM), style(S_RESET));
+
+    int count = read_early_releases(releases, 32);
+    if (count < 0) {
+        shell_error("update: could not reach github, see %s", RELEASE_PAGE);
+        return 1;
+    }
+    if (count == 0) {
+        printf("  %s\xe2\x9c\x93%s there are no prereleases right now\n", style(S_ACCENT),
+               style(S_RESET));
+        return 0;
+    }
+
+    printf("\n");
+    for (int i = 0; i < count; i++) {
+        const char *note = "";
+        if (strcmp(releases[i].tag, FRESH_VERSION) == 0) note = "  installed";
+        else if (!version_newer(releases[i].tag, FRESH_VERSION)) note = "  older than yours";
+
+        printf("  %s%2d%s  %s prerelease %d%s%s%s\n", style(S_ACCENT), i + 1, style(S_RESET),
+               releases[i].base, releases[i].step, style(S_DIM), note, style(S_RESET));
+    }
+    printf("\n");
+
+    if (check_only) {
+        printf("  %srun fresh update --pre-selector to install one%s\n", style(S_DIM),
+               style(S_RESET));
+        return 0;
+    }
+
+    printf("  %swhich one? 1-%d, or enter to cancel:%s ", style(S_LABEL), count, style(S_RESET));
+    fflush(stdout);
+
+    StrBuf answer;
+    sb_init(&answer);
+    if (!read_line(stdin, &answer)) {
+        sb_free(&answer);
+        printf("\n");
+        return 0;
+    }
+
+    char picked[64];
+    const char *text = answer.data;
+    while (*text == ' ' || *text == '\t') text++;
+    snprintf(picked, sizeof(picked), "%s", text);
+    sb_free(&answer);
+
+    int choice = atoi(picked);
+    if (choice < 1 || choice > count) {
+        if (!picked[0]) return 0;
+        shell_error("update: %s is not one of the choices", picked);
+        return 1;
+    }
+    return install_update(releases[choice - 1].tag);
+}
+
 static int command_update(int argc, char **argv) {
     int check_only = 0;
     int allow_early = 0;
+    int selector = 0;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--check") == 0 || strcmp(argv[i], "-c") == 0) check_only = 1;
         if (strcmp(argv[i], "--pre") == 0 || strcmp(argv[i], "--prerelease") == 0) allow_early = 1;
+        if (strcmp(argv[i], "--pre-selector") == 0) selector = 1;
     }
+
+    if (selector) return command_pre_selector(check_only);
 
     printf("  %schecking for %s%s\n", style(S_DIM), allow_early ? "any release, including prereleases"
                                                                 : "updates",
@@ -261,7 +421,8 @@ int builtin_fresh(int argc, char **argv) {
     }
 
     if (argc > 1) {
-        shell_error("fresh: usage: fresh [version | doctor | update [--check] [--pre]]");
+        shell_error(
+            "fresh: usage: fresh [version | doctor | update [--check] [--pre] [--pre-selector]]");
         return 2;
     }
 
@@ -296,6 +457,8 @@ int builtin_fresh(int argc, char **argv) {
     printf("\n  %sfresh update%s checks github and installs the newest release\n", style(S_DIM),
            style(S_RESET));
     printf("  %sfresh update --pre%s takes prereleases too\n", style(S_DIM), style(S_RESET));
+    printf("  %sfresh update --pre-selector%s lists the prereleases and lets you pick one\n",
+           style(S_DIM), style(S_RESET));
     printf("  %sfresh doctor%s checks your configuration\n", style(S_DIM), style(S_RESET));
     printf("\n");
 

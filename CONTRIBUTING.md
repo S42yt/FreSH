@@ -151,8 +151,13 @@ The workflow reads the suffix and behaves differently in three ways:
 Anyone who wants them asks for them:
 
 ```sh
-fresh update --pre
+fresh update --pre           # the newest prerelease of any version
+fresh update --pre-selector  # list them and pick one, --check only lists
 ```
+
+`--pre-selector` shows the newest prerelease of every version, so a tester on
+`26.10.1-prerelease-2` can drop onto `26.11.0-prerelease-1` and back again
+without hunting through the releases page.
 
 A prerelease sorts below the release of the same number, so someone running
 `26.10.1-prerelease-2` is offered `26.10.1` when it arrives, and
