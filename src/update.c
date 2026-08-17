@@ -20,7 +20,6 @@
 #include "vars.h"
 
 #define RELEASE_API "https://api.github.com/repos/S42yt/FreSH/releases/latest"
-#define RELEASE_API_ALL "https://api.github.com/repos/S42yt/FreSH/releases?per_page=1"
 #define RELEASE_API_LIST "https://api.github.com/repos/S42yt/FreSH/releases?per_page=50"
 #define RELEASE_PAGE "https://github.com/S42yt/FreSH/releases"
 #define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/FreSH-Setup.exe"
@@ -108,10 +107,10 @@ int http_download(const char *url, const char *path) {
     return http_fetch(url, NULL, path);
 }
 
-static int read_latest_version(char *out, size_t out_size, int allow_early) {
+static int read_latest_version(char *out, size_t out_size) {
     StrBuf body;
     sb_init(&body);
-    if (!http_fetch(allow_early ? RELEASE_API_ALL : RELEASE_API, &body, NULL)) {
+    if (!http_fetch(RELEASE_API, &body, NULL)) {
         sb_free(&body);
         return 0;
     }
@@ -211,19 +210,43 @@ static int install_update(const char *version) {
     return 0;
 }
 
+/*
+ * A tag is 26.10.1, 26.10.1-prerelease-2 or 26.11.0-experiment-1. The word in
+ * the middle is the kind: a prerelease is the next version being tested and is
+ * what --pre offers, anything else is an experiment that only the selector
+ * shows, so a branch nobody should land on cannot arrive by asking for a
+ * prerelease.
+ */
 typedef struct {
     char tag[64];
     char base[32];
+    char kind[24];
     int step;
 } Early;
 
-static void early_split(const char *tag, char *base, size_t base_size, int *step) {
+static void early_split(const char *tag, Early *out) {
+    snprintf(out->tag, sizeof(out->tag), "%s", tag);
+    out->kind[0] = '\0';
+    out->step = 0;
+
     const char *dash = strchr(tag, '-');
     size_t length = dash ? (size_t)(dash - tag) : strlen(tag);
-    if (length >= base_size) length = base_size - 1;
-    memcpy(base, tag, length);
-    base[length] = '\0';
-    *step = dash ? atoi(strrchr(tag, '-') + 1) : 0;
+    if (length >= sizeof(out->base)) length = sizeof(out->base) - 1;
+    memcpy(out->base, tag, length);
+    out->base[length] = '\0';
+    if (!dash) return;
+
+    const char *word = dash + 1;
+    const char *end = strchr(word, '-');
+    size_t kind_length = end ? (size_t)(end - word) : strlen(word);
+    if (kind_length >= sizeof(out->kind)) kind_length = sizeof(out->kind) - 1;
+    memcpy(out->kind, word, kind_length);
+    out->kind[kind_length] = '\0';
+    if (end) out->step = atoi(end + 1);
+}
+
+static int is_experiment(const Early *release) {
+    return release->kind[0] && strcmp(release->kind, "prerelease") != 0;
 }
 
 static int quoted_field(const char *key, char *out, size_t out_size) {
@@ -249,8 +272,12 @@ static int marked_prerelease(const char *object, const char *limit) {
     return strncmp(value, "true", 4) == 0;
 }
 
-/* Newest first, one entry per version: 26.11.0 prerelease 1, 26.10.1 prerelease 2, and so on. */
-static int read_early_releases(Early *out, int max) {
+/*
+ * Newest first, one entry per version and kind: 26.11.0 experiment 1,
+ * 26.10.1 prerelease 2, and so on. With keep_stable the finished releases come
+ * too, which is how --pre finds the newest thing it is allowed to offer.
+ */
+static int read_early_releases(Early *out, int max, int keep_stable) {
     StrBuf body;
     sb_init(&body);
     /* A file of releases stands in for github, which is how the tests reach this parser. */
@@ -287,16 +314,16 @@ static int read_early_releases(Early *out, int max) {
         scan = key + used;
 
         const char *next = strstr(scan, "\"tag_name\"");
-        if (!marked_prerelease(scan, next)) continue;
+        if (!marked_prerelease(scan, next) && !keep_stable) continue;
 
         Early found;
         const char *name = tag[0] == 'v' ? tag + 1 : tag;
-        snprintf(found.tag, sizeof(found.tag), "%s", name);
-        early_split(found.tag, found.base, sizeof(found.base), &found.step);
+        early_split(name, &found);
 
         int seen = 0;
         for (int i = 0; i < count; i++) {
             if (strcmp(out[i].base, found.base) != 0) continue;
+            if (strcmp(out[i].kind, found.kind) != 0) continue;
             seen = 1;
             if (found.step > out[i].step) out[i] = found;
             break;
@@ -312,7 +339,7 @@ static int command_pre_selector(int check_only) {
     Early releases[32];
     printf("  %sasking github for the prereleases%s\n", style(S_DIM), style(S_RESET));
 
-    int count = read_early_releases(releases, 32);
+    int count = read_early_releases(releases, 32, 0);
     if (count < 0) {
         shell_error("update: could not reach github, see %s", RELEASE_PAGE);
         return 1;
@@ -329,8 +356,9 @@ static int command_pre_selector(int check_only) {
         if (strcmp(releases[i].tag, FRESH_VERSION) == 0) note = "  installed";
         else if (!version_newer(releases[i].tag, FRESH_VERSION)) note = "  older than yours";
 
-        printf("  %s%2d%s  %s prerelease %d%s%s%s\n", style(S_ACCENT), i + 1, style(S_RESET),
-               releases[i].base, releases[i].step, style(S_DIM), note, style(S_RESET));
+        printf("  %s%2d%s  %s %s %d%s%s%s\n", style(S_ACCENT), i + 1, style(S_RESET),
+               releases[i].base, releases[i].kind, releases[i].step, style(S_DIM), note,
+               style(S_RESET));
     }
     printf("\n");
 
@@ -366,6 +394,20 @@ static int command_pre_selector(int check_only) {
     return install_update(releases[choice - 1].tag);
 }
 
+/* The newest release --pre may offer: a prerelease or a finished one, never an experiment. */
+static int read_offered_version(char *out, size_t out_size) {
+    Early releases[32];
+    int count = read_early_releases(releases, 32, 1);
+    if (count < 0) return 0;
+
+    for (int i = 0; i < count; i++) {
+        if (is_experiment(&releases[i])) continue;
+        snprintf(out, out_size, "%s", releases[i].tag);
+        return 1;
+    }
+    return 0;
+}
+
 static int command_update(int argc, char **argv) {
     int check_only = 0;
     int allow_early = 0;
@@ -383,7 +425,9 @@ static int command_update(int argc, char **argv) {
            style(S_RESET));
 
     char latest[64];
-    if (!read_latest_version(latest, sizeof(latest), allow_early)) {
+    int found = allow_early ? read_offered_version(latest, sizeof(latest))
+                            : read_latest_version(latest, sizeof(latest));
+    if (!found) {
         shell_error("update: could not reach github, see %s", RELEASE_PAGE);
         return 1;
     }

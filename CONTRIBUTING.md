@@ -159,6 +159,21 @@ fresh update --pre-selector  # list them and pick one, --check only lists
 `26.10.1-prerelease-2` can drop onto `26.11.0-prerelease-1` and back again
 without hunting through the releases page.
 
+## Experiments
+
+A tag can also name a kind other than `prerelease`:
+
+```sh
+git tag -a v26.11.0-experiment-1 -m 'FreSH 26.11.0 experiment 1'
+```
+
+An experiment is a branch being measured rather than a version on its way to
+release, and it is tagged from that branch rather than from master. It is built
+and released the same way, and the selector lists it as `26.11.0 experiment 1`,
+but `fresh update --pre` skips it: `--pre` offers prereleases and finished
+releases only. Somebody who wants an experiment picks it out of
+`fresh update --pre-selector` on purpose, and can leave it the same way.
+
 A prerelease sorts below the release of the same number, so someone running
 `26.10.1-prerelease-2` is offered `26.10.1` when it arrives, and
 `-prerelease-2` is newer than `-prerelease-1`. When the version is ready, tag

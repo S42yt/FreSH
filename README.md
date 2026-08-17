@@ -131,7 +131,7 @@ Prereleases are tagged `26.10.1-prerelease-1` and are never offered by a plain
 and installs the one you number:
 
 ```
-   1  26.11.0 prerelease 1
+   1  26.11.0 experiment 1
    2  26.10.1 prerelease 2  installed
    3  26.10.0 prerelease 4  older than yours
 
@@ -139,6 +139,12 @@ and installs the one you number:
 ```
 
 Adding `--check` to it lists them and stops, installing nothing.
+
+Tags carry the kind in the middle. A `-prerelease-n` is the next version being
+tested and is what `fresh update --pre` gives you. Anything else, such as
+`-experiment-n`, is a branch being tried out: the selector lists it and will
+install it if you pick it, but `--pre` never offers one, so an experiment
+cannot arrive by accident.
 
 Installing closes the shell, because Windows will not replace a running
 executable. Open a new one when it is done.
