@@ -105,6 +105,60 @@ About 9 ms is FreSH's own work, of which the configuration, the theme and the
 plugins are most; the rest of the wall clock time is Windows creating the
 process and loading the image, which is roughly what `cmd.exe` costs too.
 
+## What changed in 26.11
+
+26.11 came out of [the Rust experiment](rust-experiment.md). A shell core was
+written in Rust to see whether the language was holding FreSH back; it was not,
+but it beat the C shell in three places, and all three turned out to be
+structural. Those are what changed.
+
+**Variables are looked up through a hash table.** Every lookup used to scan the
+whole list, and `local` moved the list with a `memmove` on each call, so a shell
+that had accumulated variables got slower at everything. Measured with 400
+variables in scope, best of ten, on the machine above:
+
+| Task | 26.10 | 26.11 |
+| --- | --- | --- |
+| 4,000 lookups | 116,797 us | **25,588 us** |
+| 20,000 `while` iterations | 204,084 us | **72,819 us** |
+| 5,000 parameter expansions | 211,701 us | **123,974 us** |
+| 5,000 `[[ ]]` tests | 68,626 us | **27,561 us** |
+| 5,000 `case` matches | 69,221 us | **25,206 us** |
+| 2,000 function calls | 85,562 us | **43,403 us** |
+
+With only a handful of variables set, the same tasks come out the same on both
+builds, inside the noise of this machine. The win is not that lookups got
+clever; it is that the number of variables you have stopped being a tax on
+every other thing the shell does.
+
+**Pipeline buffers stay open.** A stage that runs inside the shell writes into a
+temporary file so the next stage can read it without a pipe that could
+deadlock. That file was created, duplicated and closed once per stage boundary;
+the handles are pooled now and a boundary truncates a file that is already
+open. A three stage pipeline of builtins went from **1,093 us to under the
+clock**.
+
+**The binary is a third smaller.** `FreSH.exe` was 786 KB, of which about 400 KB
+was an uncompressed icon at seven sizes; the 256 pixel entry alone was 262 KB.
+Dropping it leaves Windows to scale the 128 pixel one, which for a two colour
+glyph is not a visible difference.
+
+| | 26.10 | 26.11 |
+| --- | --- | --- |
+| `FreSH.exe` | 786,432 bytes | **518,144 bytes** |
+| `FreSH-Setup.exe` | 1,220,608 bytes | **681,984 bytes** |
+
+Two things were tried and dropped, which is worth writing down. Link time
+optimisation made the binary 32 KB *larger* with no measurable gain, and `-Os`
+made it 60 KB smaller but the interpreter clearly slower. Neither earned its
+place.
+
+Startup did not move: 20.5 ms before, 20.7 ms after, which is the same number
+twice. A smaller image does not start quicker here because the icon is a
+resource the shell never reads, and `FRESH_TIMING=1` puts FreSH's own work at
+about 4 ms of that 20. The rest is Windows creating a process, which is the same
+floor `cmd` pays.
+
 ## What changed in 26.10
 
 Startup was 45 ms and is now 22 ms. Three things did it, and all three were
@@ -136,6 +190,14 @@ FRESH_BIN=/path/to/FreSH.exe FreSH tools/bench.frsh
 It skips any shell it cannot find, so it works on a machine without PowerShell
 7 or Git Bash. Timings come from `$EPOCHREALTIME`, which FreSH provides with
 microsecond resolution.
+
+## Would Rust be faster?
+
+A shell core was written in Rust and measured against the C one on the same
+scripts. Startup and binary size favoured the Rust build, loops, arithmetic,
+tests and `case` were about twice as slow, and the two places Rust won it won on
+structure rather than on language, which is where 26.11 came from. The numbers,
+the method and the conclusion are in [the Rust experiment](rust-experiment.md).
 
 ## What is not measured here
 
