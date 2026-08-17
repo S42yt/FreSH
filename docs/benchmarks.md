@@ -137,6 +137,14 @@ It skips any shell it cannot find, so it works on a machine without PowerShell
 7 or Git Bash. Timings come from `$EPOCHREALTIME`, which FreSH provides with
 microsecond resolution.
 
+## Would Rust be faster?
+
+A shell core was written in Rust and measured against the C one on the same
+scripts: startup and binary size favour the Rust build, every loop, expansion
+and test is two to three times slower, and the parts where Rust won are
+structural rather than about the language. The numbers, the method and what
+it means for FreSH are in [the Rust experiment](rust-experiment.md).
+
 ## What is not measured here
 
 Interactive latency, completion speed and prompt drawing. They are what the
