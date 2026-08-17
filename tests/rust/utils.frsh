@@ -37,6 +37,25 @@ printf 'only\n' > "$work/one"
 sort "$work/one"
 wc -l "$work/one"
 
+echo "-- path"
+case "$PATH" in
+  *";;"*) echo "empty entry" ;;
+  *) echo "no empty entries" ;;
+esac
+first=${PATH%%;*}
+test -n "$first" && echo "first entry is set"
+count=0
+rest=$PATH
+while [ -n "$rest" ]; do
+  case "$rest" in
+    *";"*) rest=${rest#*;} ;;
+    *) rest= ;;
+  esac
+  count=$((count + 1))
+done
+test "$count" -gt 1 && echo "more than one entry"
+command -v cmd > /dev/null && echo "cmd is on the path"
+
 echo "-- no trailing newline"
 printf 'zebra\nyak' > "$work/ragged"
 sort "$work/ragged"

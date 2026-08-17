@@ -93,6 +93,114 @@ pub extern "C" fn fresh_sort_pointers(items: *mut *const u8, len: usize, mode: u
     }
 }
 
+const MAX_ENTRIES: usize = 512;
+
+#[inline]
+unsafe fn c_len(text: *const u8) -> usize {
+    let mut len = 0;
+    while *text.add(len) != 0 {
+        len += 1;
+    }
+    len
+}
+
+#[inline]
+fn folded_hash(entry: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for &byte in entry {
+        hash ^= fold(byte) as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+#[inline]
+fn same_folded(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    for i in 0..a.len() {
+        if fold(a[i]) != fold(b[i]) {
+            return false;
+        }
+    }
+    true
+}
+
+#[no_mangle]
+pub extern "C" fn fresh_path_merge(
+    parts: *const *const u8,
+    count: usize,
+    out: *mut u8,
+    cap: usize,
+) -> usize {
+    if parts.is_null() || out.is_null() || cap == 0 {
+        return 0;
+    }
+
+    let sources = unsafe { slice::from_raw_parts(parts, count) };
+    let buffer = unsafe { slice::from_raw_parts_mut(out, cap) };
+
+    let mut hashes = [0u64; MAX_ENTRIES];
+    let mut starts = [0usize; MAX_ENTRIES];
+    let mut lengths = [0usize; MAX_ENTRIES];
+    let mut kept = 0usize;
+    let mut written = 0usize;
+
+    for &part in sources {
+        if part.is_null() {
+            continue;
+        }
+        let text = unsafe { slice::from_raw_parts(part, c_len(part)) };
+
+        for entry in text.split(|&byte| byte == b';') {
+            if entry.is_empty() {
+                continue;
+            }
+
+            let hash = folded_hash(entry);
+            let mut seen = false;
+            for i in 0..kept {
+                if hashes[i] != hash {
+                    continue;
+                }
+                let existing = &buffer[starts[i]..starts[i] + lengths[i]];
+                if same_folded(existing, entry) {
+                    seen = true;
+                    break;
+                }
+            }
+            if seen {
+                continue;
+            }
+
+            let separator = if written > 0 { 1 } else { 0 };
+            if written + separator + entry.len() + 1 > cap {
+                buffer[written] = 0;
+                return written;
+            }
+            if separator == 1 {
+                buffer[written] = b';';
+                written += 1;
+            }
+
+            let start = written;
+            buffer[written..written + entry.len()].copy_from_slice(entry);
+            written += entry.len();
+
+            if kept < MAX_ENTRIES {
+                hashes[kept] = hash;
+                starts[kept] = start;
+                lengths[kept] = entry.len();
+                kept += 1;
+            }
+        }
+    }
+
+    buffer[written] = 0;
+    written
+}
+
 #[repr(C)]
 pub struct Counts {
     pub lines: u64,

@@ -55,6 +55,91 @@ void core_sort_pointers(char **items, size_t len, unsigned int mode) {
 #endif
 }
 
+#ifndef FRESH_RUST
+
+#define CORE_MAX_ENTRIES 512
+
+static unsigned long long folded_hash(const char *entry, size_t len) {
+    unsigned long long hash = 0xcbf29ce484222325ull;
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (unsigned long long)tolower((unsigned char)entry[i]);
+        hash *= 0x100000001b3ull;
+    }
+    return hash;
+}
+
+static int same_folded(const char *a, const char *b, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) return 0;
+    }
+    return 1;
+}
+
+#endif
+
+size_t core_path_merge(const char *const *parts, size_t count, char *out, size_t cap) {
+    if (!parts || !out || cap == 0) return 0;
+
+#ifdef FRESH_RUST
+    return fresh_path_merge((const unsigned char *const *)(const void *)parts, count,
+                            (unsigned char *)out, cap);
+#else
+    unsigned long long hashes[CORE_MAX_ENTRIES];
+    size_t starts[CORE_MAX_ENTRIES];
+    size_t lengths[CORE_MAX_ENTRIES];
+    size_t kept = 0;
+    size_t written = 0;
+
+    for (size_t p = 0; p < count; p++) {
+        const char *text = parts[p];
+        if (!text) continue;
+
+        while (*text) {
+            const char *end = strchr(text, ';');
+            size_t len = end ? (size_t)(end - text) : strlen(text);
+
+            if (len > 0) {
+                unsigned long long hash = folded_hash(text, len);
+                int seen = 0;
+                for (size_t i = 0; i < kept; i++) {
+                    if (hashes[i] != hash || lengths[i] != len) continue;
+                    if (same_folded(out + starts[i], text, len)) {
+                        seen = 1;
+                        break;
+                    }
+                }
+
+                if (!seen) {
+                    size_t separator = written > 0 ? 1 : 0;
+                    if (written + separator + len + 1 > cap) {
+                        out[written] = '\0';
+                        return written;
+                    }
+                    if (separator) out[written++] = ';';
+
+                    size_t start = written;
+                    memcpy(out + written, text, len);
+                    written += len;
+
+                    if (kept < CORE_MAX_ENTRIES) {
+                        hashes[kept] = hash;
+                        starts[kept] = start;
+                        lengths[kept] = len;
+                        kept++;
+                    }
+                }
+            }
+
+            if (!end) break;
+            text = end + 1;
+        }
+    }
+
+    out[written] = '\0';
+    return written;
+#endif
+}
+
 void core_count_block(const char *data, size_t len, FreshCounts *counts) {
     if (!data || !counts) return;
 

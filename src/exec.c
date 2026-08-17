@@ -23,6 +23,7 @@
 #include "foreign.h"
 #include "parser.h"
 #include "regex.h"
+#include "rustcore.h"
 #include "style.h"
 #include "table.h"
 #include "shell.h"
@@ -279,34 +280,18 @@ static char *read_registry_path(HKEY root, const char *subkey) {
     return raw;
 }
 
-static int path_listed(const char *list, const char *dir) {
-    if (!list || !*list) return 0;
-    size_t length = strlen(dir);
-    const char *cursor = list;
-
-    while (*cursor) {
-        const char *end = strchr(cursor, ';');
-        size_t span = end ? (size_t)(end - cursor) : strlen(cursor);
-        if (span == length && _strnicmp(cursor, dir, length) == 0) return 1;
-        if (!end) break;
-        cursor = end + 1;
-    }
-    return 0;
-}
-
 void path_reload_environment(void) {
-    StrBuf path;
-    sb_init(&path);
-
     const char *home_bins[] = {"bin", ".local\\bin", "AppData\\Local\\bin", "scoop\\shims",
                                "AppData\\Roaming\\npm"};
-    for (size_t i = 0; i < sizeof(home_bins) / sizeof(home_bins[0]); i++) {
-        char *candidate = path_join(home_dir(), home_bins[i]);
-        if (path_is_dir(candidate)) {
-            sb_puts(&path, candidate);
-            sb_putc(&path, ';');
-        }
-        free(candidate);
+    size_t bin_count = sizeof(home_bins) / sizeof(home_bins[0]);
+
+    char *found[sizeof(home_bins) / sizeof(home_bins[0])];
+    const char *parts[sizeof(home_bins) / sizeof(home_bins[0]) + 3];
+    size_t part_count = 0;
+
+    for (size_t i = 0; i < bin_count; i++) {
+        found[i] = path_join(home_dir(), home_bins[i]);
+        if (path_is_dir(found[i])) parts[part_count++] = found[i];
     }
 
 #ifdef FRESH_NO_REGISTRY_PATH
@@ -318,29 +303,24 @@ void path_reload_environment(void) {
     char *user = read_registry_path(HKEY_CURRENT_USER, "Environment");
 #endif
 
-    if (machine && *machine) {
-        sb_puts(&path, machine);
-        sb_putc(&path, ';');
-    }
-    if (user && *user) sb_puts(&path, user);
-    free(machine);
-    free(user);
+    if (machine && *machine) parts[part_count++] = machine;
+    if (user && *user) parts[part_count++] = user;
 
     const char *current = var_get("PATH");
-    if (current) {
-        char *copy = xstrdup(current);
-        char *cursor = copy;
-        char *dir;
-        while ((dir = str_next_field(&cursor, ';')) != NULL) {
-            if (!*dir || path_listed(path.data, dir)) continue;
-            if (path.len > 0) sb_putc(&path, ';');
-            sb_puts(&path, dir);
-        }
-        free(copy);
-    }
+    if (current && *current) parts[part_count++] = current;
 
-    if (path.len > 0) var_set_exported("PATH", path.data);
-    sb_free(&path);
+    size_t room = 1;
+    for (size_t i = 0; i < part_count; i++) room += strlen(parts[i]) + 1;
+
+    char *merged = xmalloc(room);
+    size_t length = core_path_merge(parts, part_count, merged, room);
+    if (length > 0) var_set_exported("PATH", merged);
+
+    free(merged);
+    free(machine);
+    free(user);
+    for (size_t i = 0; i < bin_count; i++) free(found[i]);
+
     command_cache_valid = 0;
     resolutions_forget();
 }

@@ -25,6 +25,8 @@ typedef struct {
 void fresh_sort_pointers(const unsigned char **items, size_t len, unsigned int mode);
 void fresh_count_block(const unsigned char *data, size_t len, FreshCounts *counts);
 unsigned long long fresh_count_newlines(const unsigned char *data, size_t len);
+size_t fresh_path_merge(const unsigned char *const *parts, size_t count, unsigned char *out,
+                        size_t cap);
 
 #define FRESH_CORE "rust"
 
@@ -36,5 +38,6 @@ unsigned long long fresh_count_newlines(const unsigned char *data, size_t len);
 
 void core_sort_pointers(char **items, size_t len, unsigned int mode);
 void core_count_block(const char *data, size_t len, FreshCounts *counts);
+size_t core_path_merge(const char *const *parts, size_t count, char *out, size_t cap);
 
 #endif
