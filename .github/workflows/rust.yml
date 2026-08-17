@@ -44,6 +44,29 @@ jobs:
           echo "c    $(stat -c %s build/FreSH.exe) bytes"
           echo "rust $(stat -c %s rust/target/release/fresh-rs.exe) bytes"
 
+      - name: One liners, both shells side by side
+        shell: bash
+        run: |
+          probe() {
+            local c rust
+            c=$(./build/FreSH.exe --norc -c "$1" 2>&1)
+            rust=$(./rust/target/release/fresh-rs.exe -c "$1" 2>&1)
+            if [ "$c" = "$rust" ]; then
+              printf 'same  %-46s [%s]\n' "$1" "$c"
+            else
+              printf 'DIFF  %-46s c=[%s] rust=[%s]\n' "$1" "$c" "$rust"
+            fi
+          }
+          probe '[[ "abc123" == a* ]]; echo $?'
+          probe '[[ abc == a* ]]; echo $?'
+          probe 'echo "[[ ${#x}"'
+          probe 'x=5; [[ "$x" == 5 ]]; echo $?'
+          probe 'files=(a b c); echo ${#files[@]}'
+          probe 'f() { local who=$1; echo "$who"; }; f "two words"'
+          probe 't() { local s=0; for n in "$@"; do s=$((s+n)); done; echo $s; }; t 1 2 3 4'
+          probe 'echo ${v:-fallback}'
+          probe 'i=2; v=abcdef; echo "${v:$i:2}"'
+
       - name: Parity, the same script through both
         shell: bash
         run: |

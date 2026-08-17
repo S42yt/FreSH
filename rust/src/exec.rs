@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use crate::expand::pattern_match;
 use crate::lex::lex;
-use crate::parse::{parse, CaseArm, Node, Redir, Simple};
+use crate::parse::{parse, Assign, CaseArm, Node, Redir, Simple};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -349,14 +349,21 @@ impl Shell {
     }
 
     fn run_simple(&mut self, cmd: &Simple, io: &mut Io) -> i32 {
+        /* declare-like builtins take assignments, and an assignment never splits. */
+        const KEEPS_WHOLE: [&str; 4] = ["local", "export", "declare", "readonly"];
+
         let mut words: Vec<String> = Vec::new();
-        for word in &cmd.words {
+        for (at, word) in cmd.words.iter().enumerate() {
+            if at > 0 && !words.is_empty() && KEEPS_WHOLE.contains(&words[0].as_str()) {
+                words.push(self.expand_to_string(word));
+                continue;
+            }
             words.extend(self.expand_word(word));
         }
 
         if words.is_empty() {
-            for (name, values, append) in &cmd.assigns {
-                self.assign(name, values, *append);
+            for assign in &cmd.assigns {
+                self.assign(assign);
             }
             self.status = 0;
             return 0;
@@ -374,8 +381,8 @@ impl Shell {
         /* Assignments in front of a command are only for that command in bash; a plain
          * shell variable is close enough for the workloads here and is what the C shell
          * does for its own builtins. */
-        for (name, values, append) in &cmd.assigns {
-            self.assign(name, values, *append);
+        for assign in &cmd.assigns {
+            self.assign(assign);
         }
 
         let target = local_io.as_mut().unwrap_or(io);
@@ -518,27 +525,32 @@ impl Shell {
         self.scopes[0].insert(name.to_string(), value);
     }
 
-    fn assign(&mut self, name: &str, values: &[String], append: bool) {
-        if append {
-            let mut current = self.var_string(name);
+    fn assign(&mut self, assign: &Assign) {
+        let Assign {
+            name,
+            values,
+            append,
+            array,
+        } = assign;
+
+        if *array {
+            let mut items = Vec::new();
             for value in values {
-                current.push_str(&self.expand_to_string(value));
+                items.extend(self.expand_word(value));
             }
-            self.set(name, Value::Str(current));
+            self.set(name, Value::Arr(items));
             return;
         }
 
-        if values.len() == 1 {
-            let text = self.expand_to_string(&values[0]);
-            self.set(name, Value::Str(text));
-            return;
+        let mut text = String::new();
+        if *append {
+            text.push_str(&self.var_string(name));
         }
-
-        let mut items = Vec::new();
         for value in values {
-            items.extend(self.expand_word(value));
+            let piece = self.expand_to_string(value);
+            text.push_str(&piece);
         }
-        self.set(name, Value::Arr(items));
+        self.set(name, Value::Str(text));
     }
 
     pub fn declare_local(&mut self, name: &str, value: Value) {

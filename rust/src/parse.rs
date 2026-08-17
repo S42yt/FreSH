@@ -17,8 +17,16 @@ pub enum Redir {
 }
 
 #[derive(Debug, Clone)]
+pub struct Assign {
+    pub name: String,
+    pub values: Vec<String>,
+    pub append: bool,
+    pub array: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct Simple {
-    pub assigns: Vec<(String, Vec<String>, bool)>,
+    pub assigns: Vec<Assign>,
     pub words: Vec<String>,
     pub redirs: Vec<Redir>,
 }
@@ -453,9 +461,19 @@ impl Parser {
                                 _ => return Err("array without a closing bracket".to_string()),
                             }
                         }
-                        cmd.assigns.push((name, items, true));
+                        cmd.assigns.push(Assign {
+                            name,
+                            values: items,
+                            append: false,
+                            array: true,
+                        });
                     } else {
-                        cmd.assigns.push((name, vec![value], append));
+                        cmd.assigns.push(Assign {
+                            name,
+                            values: vec![value],
+                            append,
+                            array: false,
+                        });
                     }
                     continue;
                 }

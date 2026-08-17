@@ -62,6 +62,23 @@ impl Shell {
 
             if c == '"' {
                 let (inner, next) = take_until(&chars, index + 1, '"');
+
+                /* "$@" is the one quoted thing that still becomes one field per parameter. */
+                if inner.trim() == "$@" || inner.trim() == "$*" {
+                    let params = self.params.clone();
+                    for (n, param) in params.iter().enumerate() {
+                        if n > 0 {
+                            fields.push(Field {
+                                text: String::new(),
+                                globbable: false,
+                            });
+                        }
+                        push_literal(&mut fields, param);
+                    }
+                    index = next;
+                    continue;
+                }
+
                 let parts = self.expand_fields(&unescape_double(&inner), false);
                 for (n, part) in parts.into_iter().enumerate() {
                     if n > 0 {
