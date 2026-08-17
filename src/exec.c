@@ -23,6 +23,7 @@
 #include "foreign.h"
 #include "parser.h"
 #include "regex.h"
+#include "rustcore.h"
 #include "style.h"
 #include "table.h"
 #include "shell.h"
@@ -63,6 +64,7 @@ static int command_cache_valid = 0;
 
 static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out);
 static int exec_pipeline(Node *node, int background);
+static void spools_close(void);
 static void job_add(HANDLE process, const char *command);
 static void resolutions_release(void);
 static int skip_functions = 0;
@@ -107,6 +109,7 @@ void exec_cleanup(void) {
     table_free(&function_table);
     sl_free(&command_cache);
     resolutions_release();
+    spools_close();
     temp_cleanup();
 }
 
@@ -244,24 +247,46 @@ void path_rehash(void) {
     resolutions_forget();
 }
 
+typedef LSTATUS(WINAPI *RegOpenFn)(HKEY, LPCSTR, DWORD, REGSAM, PHKEY);
+typedef LSTATUS(WINAPI *RegQueryFn)(HKEY, LPCSTR, LPDWORD, LPDWORD, LPBYTE, LPDWORD);
+typedef LSTATUS(WINAPI *RegCloseFn)(HKEY);
+
+static RegOpenFn reg_open;
+static RegQueryFn reg_query;
+static RegCloseFn reg_close;
+
+static int registry_ready(void) {
+    static HMODULE library = NULL;
+    if (library) return reg_open != NULL;
+
+    library = LoadLibraryA("advapi32.dll");
+    if (!library) return 0;
+
+    reg_open = (RegOpenFn)(void *)GetProcAddress(library, "RegOpenKeyExA");
+    reg_query = (RegQueryFn)(void *)GetProcAddress(library, "RegQueryValueExA");
+    reg_close = (RegCloseFn)(void *)GetProcAddress(library, "RegCloseKey");
+    return reg_open && reg_query && reg_close;
+}
+
 static char *read_registry_path(HKEY root, const char *subkey) {
     HKEY key;
-    if (RegOpenKeyExA(root, subkey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return NULL;
+    if (!registry_ready()) return NULL;
+    if (reg_open(root, subkey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return NULL;
 
     DWORD type = 0;
     DWORD size = 0;
-    if (RegQueryValueExA(key, "Path", NULL, &type, NULL, &size) != ERROR_SUCCESS || size == 0) {
-        RegCloseKey(key);
+    if (reg_query(key, "Path", NULL, &type, NULL, &size) != ERROR_SUCCESS || size == 0) {
+        reg_close(key);
         return NULL;
     }
     char *raw = xmalloc(size + 1);
-    if (RegQueryValueExA(key, "Path", NULL, &type, (BYTE *)raw, &size) != ERROR_SUCCESS) {
+    if (reg_query(key, "Path", NULL, &type, (BYTE *)raw, &size) != ERROR_SUCCESS) {
         free(raw);
-        RegCloseKey(key);
+        reg_close(key);
         return NULL;
     }
     raw[size] = '\0';
-    RegCloseKey(key);
+    reg_close(key);
 
     if (type == REG_EXPAND_SZ) {
         DWORD needed = ExpandEnvironmentStringsA(raw, NULL, 0);
@@ -277,63 +302,56 @@ static char *read_registry_path(HKEY root, const char *subkey) {
     return raw;
 }
 
-static int path_listed(const char *list, const char *dir) {
-    if (!list || !*list) return 0;
-    size_t length = strlen(dir);
-    const char *cursor = list;
+static int path_environment_merged = 0;
 
-    while (*cursor) {
-        const char *end = strchr(cursor, ';');
-        size_t span = end ? (size_t)(end - cursor) : strlen(cursor);
-        if (span == length && _strnicmp(cursor, dir, length) == 0) return 1;
-        if (!end) break;
-        cursor = end + 1;
-    }
-    return 0;
+void path_ensure_environment(void) {
+    if (path_environment_merged) return;
+    path_reload_environment();
 }
 
 void path_reload_environment(void) {
-    StrBuf path;
-    sb_init(&path);
+    path_environment_merged = 1;
 
     const char *home_bins[] = {"bin", ".local\\bin", "AppData\\Local\\bin", "scoop\\shims",
                                "AppData\\Roaming\\npm"};
-    for (size_t i = 0; i < sizeof(home_bins) / sizeof(home_bins[0]); i++) {
-        char *candidate = path_join(home_dir(), home_bins[i]);
-        if (path_is_dir(candidate)) {
-            sb_puts(&path, candidate);
-            sb_putc(&path, ';');
-        }
-        free(candidate);
+    size_t bin_count = sizeof(home_bins) / sizeof(home_bins[0]);
+
+    char *found[sizeof(home_bins) / sizeof(home_bins[0])];
+    const char *parts[sizeof(home_bins) / sizeof(home_bins[0]) + 3];
+    size_t part_count = 0;
+
+    for (size_t i = 0; i < bin_count; i++) {
+        found[i] = path_join(home_dir(), home_bins[i]);
+        if (path_is_dir(found[i])) parts[part_count++] = found[i];
     }
 
+#ifdef FRESH_NO_REGISTRY_PATH
+    char *machine = NULL;
+    char *user = NULL;
+#else
     char *machine = read_registry_path(
         HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment");
     char *user = read_registry_path(HKEY_CURRENT_USER, "Environment");
+#endif
 
-    if (machine && *machine) {
-        sb_puts(&path, machine);
-        sb_putc(&path, ';');
-    }
-    if (user && *user) sb_puts(&path, user);
-    free(machine);
-    free(user);
+    if (machine && *machine) parts[part_count++] = machine;
+    if (user && *user) parts[part_count++] = user;
 
     const char *current = var_get("PATH");
-    if (current) {
-        char *copy = xstrdup(current);
-        char *cursor = copy;
-        char *dir;
-        while ((dir = str_next_field(&cursor, ';')) != NULL) {
-            if (!*dir || path_listed(path.data, dir)) continue;
-            if (path.len > 0) sb_putc(&path, ';');
-            sb_puts(&path, dir);
-        }
-        free(copy);
-    }
+    if (current && *current) parts[part_count++] = current;
 
-    if (path.len > 0) var_set_exported("PATH", path.data);
-    sb_free(&path);
+    size_t room = 1;
+    for (size_t i = 0; i < part_count; i++) room += strlen(parts[i]) + 1;
+
+    char *merged = xmalloc(room);
+    size_t length = core_path_merge(parts, part_count, merged, room);
+    if (length > 0) var_set_exported("PATH", merged);
+
+    free(merged);
+    free(machine);
+    free(user);
+    for (size_t i = 0; i < bin_count; i++) free(found[i]);
+
     command_cache_valid = 0;
     resolutions_forget();
 }
@@ -1282,9 +1300,29 @@ static int stage_runs_in_process(Node *node) {
     return coreutil_lookup(word) != NULL;
 }
 
-static HANDLE open_spool(char **path_out) {
+typedef struct {
+    HANDLE handle;
+    char *path;
+    int busy;
+} Spool;
+
+static Spool spool_pool[MAX_STAGES * 2];
+static int spool_pool_count = 0;
+
+static Spool *spool_acquire(void) {
+    for (int i = 0; i < spool_pool_count; i++) {
+        if (spool_pool[i].busy) continue;
+        Spool *reused = &spool_pool[i];
+        SetFilePointer(reused->handle, 0, NULL, FILE_BEGIN);
+        SetEndOfFile(reused->handle);
+        reused->busy = 1;
+        return reused;
+    }
+
+    if (spool_pool_count == (int)(sizeof(spool_pool) / sizeof(spool_pool[0]))) return NULL;
+
     char *path = temp_acquire();
-    if (!path) return INVALID_HANDLE_VALUE;
+    if (!path) return NULL;
 
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     HANDLE handle = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
@@ -1292,10 +1330,28 @@ static HANDLE open_spool(char **path_out) {
                                 FILE_ATTRIBUTE_TEMPORARY, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         temp_release(path);
-        return INVALID_HANDLE_VALUE;
+        return NULL;
     }
-    *path_out = path;
-    return handle;
+
+    Spool *fresh = &spool_pool[spool_pool_count++];
+    fresh->handle = handle;
+    fresh->path = path;
+    fresh->busy = 1;
+    return fresh;
+}
+
+static void spool_free(Spool *spool) {
+    if (spool) spool->busy = 0;
+}
+
+static void spools_close(void) {
+    for (int i = 0; i < spool_pool_count; i++) {
+        if (spool_pool[i].handle) CloseHandle(spool_pool[i].handle);
+        temp_release(spool_pool[i].path);
+        spool_pool[i].handle = NULL;
+        spool_pool[i].path = NULL;
+    }
+    spool_pool_count = 0;
 }
 
 static HANDLE rewind_spool(HANDLE spool) {
@@ -1334,7 +1390,7 @@ static int exec_pipeline(Node *node, int background) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     HANDLE processes[MAX_STAGES];
     int process_count = 0;
-    char *spools[MAX_STAGES];
+    Spool *spools[MAX_STAGES];
     int spool_count = 0;
     HANDLE stage_input = NULL;
     int mark = tracked_count;
@@ -1348,20 +1404,18 @@ static int exec_pipeline(Node *node, int background) {
         IoSet io = io_default();
         HANDLE read_end = NULL;
         HANDLE write_end = NULL;
-        HANDLE spool = INVALID_HANDLE_VALUE;
-        char *spool_path = NULL;
+        Spool *spool = NULL;
 
         if (stage_input) io.in = stage_input;
 
         if (i < count - 1) {
             if (stage_runs_in_process(stages[i])) {
-                spool = open_spool(&spool_path);
-                if (spool == INVALID_HANDLE_VALUE) {
+                spool = spool_acquire();
+                if (!spool) {
                     shell_error("cannot create pipeline buffer");
                     break;
                 }
-                track_handle(spool);
-                io.out = spool;
+                io.out = spool->handle;
             } else {
                 if (!CreatePipe(&read_end, &write_end, &sa, 0)) {
                     shell_error("cannot create pipe");
@@ -1392,11 +1446,9 @@ static int exec_pipeline(Node *node, int background) {
             stage_input = NULL;
         }
 
-        if (spool != INVALID_HANDLE_VALUE) {
-            stage_input = rewind_spool(spool);
-            untrack_handle(spool);
-            CloseHandle(spool);
-            spools[spool_count++] = spool_path;
+        if (spool) {
+            stage_input = rewind_spool(spool->handle);
+            spools[spool_count++] = spool;
             if (stage_input == INVALID_HANDLE_VALUE) stage_input = NULL;
             else track_handle(stage_input);
         } else {
@@ -1422,7 +1474,7 @@ static int exec_pipeline(Node *node, int background) {
         CloseHandle(processes[i]);
     }
 
-    for (int i = 0; i < spool_count; i++) temp_release(spools[i]);
+    for (int i = 0; i < spool_count; i++) spool_free(spools[i]);
 
     StrList reported;
     sl_init(&reported);

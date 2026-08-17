@@ -1,0 +1,57 @@
+rounds=${1:-5}
+
+now() {
+  local raw=$EPOCHREALTIME
+  echo $(( ${raw%.*} * 1000000 + 10#${raw#*.} ))
+}
+
+measure() {
+  local label=$1
+  shift
+
+  local best=999999999
+  local round=0
+  while [ "$round" -lt "$rounds" ]; do
+    local started=$(now)
+    "$@" > /dev/null 2>&1
+    local taken=$(( $(now) - started ))
+    if [ "$taken" -lt "$best" ]; then best=$taken; fi
+    round=$((round + 1))
+  done
+  printf '  %-28s %9s us\n' "$label" "$best"
+}
+
+work=.bench-utils
+rm -r "$work" 2> /dev/null
+mkdir -p "$work"
+
+seed=1
+lines=0
+while [ "$lines" -lt 40000 ]; do
+  seed=$(( (seed * 1103515245 + 12345) % 2147483648 ))
+  printf 'line %s field %s tail\n' "$seed" "$lines" >> "$work/words"
+  lines=$((lines + 1))
+done
+
+numbers=0
+while [ "$numbers" -lt 40000 ]; do
+  seed=$(( (seed * 1103515245 + 12345) % 2147483648 ))
+  printf '%s\n' "$seed" >> "$work/numbers"
+  numbers=$((numbers + 1))
+done
+
+sort_words() { sort "$work/words"; }
+sort_numbers() { sort -n "$work/numbers"; }
+sort_unique() { sort -u "$work/words"; }
+count_lines() { wc -l "$work/words"; }
+count_all() { wc "$work/words"; }
+
+printf '\n  utilities, best of %s\n\n' "$rounds"
+measure "sort 40k lines" sort_words
+measure "sort -n 40k numbers" sort_numbers
+measure "sort -u 40k lines" sort_unique
+measure "wc -l 40k lines" count_lines
+measure "wc 40k lines" count_all
+printf '\n'
+
+rm -r "$work"

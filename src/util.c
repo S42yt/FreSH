@@ -6,6 +6,8 @@
 
 #include "util.h"
 
+#include "rustcore.h"
+
 #include <ctype.h>
 #include <direct.h>
 #include <stdarg.h>
@@ -167,12 +169,8 @@ void sl_push_copy(StrList *l, const char *s) {
     sl_push(l, xstrdup(s));
 }
 
-static int cmp_str(const void *a, const void *b) {
-    return _stricmp(*(const char **)a, *(const char **)b);
-}
-
 void sl_sort(StrList *l) {
-    if (l->len > 1) qsort(l->items, l->len, sizeof(char *), cmp_str);
+    core_sort_pointers(l->items, l->len, FRESH_SORT_FOLD);
 }
 
 int sl_contains(const StrList *l, const char *s) {
@@ -181,6 +179,32 @@ int sl_contains(const StrList *l, const char *s) {
     }
     return 0;
 }
+
+#ifdef _WIN32
+
+typedef BOOL(WINAPI *UserNameFn)(LPSTR, LPDWORD);
+
+int win_user_name(char *out, unsigned long *size) {
+    static UserNameFn get_user_name;
+    static HMODULE library = NULL;
+
+    if (!library) {
+        library = LoadLibraryA("advapi32.dll");
+        if (library)
+            get_user_name = (UserNameFn)(void *)GetProcAddress(library, "GetUserNameA");
+    }
+    return get_user_name ? get_user_name(out, size) != 0 : 0;
+}
+
+#else
+
+int win_user_name(char *out, unsigned long *size) {
+    (void)out;
+    (void)size;
+    return 0;
+}
+
+#endif
 
 int str_ieq(const char *a, const char *b) {
     return _stricmp(a, b) == 0;

@@ -73,3 +73,7 @@ case "$listing" in *"99.1.0 prerelease 1"*) older=yes ;; *) older=no ;; esac
 check selector_one_per_version "$older" no
 case "$listing" in *"99.0.0"*) stable=yes ;; *) stable=no ;; esac
 check selector_skips_stable "$stable" no
+
+case "$PATH" in *[Ss]ystem32*) merged=yes ;; *) merged=no ;; esac
+check path_merge_on_first_read "$merged" yes
+check path_resolves_commands "$(command -v cmd > /dev/null && echo yes)" yes

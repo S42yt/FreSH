@@ -4,7 +4,7 @@ set -e
 CC=${CC:-gcc}
 WINDRES=${WINDRES:-windres}
 CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
-CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
+CFLAGS="$CFLAGS -ffunction-sections -fdata-sections $FRESH_EXTRA_CFLAGS"
 LDFLAGS="-s -Wl,--gc-sections"
 BUILD=build
 
@@ -19,9 +19,32 @@ $CC -O2 -o "$BUILD/makeicon.exe" tools/makeicon.c -lm
 cp "$BUILD/fresh.ico" src/fresh.ico
 cp "$BUILD/fresh.ico" installation/fresh.ico
 
+RUST_TARGET=${FRESH_RUST_TARGET:-x86_64-pc-windows-gnu}
+RUST_LIB=rust/core/target/$RUST_TARGET/release/libfresh_core.a
+
+if [ -n "$FRESH_NO_RUST" ]; then
+    RUST_LIB=""
+    info "Building without the Rust core, as asked."
+elif [ ! -f "$RUST_LIB" ] && command -v cargo > /dev/null 2>&1; then
+    info "Building the Rust compute core..."
+    (cd rust/core && cargo build --release --target "$RUST_TARGET")
+fi
+
+if [ -n "$RUST_LIB" ] && [ -f "$RUST_LIB" ]; then
+    CFLAGS="$CFLAGS -DFRESH_RUST"
+    green "  $RUST_LIB"
+elif [ -z "$FRESH_NO_RUST" ]; then
+    RUST_LIB=""
+    if [ -n "$FRESH_REQUIRE_RUST" ]; then
+        printf '\033[31m%s\033[0m\n' "The Rust core was required and is not there. Run: cargo build --release --target $RUST_TARGET, in rust/core" >&2
+        exit 1
+    fi
+    info "No Rust core found, building C only. Set FRESH_REQUIRE_RUST=1 to make that an error."
+fi
+
 info "Building FreSH..."
 $WINDRES src/fresh.rc -O coff -o "$BUILD/fresh.res"
-$CC $CFLAGS src/*.c "$BUILD/fresh.res" -o "$BUILD/FreSH.exe" $LDFLAGS -ladvapi32
+$CC $CFLAGS src/*.c "$BUILD/fresh.res" $RUST_LIB -o "$BUILD/FreSH.exe" $LDFLAGS
 green "  $BUILD/FreSH.exe"
 
 info "Building payload generator..."

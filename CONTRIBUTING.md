@@ -74,6 +74,23 @@ add trailers naming the tools you used.
   in full, and it is not negotiable: a shell that dies with a clear message is
   trustworthy, one that quietly produces different output than bash is not.
 
+### The Rust core
+
+`rust/core` is a `no_std` static library holding compute kernels the C shell
+calls, and it is optional:
+
+```sh
+./build.sh                      # uses it when cargo is there
+FRESH_NO_RUST=1 ./build.sh      # C only, same shell
+FRESH_REQUIRE_RUST=1 ./build.sh # fail rather than quietly drop it
+```
+
+`src/rustcore.c` holds a C version of every kernel and the two must agree, so
+nothing may live only in Rust. A kernel goes in only when a measurement says it
+is faster than the C one, and it comes back out when the measurement says it is
+not: two of the first three were removed that way. `fresh` prints which core a
+binary carries.
+
 ## Tests
 
 Every behavioural change gets a test, in the same pull request.

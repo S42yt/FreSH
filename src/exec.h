@@ -30,6 +30,7 @@ void path_command_complete(const char *prefix, StrList *out);
 void function_complete(const char *prefix, size_t length, StrList *out);
 void path_rehash(void);
 void path_reload_environment(void);
+void path_ensure_environment(void);
 
 void function_define(const char *name, Node *body);
 int function_defined(const char *name);

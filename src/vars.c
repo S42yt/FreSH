@@ -6,6 +6,7 @@
 
 #include "vars.h"
 
+#include "exec.h"
 #include "shell.h"
 #include "table.h"
 
@@ -25,6 +26,7 @@ typedef struct {
     int integer;
     int readonly;
     int nameref;
+    int used;
 } Entry;
 
 typedef struct {
@@ -49,12 +51,37 @@ static Scope *scopes = NULL;
 static size_t scope_depth = 0;
 static size_t scope_cap = 0;
 
-static Entry *find(Entry *table, size_t count, const char *name) {
-    char first = name[0];
-    for (size_t i = 0; i < count; i++) {
-        if (table[i].name[0] == first && strcmp(table[i].name, name) == 0) return &table[i];
+static Table var_index;
+
+static size_t *free_slots = NULL;
+static size_t free_count = 0;
+static size_t free_cap = 0;
+
+static void index_ready(void) {
+    if (!var_index.buckets) table_init(&var_index, 128, 0, NULL);
+}
+
+static void index_rebuild(void) {
+    table_free(&var_index);
+    table_init(&var_index, 128, 0, NULL);
+    for (size_t i = 0; i < var_count_total; i++) {
+        if (vars[i].used) table_put(&var_index, vars[i].name, (void *)(i + 1));
     }
-    return NULL;
+    free_count = 0;
+    for (size_t i = 0; i < var_count_total; i++) {
+        if (vars[i].used) continue;
+        if (free_count + 1 >= free_cap) {
+            free_cap = free_cap ? free_cap * 2 : 16;
+            free_slots = xrealloc(free_slots, free_cap * sizeof(size_t));
+        }
+        free_slots[free_count++] = i;
+    }
+}
+
+static Entry *find(const char *name) {
+    index_ready();
+    size_t slot = (size_t)table_get(&var_index, name);
+    return slot ? &vars[slot - 1] : NULL;
 }
 
 static void entry_reset(Entry *e) {
@@ -71,30 +98,81 @@ static void entry_free(Entry *e) {
     sl_free(&e->values);
 }
 
-static Entry *add(Entry **table, size_t *count, size_t *cap, const char *name) {
-    if (*count + 1 >= *cap) {
-        *cap = *cap ? *cap * 2 : 16;
-        *table = xrealloc(*table, *cap * sizeof(Entry));
+static Entry *add(const char *name) {
+    index_ready();
+
+    size_t slot;
+    if (free_count) {
+        slot = free_slots[--free_count];
+    } else {
+        if (var_count_total + 1 >= var_cap) {
+            var_cap = var_cap ? var_cap * 2 : 16;
+            vars = xrealloc(vars, var_cap * sizeof(Entry));
+        }
+        slot = var_count_total++;
     }
-    Entry *e = &(*table)[(*count)++];
+
+    Entry *e = &vars[slot];
     memset(e, 0, sizeof(Entry));
     e->name = xstrdup(name);
     e->kind = VAR_SCALAR;
+    e->used = 1;
     sl_init(&e->keys);
     sl_init(&e->values);
+
+    table_put(&var_index, name, (void *)(slot + 1));
     return e;
 }
 
-static void remove_entry(Entry *table, size_t *count, Entry *e) {
+static void release_slot(Entry *e) {
+    size_t slot = (size_t)(e - vars);
+    table_remove(&var_index, e->name);
+    e->used = 0;
+
+    if (free_count + 1 >= free_cap) {
+        free_cap = free_cap ? free_cap * 2 : 16;
+        free_slots = xrealloc(free_slots, free_cap * sizeof(size_t));
+    }
+    free_slots[free_count++] = slot;
+}
+
+static void remove_entry(Entry *e) {
+    release_slot(e);
     entry_free(e);
-    size_t index = (size_t)(e - table);
-    memmove(table + index, table + index + 1, (*count - index - 1) * sizeof(Entry));
-    (*count)--;
+    memset(e, 0, sizeof(Entry));
+}
+
+static Table env_table;
+static int env_loaded = 0;
+
+static void env_ready(void) {
+    if (env_loaded) return;
+    env_loaded = 1;
+    table_init(&env_table, 128, 1, free);
+
+    char *block = GetEnvironmentStringsA();
+    for (char *entry = block; entry && *entry; entry += strlen(entry) + 1) {
+        const char *equals = strchr(entry, '=');
+        if (!equals || equals == entry) continue;
+        char *name = xstrndup(entry, (size_t)(equals - entry));
+        table_put(&env_table, name, xstrdup(equals + 1));
+        free(name);
+    }
+    if (block) FreeEnvironmentStringsA(block);
+}
+
+static const char *env_value(const char *name) {
+    env_ready();
+    return table_get(&env_table, name);
 }
 
 static void apply_export(const char *name, const char *value) {
     SetEnvironmentVariableA(name, value);
     _putenv_s(name, value ? value : "");
+
+    if (!env_loaded) return;
+    if (value) table_put(&env_table, name, xstrdup(value));
+    else table_remove(&env_table, name);
 }
 
 void vars_init(void) {
@@ -108,10 +186,20 @@ void vars_init(void) {
 }
 
 void vars_cleanup(void) {
-    for (size_t i = 0; i < var_count_total; i++) entry_free(&vars[i]);
+    for (size_t i = 0; i < var_count_total; i++) {
+        if (vars[i].used) entry_free(&vars[i]);
+    }
     free(vars);
     vars = NULL;
     var_count_total = var_cap = 0;
+
+    table_free(&var_index);
+    free(free_slots);
+    free_slots = NULL;
+    free_count = free_cap = 0;
+
+    table_free(&env_table);
+    env_loaded = 0;
 
     table_free(&alias_table);
 
@@ -158,22 +246,23 @@ static const char *dynamic_value(const char *name) {
 }
 
 void var_mark_nameref(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
-    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    Entry *e = find(name);
+    if (!e) e = add(name);
     e->nameref = 1;
 }
 
 static const char *follow_nameref(const char *name, int depth) {
     if (depth > 8) return name;
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e || !e->nameref || !e->value || !*e->value) return name;
     return follow_nameref(e->value, depth + 1);
 }
 
 const char *var_get(const char *name) {
+    if (name[0] == 'P' && strcmp(name, "PATH") == 0) path_ensure_environment();
     name = follow_nameref(name, 0);
 
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (e) {
         if (e->kind != VAR_SCALAR) return e->values.len > 0 ? e->values.items[0] : "";
         return e->value ? e->value : "";
@@ -181,19 +270,19 @@ const char *var_get(const char *name) {
     const char *generated = dynamic_value(name);
     if (generated) return generated;
 
-    const char *env = getenv(name);
+    const char *env = env_value(name);
     return env ? env : NULL;
 }
 
 int var_exists(const char *name) {
-    return find(vars, var_count_total, name) != NULL || dynamic_value(name) != NULL ||
-           getenv(name) != NULL;
+    return find(name) != NULL || dynamic_value(name) != NULL ||
+           env_value(name) != NULL;
 }
 
 void var_set(const char *name, const char *value) {
     name = follow_nameref(name, 0);
 
-    Entry *existing = find(vars, var_count_total, name);
+    Entry *existing = find(name);
     if (existing && existing->readonly) {
         shell_error("%s: is read only", name);
         return;
@@ -201,8 +290,8 @@ void var_set(const char *name, const char *value) {
 
     Entry *e = existing;
     if (!e) {
-        e = add(&vars, &var_count_total, &var_cap, name);
-        e->exported = getenv(name) != NULL;
+        e = add(name);
+        e->exported = env_value(name) != NULL;
     }
     entry_reset(e);
     e->kind = VAR_SCALAR;
@@ -211,8 +300,8 @@ void var_set(const char *name, const char *value) {
 }
 
 void var_set_exported(const char *name, const char *value) {
-    Entry *e = find(vars, var_count_total, name);
-    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    Entry *e = find(name);
+    if (!e) e = add(name);
     entry_reset(e);
     e->kind = VAR_SCALAR;
     e->value = xstrdup(value ? value : "");
@@ -221,10 +310,10 @@ void var_set_exported(const char *name, const char *value) {
 }
 
 void var_export(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e) {
-        const char *env = getenv(name);
-        e = add(&vars, &var_count_total, &var_cap, name);
+        const char *env = env_value(name);
+        e = add(name);
         e->value = xstrdup(env ? env : "");
     }
     e->exported = 1;
@@ -232,25 +321,25 @@ void var_export(const char *name) {
 }
 
 int var_is_exported(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (e) return e->exported;
-    return getenv(name) != NULL;
+    return env_value(name) != NULL;
 }
 
 void var_unset(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (e) {
         int was_exported = e->exported;
-        remove_entry(vars, &var_count_total, e);
+        remove_entry(e);
         if (was_exported) apply_export(name, NULL);
-    } else if (getenv(name)) {
+    } else if (env_value(name)) {
         apply_export(name, NULL);
     }
 }
 
 void var_declare(const char *name, VarKind kind) {
-    Entry *e = find(vars, var_count_total, name);
-    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    Entry *e = find(name);
+    if (!e) e = add(name);
     if (e->kind != kind) {
         entry_reset(e);
         e->kind = kind;
@@ -258,13 +347,13 @@ void var_declare(const char *name, VarKind kind) {
 }
 
 VarKind var_kind(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     return e ? e->kind : VAR_SCALAR;
 }
 
 void var_set_array(const char *name, const StrList *values, VarKind kind) {
-    Entry *e = find(vars, var_count_total, name);
-    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    Entry *e = find(name);
+    if (!e) e = add(name);
     entry_reset(e);
     e->kind = kind;
 
@@ -297,9 +386,9 @@ static int index_position(Entry *e, const char *index) {
 }
 
 void var_set_element(const char *name, const char *index, const char *value) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e) {
-        e = add(&vars, &var_count_total, &var_cap, name);
+        e = add(name);
         e->kind = VAR_INDEXED;
     }
     if (e->kind == VAR_SCALAR) {
@@ -325,7 +414,7 @@ void var_set_element(const char *name, const char *index, const char *value) {
 }
 
 int var_unset_element(const char *name, const char *index) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e || e->kind == VAR_SCALAR) return 0;
 
     int position = index_position(e, index);
@@ -343,39 +432,39 @@ int var_unset_element(const char *name, const char *index) {
 }
 
 void var_mark_readonly(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
-    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    Entry *e = find(name);
+    if (!e) e = add(name);
     e->readonly = 1;
 }
 
 int var_is_readonly(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     return e ? e->readonly : 0;
 }
 
 void vars_readonly_names(StrList *out) {
     for (size_t i = 0; i < var_count_total; i++)
-        if (vars[i].readonly) sl_push_copy(out, vars[i].name);
+        if (vars[i].used && vars[i].readonly) sl_push_copy(out, vars[i].name);
 }
 
 void vars_exported_names(StrList *out) {
     for (size_t i = 0; i < var_count_total; i++)
-        if (vars[i].exported) sl_push_copy(out, vars[i].name);
+        if (vars[i].used && vars[i].exported) sl_push_copy(out, vars[i].name);
 }
 
 void var_mark_integer(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
-    if (!e) e = add(&vars, &var_count_total, &var_cap, name);
+    Entry *e = find(name);
+    if (!e) e = add(name);
     e->integer = 1;
 }
 
 int var_is_integer(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     return e ? e->integer : 0;
 }
 
 const char *var_get_element(const char *name, const char *index) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e) return NULL;
     if (e->kind == VAR_SCALAR) return strcmp(index, "0") == 0 ? e->value : NULL;
 
@@ -384,9 +473,9 @@ const char *var_get_element(const char *name, const char *index) {
 }
 
 void var_values(const char *name, StrList *out) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e) {
-        const char *env = getenv(name);
+        const char *env = env_value(name);
         if (env) sl_push_copy(out, env);
         return;
     }
@@ -398,7 +487,7 @@ void var_values(const char *name, StrList *out) {
 }
 
 void var_keys(const char *name, StrList *out) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e) return;
     if (e->kind == VAR_SCALAR) {
         if (e->value) sl_push_copy(out, "0");
@@ -408,14 +497,14 @@ void var_keys(const char *name, StrList *out) {
 }
 
 int var_count(const char *name) {
-    Entry *e = find(vars, var_count_total, name);
-    if (!e) return getenv(name) ? 1 : 0;
+    Entry *e = find(name);
+    if (!e) return env_value(name) ? 1 : 0;
     if (e->kind == VAR_SCALAR) return e->value && *e->value ? 1 : 0;
     return (int)e->values.len;
 }
 
 void var_append(const char *name, const char *value) {
-    Entry *e = find(vars, var_count_total, name);
+    Entry *e = find(name);
     if (!e || e->kind == VAR_SCALAR) {
         const char *current = var_get(name);
         StrBuf sb;
@@ -434,6 +523,7 @@ void var_append(const char *name, const char *value) {
 
 void vars_list(StrList *out) {
     for (size_t i = 0; i < var_count_total; i++) {
+        if (!vars[i].used) continue;
         StrBuf sb;
         sb_init(&sb);
         if (vars[i].kind == VAR_SCALAR) {
@@ -455,7 +545,7 @@ void vars_list(StrList *out) {
         char *eq = strchr(entry, '=');
         if (!eq || eq == entry) continue;
         char *name = xstrndup(entry, (size_t)(eq - entry));
-        if (!find(vars, var_count_total, name)) sl_push_copy(out, entry);
+        if (!find(name)) sl_push_copy(out, entry);
         free(name);
     }
     if (block) FreeEnvironmentStringsA(block);
@@ -475,6 +565,7 @@ static Entry entry_copy(const Entry *src) {
     e.kind = src->kind;
     e.exported = src->exported;
     e.integer = src->integer;
+    e.used = 1;
     sl_init(&e.keys);
     sl_init(&e.values);
     for (size_t i = 0; i < src->keys.len; i++) sl_push_copy(&e.keys, src->keys.items[i]);
@@ -484,20 +575,25 @@ static Entry entry_copy(const Entry *src) {
 
 void *vars_snapshot(void) {
     Snapshot *snap = xmalloc(sizeof(Snapshot));
-    snap->count = var_count_total;
+    snap->count = 0;
     snap->entries = var_count_total ? xmalloc(var_count_total * sizeof(Entry)) : NULL;
-    for (size_t i = 0; i < var_count_total; i++) snap->entries[i] = entry_copy(&vars[i]);
+    for (size_t i = 0; i < var_count_total; i++) {
+        if (vars[i].used) snap->entries[snap->count++] = entry_copy(&vars[i]);
+    }
     return snap;
 }
 
 void vars_restore(void *handle) {
     Snapshot *snap = handle;
-    for (size_t i = 0; i < var_count_total; i++) entry_free(&vars[i]);
+    for (size_t i = 0; i < var_count_total; i++) {
+        if (vars[i].used) entry_free(&vars[i]);
+    }
     free(vars);
     vars = snap->entries;
     var_count_total = snap->count;
     var_cap = snap->count;
     free(snap);
+    index_rebuild();
 }
 
 void scope_push(void) {
@@ -517,11 +613,11 @@ void scope_pop(void) {
 
     for (size_t i = scope->len; i > 0; i--) {
         Saved *saved = &scope->items[i - 1];
-        Entry *current = find(vars, var_count_total, saved->name);
-        if (current) remove_entry(vars, &var_count_total, current);
+        Entry *current = find(saved->name);
+        if (current) remove_entry(current);
 
         if (saved->existed) {
-            Entry *restored = add(&vars, &var_count_total, &var_cap, saved->name);
+            Entry *restored = add(saved->name);
             free(restored->name);
             sl_free(&restored->keys);
             sl_free(&restored->values);
@@ -548,14 +644,13 @@ void var_make_local(const char *name) {
 
     Saved *saved = &scope->items[scope->len++];
     saved->name = xstrdup(name);
-    Entry *current = find(vars, var_count_total, name);
+    Entry *current = find(name);
 
     if (current) {
         saved->existed = 1;
         saved->saved = *current;
-        size_t index = (size_t)(current - vars);
-        memmove(vars + index, vars + index + 1, (var_count_total - index - 1) * sizeof(Entry));
-        var_count_total--;
+        release_slot(current);
+        memset(current, 0, sizeof(Entry));
     } else {
         saved->existed = 0;
         memset(&saved->saved, 0, sizeof(Entry));
@@ -563,7 +658,7 @@ void var_make_local(const char *name) {
         sl_init(&saved->saved.values);
     }
 
-    Entry *fresh = add(&vars, &var_count_total, &var_cap, name);
+    Entry *fresh = add(name);
     fresh->value = xstrdup("");
 }
 

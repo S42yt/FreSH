@@ -596,7 +596,7 @@ static int more_id(int argc, char **argv) {
     (void)argv;
     char user[256];
     DWORD size = sizeof(user);
-    if (!GetUserNameA(user, &size)) return 1;
+    if (!win_user_name(user, &size)) return 1;
 
     char host[256];
     DWORD host_size = sizeof(host);

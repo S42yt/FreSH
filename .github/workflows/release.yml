@@ -58,6 +58,13 @@ jobs:
           install: mingw-w64-x86_64-gcc
           update: true
 
+      - name: Add the Rust target the C linker can use
+        shell: bash
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          rustc --version
+          cargo --version
+
       - name: Resolve version
         shell: bash
         run: |
@@ -84,11 +91,17 @@ jobs:
           sed -i "s/#define FRESH_VERSION \".*\"/#define FRESH_VERSION \"$VERSION\"/" installation/installer.h
           sed -i "s/VALUE \"ProductVersion\", \".*\"/VALUE \"ProductVersion\", \"$VERSION\"/" src/fresh.rc installation/setup.rc
 
+      - name: Build the Rust core
+        shell: bash
+        run: |
+          cd rust/core
+          cargo build --release --target x86_64-pc-windows-gnu
+
       - name: Build
         shell: msys2 {0}
         run: |
           chmod +x build.sh
-          ./build.sh
+          FRESH_REQUIRE_RUST=1 ./build.sh
           test -f build/FreSH.exe
           test -f build/FreSH-Setup.exe
 

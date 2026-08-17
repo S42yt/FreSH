@@ -49,6 +49,8 @@ void sl_push_copy(StrList *l, const char *s);
 void sl_sort(StrList *l);
 int sl_contains(const StrList *l, const char *s);
 
+int win_user_name(char *out, unsigned long *size);
+
 int str_ieq(const char *a, const char *b);
 int str_has_prefix(const char *s, const char *prefix);
 int str_has_suffix_i(const char *s, const char *suffix);

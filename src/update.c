@@ -14,6 +14,7 @@
 #include <wininet.h>
 
 #include "config.h"
+#include "rustcore.h"
 #include "shell.h"
 #include "style.h"
 #include "util.h"
@@ -486,8 +487,8 @@ int builtin_fresh(int argc, char **argv) {
     };
 
     char info[5][PATH_BUF + 64];
-    snprintf(info[0], sizeof(info[0]), "%sFreSH%s %s%s%s", style(S_HEADING), style(S_RESET),
-             style(S_DIM), FRESH_VERSION, style(S_RESET));
+    snprintf(info[0], sizeof(info[0]), "%sFreSH%s %s%s, %s core%s", style(S_HEADING), style(S_RESET),
+             style(S_DIM), FRESH_VERSION, FRESH_CORE, style(S_RESET));
     snprintf(info[1], sizeof(info[1]), "%s%-8s%s %s", style(S_LABEL), "binary", style(S_RESET), exe);
     snprintf(info[2], sizeof(info[2]), "%s%-8s%s %s", style(S_LABEL), "config", style(S_RESET), rc);
     snprintf(info[3], sizeof(info[3]), "%s%-8s%s %s", style(S_LABEL), "theme", style(S_RESET),

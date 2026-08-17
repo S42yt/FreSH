@@ -224,7 +224,7 @@ void prompt_expand(const char *format, StrBuf *out) {
         case 'n': {
             char user[256];
             DWORD size = sizeof(user);
-            if (GetUserNameA(user, &size)) sb_puts(out, user);
+            if (win_user_name(user, &size)) sb_puts(out, user);
             break;
         }
         case 'm': {
