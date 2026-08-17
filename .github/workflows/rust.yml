@@ -1,0 +1,102 @@
+name: Rust experiment
+
+on:
+  push:
+    branches: ['rust/**']
+    tags: ['v*-experiment-*']
+  pull_request:
+    branches: ['rust/**']
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          update: true
+
+      - name: Build the C shell
+        shell: msys2 {0}
+        run: |
+          chmod +x build.sh
+          ./build.sh
+          test -f build/FreSH.exe
+
+      - name: Build the Rust core
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          cd rust
+          cargo build --release
+          test -f target/release/fresh-rs.exe
+
+      - name: Sizes
+        shell: bash
+        run: |
+          ls -l build/FreSH.exe rust/target/release/fresh-rs.exe
+          echo "c    $(stat -c %s build/FreSH.exe) bytes"
+          echo "rust $(stat -c %s rust/target/release/fresh-rs.exe) bytes"
+
+      - name: Parity, the same script through both
+        shell: bash
+        run: |
+          ./build/FreSH.exe --norc tests/rust/parity.frsh > c.txt 2> c.err || true
+          ./rust/target/release/fresh-rs.exe tests/rust/parity.frsh > rust.txt 2> rust.err || true
+          echo "--- C stderr"; cat c.err
+          echo "--- Rust stderr"; cat rust.err
+          if diff -u c.txt rust.txt; then
+            echo "the two agree on every line"
+          else
+            echo "::error::the Rust core does not match the C shell"
+            exit 1
+          fi
+
+      - name: Startup, measured by the same harness
+        shell: bash
+        run: |
+          ./build/FreSH.exe --norc tools/bench-startup.frsh "$PWD/build/FreSH.exe" 40 | tee startup.txt
+          ./build/FreSH.exe --norc tools/bench-startup.frsh "$PWD/rust/target/release/fresh-rs.exe" 40 | tee -a startup.txt
+
+      - name: Core work, each shell running the same script
+        shell: bash
+        run: |
+          echo "C:" | tee work.txt
+          ./build/FreSH.exe --norc tools/bench-core.frsh 10 | tee -a work.txt
+          echo "Rust:" | tee -a work.txt
+          ./rust/target/release/fresh-rs.exe tools/bench-core.frsh 10 | tee -a work.txt
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Rust experiment'
+            echo
+            echo '### Startup'
+            echo '```'
+            cat startup.txt 2> /dev/null || echo 'not measured'
+            echo '```'
+            echo '### Core work'
+            echo '```'
+            cat work.txt 2> /dev/null || echo 'not measured'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-experiment
+          path: |
+            startup.txt
+            work.txt
+            c.txt
+            rust.txt
+            rust/target/release/fresh-rs.exe
+          retention-days: 30

@@ -1,0 +1,158 @@
+work=.parity-work
+rm -r "$work" 2> /dev/null
+mkdir -p "$work/tree"
+printf 'gamma\nalpha\nbeta\n' > "$work/names"
+printf 'one\n' > "$work/tree/one.c"
+printf 'two\n' > "$work/tree/two.c"
+printf 'three\n' > "$work/tree/three.h"
+
+echo "-- words"
+echo plain word
+echo "double quoted   spaces"
+echo 'single $notexpanded'
+echo mixed"in one"word
+
+echo "-- variables"
+v=abcdefghijklmnop
+echo "$v"
+echo "${#v}"
+echo "${v#a}"
+echo "${v%p}"
+echo "${v/c/C}"
+echo "${v//[aeiou]/-}"
+echo "${missing:-fallback}"
+echo "${v:+present}"
+echo "${v:2:5}"
+i=3
+echo "${v:$i:2}"
+empty=
+echo "[${empty}]"
+compound=one
+compound+=two
+echo "$compound"
+
+echo "-- arithmetic"
+echo $(( 2 + 3 * 4 ))
+echo $(( (2 + 3) * 4 ))
+echo $(( 17 % 5 ))
+echo $(( 10 - 4 - 3 ))
+echo $(( 1 < 2 ))
+echo $(( 2 == 3 ))
+echo $(( 10#0042 + 1 ))
+n=7
+echo $(( n * n ))
+n=$(( n + 1 ))
+echo "$n"
+
+echo "-- conditions"
+if [ 1 -lt 2 ]; then echo less; fi
+if [ "abc" = "abc" ]; then echo same; fi
+if [ -f "$work/names" ]; then echo file; fi
+if [ -d "$work/tree" ]; then echo directory; fi
+if [ -z "" ]; then echo blank; fi
+if [[ "abc123" == a* ]]; then echo prefix; fi
+if [[ "abc123" != z* ]]; then echo unlike; fi
+if [ 1 -eq 1 ] && [ 2 -eq 2 ]; then echo both; fi
+if [ 1 -eq 2 ] || [ 3 -eq 3 ]; then echo either; fi
+
+echo "-- control"
+count=0
+while [ "$count" -lt 3 ]; do
+  echo "while $count"
+  count=$((count + 1))
+done
+
+until [ "$count" -ge 5 ]; do
+  echo "until $count"
+  count=$((count + 1))
+done
+
+for item in one two three; do
+  echo "for $item"
+done
+
+for item in $(echo a b c); do
+  echo "split $item"
+done
+
+step=0
+while [ "$step" -lt 6 ]; do
+  step=$((step + 1))
+  if [ "$step" -eq 2 ]; then continue; fi
+  if [ "$step" -eq 5 ]; then break; fi
+  echo "step $step"
+done
+
+case "value7" in
+  other*) echo wrong ;;
+  value*) echo matched ;;
+  *) echo fallback ;;
+esac
+
+case "zebra" in
+  a*|b*) echo letters ;;
+  *) echo other ;;
+esac
+
+echo "-- functions"
+greet() {
+  local who=$1
+  echo "hello $who"
+}
+greet world
+greet "two words"
+
+total() {
+  local sum=0
+  local each
+  for each in "$@"; do
+    sum=$((sum + each))
+  done
+  echo "$sum"
+}
+total 1 2 3 4
+echo "count $#"
+
+fails() {
+  return 3
+}
+fails
+echo "status $?"
+true
+echo "status $?"
+
+echo "-- pipelines and substitution"
+echo piped | cat
+echo twice | cat | cat
+inner=$(echo captured)
+echo "$inner"
+nested=$(echo "$(echo deep)")
+echo "$nested"
+echo "$(printf 'a\nb\n')"
+
+echo "-- redirection"
+echo written > "$work/out"
+cat "$work/out"
+echo appended >> "$work/out"
+cat "$work/out"
+cat < "$work/names"
+echo quiet > /dev/null
+echo "still here"
+
+echo "-- globbing"
+for path in "$work"/tree/*.c; do
+  echo "glob $path"
+done
+files=("$work"/tree/*)
+echo "globbed ${#files[@]}"
+
+echo "-- printf"
+printf '%s|%s\n' left right
+printf '%-8s|%8s|\n' pad pad
+printf '%d %d\n' 42 -7
+printf '%05.1f\n' 3.14159
+printf 'no newline'
+printf '\n'
+
+rm -r "$work"
+echo "-- done"

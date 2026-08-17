@@ -1,0 +1,19 @@
+binary=${1:?usage: bench-startup.frsh path-to-shell [rounds]}
+rounds=${2:-20}
+
+now() {
+  local raw=$EPOCHREALTIME
+  echo $(( ${raw%.*} * 1000000 + 10#${raw#*.} ))
+}
+
+best=999999999
+round=0
+while [ "$round" -lt "$rounds" ]; do
+  started=$(now)
+  "$binary" -c exit > /dev/null 2>&1
+  taken=$(( $(now) - started ))
+  if [ "$taken" -lt "$best" ]; then best=$taken; fi
+  round=$((round + 1))
+done
+
+printf '  %-28s %8s us\n' "$binary -c exit" "$best"
