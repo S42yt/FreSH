@@ -349,8 +349,12 @@ impl Shell {
     }
 
     fn run_simple(&mut self, cmd: &Simple, io: &mut Io) -> i32 {
-        /* declare-like builtins take assignments, and an assignment never splits. */
-        const KEEPS_WHOLE: [&str; 4] = ["local", "export", "declare", "readonly"];
+        /*
+         * Assignments never split, and neither side of [[ ]] is split or globbed, so
+         * `[[ abc == a* ]]` compares against the pattern rather than against whatever
+         * file happens to sit in the directory.
+         */
+        const KEEPS_WHOLE: [&str; 5] = ["local", "export", "declare", "readonly", "[["];
 
         let mut words: Vec<String> = Vec::new();
         for (at, word) in cmd.words.iter().enumerate() {
