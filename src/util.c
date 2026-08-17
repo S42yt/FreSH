@@ -180,6 +180,8 @@ int sl_contains(const StrList *l, const char *s) {
     return 0;
 }
 
+#ifdef _WIN32
+
 typedef BOOL(WINAPI *UserNameFn)(LPSTR, LPDWORD);
 
 int win_user_name(char *out, unsigned long *size) {
@@ -193,6 +195,16 @@ int win_user_name(char *out, unsigned long *size) {
     }
     return get_user_name ? get_user_name(out, size) != 0 : 0;
 }
+
+#else
+
+int win_user_name(char *out, unsigned long *size) {
+    (void)out;
+    (void)size;
+    return 0;
+}
+
+#endif
 
 int str_ieq(const char *a, const char *b) {
     return _stricmp(a, b) == 0;
