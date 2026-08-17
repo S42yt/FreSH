@@ -4,8 +4,8 @@ set -e
 CC=${CC:-gcc}
 WINDRES=${WINDRES:-windres}
 CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
-CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
-LDFLAGS="-s -Wl,--gc-sections"
+CFLAGS="$CFLAGS -ffunction-sections -fdata-sections -flto"
+LDFLAGS="-s -flto -Wl,--gc-sections"
 BUILD=build
 
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
