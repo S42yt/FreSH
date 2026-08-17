@@ -230,7 +230,7 @@ Interleaved in one session, best of 60 per round, across rounds:
 
 The absolute numbers move several milliseconds with machine load, which is why
 they are given as the best of interleaved rounds rather than a single pair.
-The stable part is the gap: **2 to 3 ms behind `cmd`**, down from 5 to 6, and
+The stable part is the gap: **2 to 4 ms behind `cmd`**, down from 5 to 6, and
 none of it is FreSH's own work any more. What remains is that `cmd.exe` is a
 small signed system binary Windows keeps warm and trusts, and FreSH is a
 447 KB unsigned one Defender reads every time. The honest path to parity is
