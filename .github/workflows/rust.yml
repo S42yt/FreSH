@@ -90,6 +90,7 @@ jobs:
         shell: bash
         run: |
           ./build/FreSH.exe --norc tools/bench-startup.frsh "$PWD/build/FreSH.exe" 40 | tee startup.txt
+          ./build/FreSH.exe --norc tools/bench-startup.frsh "$PWD/build/FreSH.exe" 40 --norc | tee -a startup.txt
           ./build/FreSH.exe --norc tools/bench-startup.frsh "$PWD/rust/target/release/fresh-rs.exe" 40 | tee -a startup.txt
 
       - name: Core work, each shell running the same script
