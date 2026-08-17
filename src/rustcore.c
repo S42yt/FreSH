@@ -55,8 +55,6 @@ void core_sort_pointers(char **items, size_t len, unsigned int mode) {
 #endif
 }
 
-#ifndef FRESH_RUST
-
 #define CORE_MAX_ENTRIES 512
 
 static unsigned long long folded_hash(const char *entry, size_t len) {
@@ -75,15 +73,9 @@ static int same_folded(const char *a, const char *b, size_t len) {
     return 1;
 }
 
-#endif
-
 size_t core_path_merge(const char *const *parts, size_t count, char *out, size_t cap) {
     if (!parts || !out || cap == 0) return 0;
 
-#ifdef FRESH_RUST
-    return fresh_path_merge((const unsigned char *const *)(const void *)parts, count,
-                            (unsigned char *)out, cap);
-#else
     unsigned long long hashes[CORE_MAX_ENTRIES];
     size_t starts[CORE_MAX_ENTRIES];
     size_t lengths[CORE_MAX_ENTRIES];
@@ -137,15 +129,11 @@ size_t core_path_merge(const char *const *parts, size_t count, char *out, size_t
 
     out[written] = '\0';
     return written;
-#endif
 }
 
 void core_count_block(const char *data, size_t len, FreshCounts *counts) {
     if (!data || !counts) return;
 
-#ifdef FRESH_RUST
-    fresh_count_block((const unsigned char *)data, len, counts);
-#else
     unsigned long long lines = counts->lines;
     unsigned long long words = counts->words;
     int in_word = counts->in_word != 0;
@@ -165,5 +153,4 @@ void core_count_block(const char *data, size_t len, FreshCounts *counts) {
     counts->words = words;
     counts->bytes += (unsigned long long)len;
     counts->in_word = (unsigned int)in_word;
-#endif
 }
