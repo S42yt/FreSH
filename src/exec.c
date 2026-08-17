@@ -247,24 +247,46 @@ void path_rehash(void) {
     resolutions_forget();
 }
 
+typedef LSTATUS(WINAPI *RegOpenFn)(HKEY, LPCSTR, DWORD, REGSAM, PHKEY);
+typedef LSTATUS(WINAPI *RegQueryFn)(HKEY, LPCSTR, LPDWORD, LPDWORD, LPBYTE, LPDWORD);
+typedef LSTATUS(WINAPI *RegCloseFn)(HKEY);
+
+static RegOpenFn reg_open;
+static RegQueryFn reg_query;
+static RegCloseFn reg_close;
+
+static int registry_ready(void) {
+    static HMODULE library = NULL;
+    if (library) return reg_open != NULL;
+
+    library = LoadLibraryA("advapi32.dll");
+    if (!library) return 0;
+
+    reg_open = (RegOpenFn)(void *)GetProcAddress(library, "RegOpenKeyExA");
+    reg_query = (RegQueryFn)(void *)GetProcAddress(library, "RegQueryValueExA");
+    reg_close = (RegCloseFn)(void *)GetProcAddress(library, "RegCloseKey");
+    return reg_open && reg_query && reg_close;
+}
+
 static char *read_registry_path(HKEY root, const char *subkey) {
     HKEY key;
-    if (RegOpenKeyExA(root, subkey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return NULL;
+    if (!registry_ready()) return NULL;
+    if (reg_open(root, subkey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return NULL;
 
     DWORD type = 0;
     DWORD size = 0;
-    if (RegQueryValueExA(key, "Path", NULL, &type, NULL, &size) != ERROR_SUCCESS || size == 0) {
-        RegCloseKey(key);
+    if (reg_query(key, "Path", NULL, &type, NULL, &size) != ERROR_SUCCESS || size == 0) {
+        reg_close(key);
         return NULL;
     }
     char *raw = xmalloc(size + 1);
-    if (RegQueryValueExA(key, "Path", NULL, &type, (BYTE *)raw, &size) != ERROR_SUCCESS) {
+    if (reg_query(key, "Path", NULL, &type, (BYTE *)raw, &size) != ERROR_SUCCESS) {
         free(raw);
-        RegCloseKey(key);
+        reg_close(key);
         return NULL;
     }
     raw[size] = '\0';
-    RegCloseKey(key);
+    reg_close(key);
 
     if (type == REG_EXPAND_SZ) {
         DWORD needed = ExpandEnvironmentStringsA(raw, NULL, 0);
@@ -280,7 +302,16 @@ static char *read_registry_path(HKEY root, const char *subkey) {
     return raw;
 }
 
+static int path_environment_merged = 0;
+
+void path_ensure_environment(void) {
+    if (path_environment_merged) return;
+    path_reload_environment();
+}
+
 void path_reload_environment(void) {
+    path_environment_merged = 1;
+
     const char *home_bins[] = {"bin", ".local\\bin", "AppData\\Local\\bin", "scoop\\shims",
                                "AppData\\Roaming\\npm"};
     size_t bin_count = sizeof(home_bins) / sizeof(home_bins[0]);

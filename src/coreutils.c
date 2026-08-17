@@ -805,7 +805,7 @@ static int core_whoami(int argc, char **argv) {
     (void)argv;
     char user[256];
     DWORD size = sizeof(user);
-    if (!GetUserNameA(user, &size)) return 1;
+    if (!win_user_name(user, &size)) return 1;
     printf("%s\n", user);
     return 0;
 }

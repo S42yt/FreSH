@@ -16,7 +16,9 @@ best=999999999
 round=0
 while [ "$round" -lt "$rounds" ]; do
   started=$(now)
-  if [ -n "$flag" ]; then
+  if [ "$flag" = "--cmd" ]; then
+    "$binary" /d /c exit > /dev/null 2>&1
+  elif [ -n "$flag" ]; then
     "$binary" "$flag" -c exit > /dev/null 2>&1
   else
     "$binary" -c exit > /dev/null 2>&1

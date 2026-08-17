@@ -214,7 +214,6 @@ void shell_init(int interactive) {
     vars_init();
     timing_mark("variables");
     exec_init();
-    path_reload_environment();
     timing_mark("path");
 }
 

@@ -180,6 +180,20 @@ int sl_contains(const StrList *l, const char *s) {
     return 0;
 }
 
+typedef BOOL(WINAPI *UserNameFn)(LPSTR, LPDWORD);
+
+int win_user_name(char *out, unsigned long *size) {
+    static UserNameFn get_user_name;
+    static HMODULE library = NULL;
+
+    if (!library) {
+        library = LoadLibraryA("advapi32.dll");
+        if (library)
+            get_user_name = (UserNameFn)(void *)GetProcAddress(library, "GetUserNameA");
+    }
+    return get_user_name ? get_user_name(out, size) != 0 : 0;
+}
+
 int str_ieq(const char *a, const char *b) {
     return _stricmp(a, b) == 0;
 }

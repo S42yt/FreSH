@@ -6,6 +6,7 @@
 
 #include "vars.h"
 
+#include "exec.h"
 #include "shell.h"
 #include "table.h"
 
@@ -258,6 +259,7 @@ static const char *follow_nameref(const char *name, int depth) {
 }
 
 const char *var_get(const char *name) {
+    if (name[0] == 'P' && strcmp(name, "PATH") == 0) path_ensure_environment();
     name = follow_nameref(name, 0);
 
     Entry *e = find(name);

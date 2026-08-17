@@ -44,7 +44,7 @@ fi
 
 info "Building FreSH..."
 $WINDRES src/fresh.rc -O coff -o "$BUILD/fresh.res"
-$CC $CFLAGS src/*.c "$BUILD/fresh.res" $RUST_LIB -o "$BUILD/FreSH.exe" $LDFLAGS -ladvapi32
+$CC $CFLAGS src/*.c "$BUILD/fresh.res" $RUST_LIB -o "$BUILD/FreSH.exe" $LDFLAGS
 green "  $BUILD/FreSH.exe"
 
 info "Building payload generator..."

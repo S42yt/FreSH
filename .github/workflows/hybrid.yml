@@ -48,12 +48,13 @@ jobs:
           FRESH_NO_RUST=1 FRESH_EXTRA_CFLAGS=-DFRESH_NO_REGISTRY_PATH ./build.sh
           cp build/FreSH.exe build/FreSH-noreg.exe
 
-      - name: Startup, all three
+      - name: Startup, all three and cmd
         shell: bash
         run: |
           for exe in FreSH-c FreSH-rust FreSH-noreg; do
             ./build/FreSH-c.exe --norc tools/bench-startup.frsh "$PWD/build/$exe.exe" 60 --norc | tee -a startup.txt
           done
+          ./build/FreSH-c.exe --norc tools/bench-startup.frsh cmd.exe 60 --cmd | tee -a startup.txt
 
       - name: Sizes and cores
         shell: bash
