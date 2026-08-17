@@ -139,6 +139,21 @@ The experiment build is published as an `experiment` prerelease, so
 `fresh update --pre-selector` lists it and `fresh update --pre` never offers
 it. `fresh-rs.exe` is attached to that release next to the usual files.
 
+## Round two: Rust in the shipping binary
+
+The experiment above ruled out a rewrite, not Rust. So 26.11 links a `no_std`
+static library into the C binary and asks a narrower question: is there a leaf
+routine where Rust pays for itself? Three were tried, one survived, and it is
+`sort`, where C calls its comparator through a function pointer and Rust inlines
+it. Counting and `PATH` merging measured identical and stayed in C. The whole
+Rust side costs 11,776 bytes of binary. The numbers are in
+[benchmarks](benchmarks.md).
+
+Startup was measured again on the way past, three builds from one commit, and
+it does not move: not with Rust, not with a third of the binary removed, not
+with the registry `PATH` merge deleted outright. That floor is Windows creating
+a process.
+
 ## What a round two would measure
 
 The Rust core has had one bug fixed and no tuning pass. Removing the per-word

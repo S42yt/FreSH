@@ -159,6 +159,51 @@ resource the shell never reads, and `FRESH_TIMING=1` puts FreSH's own work at
 about 4 ms of that 20. The rest is Windows creating a process, which is the same
 floor `cmd` pays.
 
+## The Rust compute core
+
+The experiment said Rust loses at interpreting a shell language. It did not say
+Rust loses at everything, so 26.11 also carries the smallest honest way to find
+out: `rust/core`, a `no_std` static library linked straight into the C binary.
+No allocator, no Rust runtime, no second copy of anything, and
+`src/rustcore.c` holds a C version of every kernel so a machine without `cargo`
+builds the same shell. `fresh` prints which core the binary carries.
+
+Three kernels were written and measured. **One survived.**
+
+`sort` calls its comparator through a function pointer in C, which the compiler
+cannot inline; the Rust version inlines it into the sort. Best of five, 40,000
+lines, both binaries built from the same commit on the same runner:
+
+| Task | C core | Rust core |
+| --- | --- | --- |
+| `sort` 40k lines | 18,172 us | **16,224 us** |
+| `sort -n` 40k numbers | 200,061 us | **173,219 us** |
+| `sort -u` 40k lines | 19,219 us | **16,201 us** |
+
+The other two were dropped for saying nothing. Counting lines and words came
+out identical, because the win there was reading 64 KB blocks instead of one
+`fgetc` per byte, which is a change the C path got as well. Merging the `PATH`
+came out identical too, so that one stayed in C.
+
+The kernel costs **11,776 bytes**, which is the whole price of having Rust in
+the binary. It was 46,080 until the three sort instantiations were collapsed
+into one; keeping them separate bought about a quarter more speed on `sort -n`
+for another 34 KB, which is not a trade this shell should make.
+
+**Startup is not one of the things Rust can fix**, and the numbers are worth
+keeping so nobody tries again. Three builds from one commit, best of sixty:
+
+| Build | Startup |
+| --- | --- |
+| C core | 6,050 us |
+| Rust core | 6,067 us |
+| C core with the registry `PATH` merge removed entirely | 6,065 us |
+
+The same three on the benchmark machine land inside a millisecond of each
+other. Startup is Windows creating a process and mapping an image; FreSH's own
+work is about 4 ms of it, spread across five stages that are each a millisecond
+or less. A language cannot move that floor, and neither can a smaller binary.
+
 ## What changed in 26.10
 
 Startup was 45 ms and is now 22 ms. Three things did it, and all three were
