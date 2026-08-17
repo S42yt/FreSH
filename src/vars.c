@@ -141,16 +141,44 @@ static void remove_entry(Entry *e) {
     memset(e, 0, sizeof(Entry));
 }
 
+static Table env_table;
+static int env_loaded = 0;
+
+static void env_ready(void) {
+    if (env_loaded) return;
+    env_loaded = 1;
+    table_init(&env_table, 128, 1, free);
+
+    char *block = GetEnvironmentStringsA();
+    for (char *entry = block; entry && *entry; entry += strlen(entry) + 1) {
+        const char *equals = strchr(entry, '=');
+        if (!equals || equals == entry) continue;
+        char *name = xstrndup(entry, (size_t)(equals - entry));
+        table_put(&env_table, name, xstrdup(equals + 1));
+        free(name);
+    }
+    if (block) FreeEnvironmentStringsA(block);
+}
+
+static const char *env_value(const char *name) {
+    env_ready();
+    return table_get(&env_table, name);
+}
+
 static void apply_export(const char *name, const char *value) {
     SetEnvironmentVariableA(name, value);
     _putenv_s(name, value ? value : "");
+
+    env_ready();
+    if (value) table_put(&env_table, name, xstrdup(value));
+    else table_remove(&env_table, name);
 }
 
 void vars_init(void) {
     char cwd[PATH_BUF];
     if (GetCurrentDirectoryA(sizeof(cwd), cwd)) var_set_exported("PWD", cwd);
-    if (!getenv("HOME")) var_set_exported("HOME", home_dir());
-    if (!getenv("SHELL")) {
+    if (!env_value("HOME")) var_set_exported("HOME", home_dir());
+    if (!env_value("SHELL")) {
         char exe[PATH_BUF];
         if (GetModuleFileNameA(NULL, exe, sizeof(exe))) var_set_exported("SHELL", exe);
     }
@@ -168,6 +196,9 @@ void vars_cleanup(void) {
     free(free_slots);
     free_slots = NULL;
     free_count = free_cap = 0;
+
+    table_free(&env_table);
+    env_loaded = 0;
 
     table_free(&alias_table);
 
@@ -237,13 +268,13 @@ const char *var_get(const char *name) {
     const char *generated = dynamic_value(name);
     if (generated) return generated;
 
-    const char *env = getenv(name);
+    const char *env = env_value(name);
     return env ? env : NULL;
 }
 
 int var_exists(const char *name) {
     return find(name) != NULL || dynamic_value(name) != NULL ||
-           getenv(name) != NULL;
+           env_value(name) != NULL;
 }
 
 void var_set(const char *name, const char *value) {
@@ -258,7 +289,7 @@ void var_set(const char *name, const char *value) {
     Entry *e = existing;
     if (!e) {
         e = add(name);
-        e->exported = getenv(name) != NULL;
+        e->exported = env_value(name) != NULL;
     }
     entry_reset(e);
     e->kind = VAR_SCALAR;
@@ -279,7 +310,7 @@ void var_set_exported(const char *name, const char *value) {
 void var_export(const char *name) {
     Entry *e = find(name);
     if (!e) {
-        const char *env = getenv(name);
+        const char *env = env_value(name);
         e = add(name);
         e->value = xstrdup(env ? env : "");
     }
@@ -290,7 +321,7 @@ void var_export(const char *name) {
 int var_is_exported(const char *name) {
     Entry *e = find(name);
     if (e) return e->exported;
-    return getenv(name) != NULL;
+    return env_value(name) != NULL;
 }
 
 void var_unset(const char *name) {
@@ -299,7 +330,7 @@ void var_unset(const char *name) {
         int was_exported = e->exported;
         remove_entry(e);
         if (was_exported) apply_export(name, NULL);
-    } else if (getenv(name)) {
+    } else if (env_value(name)) {
         apply_export(name, NULL);
     }
 }
@@ -442,7 +473,7 @@ const char *var_get_element(const char *name, const char *index) {
 void var_values(const char *name, StrList *out) {
     Entry *e = find(name);
     if (!e) {
-        const char *env = getenv(name);
+        const char *env = env_value(name);
         if (env) sl_push_copy(out, env);
         return;
     }
@@ -465,7 +496,7 @@ void var_keys(const char *name, StrList *out) {
 
 int var_count(const char *name) {
     Entry *e = find(name);
-    if (!e) return getenv(name) ? 1 : 0;
+    if (!e) return env_value(name) ? 1 : 0;
     if (e->kind == VAR_SCALAR) return e->value && *e->value ? 1 : 0;
     return (int)e->values.len;
 }

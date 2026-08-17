@@ -1,0 +1,30 @@
+binary=$1
+rounds=${2:-20}
+flag=$3
+
+if [ -z "$binary" ]; then
+  echo "usage: bench-startup.frsh path-to-shell [rounds] [flag]"
+  exit 2
+fi
+
+now() {
+  local raw=$EPOCHREALTIME
+  echo $(( ${raw%.*} * 1000000 + 10#${raw#*.} ))
+}
+
+best=999999999
+round=0
+while [ "$round" -lt "$rounds" ]; do
+  started=$(now)
+  if [ -n "$flag" ]; then
+    "$binary" "$flag" -c exit > /dev/null 2>&1
+  else
+    "$binary" -c exit > /dev/null 2>&1
+  fi
+  taken=$(( $(now) - started ))
+  if [ "$taken" -lt "$best" ]; then best=$taken; fi
+  round=$((round + 1))
+done
+
+name=${binary##*/}
+printf '  %-34s %8s us\n' "$name $flag -c exit" "$best"

@@ -1,0 +1,110 @@
+rounds=${1:-10}
+
+now() {
+  local raw=$EPOCHREALTIME
+  echo $(( ${raw%.*} * 1000000 + 10#${raw#*.} ))
+}
+
+measure() {
+  local label=$1
+  shift
+
+  local best=999999999
+  local round=0
+  while [ "$round" -lt "$rounds" ]; do
+    local started=$(now)
+    "$@" > /dev/null 2>&1
+    local taken=$(( $(now) - started ))
+    if [ "$taken" -lt "$best" ]; then best=$taken; fi
+    round=$((round + 1))
+  done
+  printf '  %-28s %8s us\n' "$label" "$best"
+}
+
+work=.bench-core
+rm -r "$work" 2> /dev/null
+mkdir -p "$work/tree"
+
+seed=0
+while [ "$seed" -lt 60 ]; do
+  printf 'int unit_%s(void) { return %s; }\n' "$seed" "$seed" > "$work/tree/unit$seed.c"
+  seed=$((seed + 1))
+done
+
+count_loop() {
+  local i=0
+  while [ "$i" -lt 20000 ]; do i=$((i + 1)); done
+}
+
+arithmetic() {
+  local i=0
+  local total=0
+  while [ "$i" -lt 5000 ]; do
+    total=$(( (total + i * 3) % 100003 ))
+    i=$((i + 1))
+  done
+}
+
+expansions() {
+  local v=abcdefghijklmnop
+  local i=0
+  local out=
+  while [ "$i" -lt 5000 ]; do
+    out="${v#a}${v%p}${v/c/C}${#v}"
+    i=$((i + 1))
+  done
+}
+
+conditions() {
+  local i=0
+  while [ "$i" -lt 5000 ]; do
+    if [[ "abc$i" == a* ]]; then i=$((i + 1)); fi
+  done
+}
+
+cases() {
+  local i=0
+  while [ "$i" -lt 5000 ]; do
+    case "value$i" in
+      other*) i=$((i + 1)) ;;
+      value*) i=$((i + 1)) ;;
+      *) i=$((i + 1)) ;;
+    esac
+  done
+}
+
+calls() {
+  local i=0
+  step() { local n=$1; echo "$n" > /dev/null; }
+  while [ "$i" -lt 2000 ]; do
+    step "$i"
+    i=$((i + 1))
+  done
+}
+
+globbing() {
+  local files=("$work"/tree/*.c)
+  echo "${#files[@]}"
+}
+
+substitution() {
+  local out=$(echo hello)
+}
+
+pipes() {
+  echo hello | cat | cat
+}
+
+printf '\n  core work, best of %s\n\n' "$rounds"
+measure "20k while iterations" count_loop
+measure "5k arithmetic rounds" arithmetic
+measure "5k expansions" expansions
+measure "5k [[ ]] tests" conditions
+measure "5k case matches" cases
+measure "2k function calls" calls
+measure "glob 60 files" globbing
+measure "command substitution" substitution
+measure "three stage pipeline" pipes
+printf '\n'
+
+rm -r "$work"
