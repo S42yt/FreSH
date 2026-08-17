@@ -4,7 +4,7 @@ set -e
 CC=${CC:-gcc}
 WINDRES=${WINDRES:-windres}
 CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
-CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
+CFLAGS="$CFLAGS -ffunction-sections -fdata-sections $FRESH_EXTRA_CFLAGS"
 LDFLAGS="-s -Wl,--gc-sections"
 BUILD=build
 

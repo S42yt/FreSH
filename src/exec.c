@@ -309,9 +309,14 @@ void path_reload_environment(void) {
         free(candidate);
     }
 
+#ifdef FRESH_NO_REGISTRY_PATH
+    char *machine = NULL;
+    char *user = NULL;
+#else
     char *machine = read_registry_path(
         HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment");
     char *user = read_registry_path(HKEY_CURRENT_USER, "Environment");
+#endif
 
     if (machine && *machine) {
         sb_puts(&path, machine);

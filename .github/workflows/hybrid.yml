@@ -42,6 +42,19 @@ jobs:
           FRESH_REQUIRE_RUST=1 ./build.sh
           cp build/FreSH.exe build/FreSH-rust.exe
 
+      - name: Build without the registry PATH merge
+        shell: msys2 {0}
+        run: |
+          FRESH_NO_RUST=1 FRESH_EXTRA_CFLAGS=-DFRESH_NO_REGISTRY_PATH ./build.sh
+          cp build/FreSH.exe build/FreSH-noreg.exe
+
+      - name: Startup, all three
+        shell: bash
+        run: |
+          for exe in FreSH-c FreSH-rust FreSH-noreg; do
+            ./build/FreSH-c.exe --norc tools/bench-startup.frsh "$PWD/build/$exe.exe" 60 --norc | tee -a startup.txt
+          done
+
       - name: Sizes and cores
         shell: bash
         run: |
