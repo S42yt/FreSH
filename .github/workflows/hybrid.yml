@@ -29,18 +29,25 @@ jobs:
           FRESH_NO_RUST=1 ./build.sh
           cp build/FreSH.exe build/FreSH-c.exe
 
+      - name: Build the Rust core
+        shell: bash
+        run: |
+          cd rust/core
+          cargo build --release --target x86_64-pc-windows-gnu
+          ls -l target/x86_64-pc-windows-gnu/release/libfresh_core.a
+
       - name: Build with the Rust core
         shell: msys2 {0}
         run: |
-          ./build.sh
+          FRESH_REQUIRE_RUST=1 ./build.sh
           cp build/FreSH.exe build/FreSH-rust.exe
 
       - name: Sizes and cores
         shell: bash
         run: |
           ls -l build/FreSH-c.exe build/FreSH-rust.exe
-          ./build/FreSH-c.exe --norc -c 'fresh' | grep FreSH
-          ./build/FreSH-rust.exe --norc -c 'fresh' | grep FreSH
+          ./build/FreSH-c.exe --norc -c 'fresh' | grep 'c core'
+          ./build/FreSH-rust.exe --norc -c 'fresh' | grep 'rust core'
 
       - name: The two agree
         shell: bash

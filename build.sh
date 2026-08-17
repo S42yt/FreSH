@@ -19,19 +19,27 @@ $CC -O2 -o "$BUILD/makeicon.exe" tools/makeicon.c -lm
 cp "$BUILD/fresh.ico" src/fresh.ico
 cp "$BUILD/fresh.ico" installation/fresh.ico
 
-RUST_LIB=""
-RUST_TARGET=x86_64-pc-windows-gnu
-if [ -z "$FRESH_NO_RUST" ] && command -v cargo > /dev/null 2>&1; then
+RUST_TARGET=${FRESH_RUST_TARGET:-x86_64-pc-windows-gnu}
+RUST_LIB=rust/core/target/$RUST_TARGET/release/libfresh_core.a
+
+if [ -n "$FRESH_NO_RUST" ]; then
+    RUST_LIB=""
+    info "Building without the Rust core, as asked."
+elif [ ! -f "$RUST_LIB" ] && command -v cargo > /dev/null 2>&1; then
     info "Building the Rust compute core..."
     (cd rust/core && cargo build --release --target "$RUST_TARGET")
-    RUST_LIB="rust/core/target/$RUST_TARGET/release/libfresh_core.a"
-    if [ -f "$RUST_LIB" ]; then
-        CFLAGS="$CFLAGS -DFRESH_RUST"
-        green "  $RUST_LIB"
-    else
-        RUST_LIB=""
-        info "The Rust core did not build, carrying on with C only."
+fi
+
+if [ -n "$RUST_LIB" ] && [ -f "$RUST_LIB" ]; then
+    CFLAGS="$CFLAGS -DFRESH_RUST"
+    green "  $RUST_LIB"
+elif [ -z "$FRESH_NO_RUST" ]; then
+    RUST_LIB=""
+    if [ -n "$FRESH_REQUIRE_RUST" ]; then
+        printf '\033[31m%s\033[0m\n' "The Rust core was required and is not there. Run: cargo build --release --target $RUST_TARGET, in rust/core" >&2
+        exit 1
     fi
+    info "No Rust core found, building C only. Set FRESH_REQUIRE_RUST=1 to make that an error."
 fi
 
 info "Building FreSH..."
