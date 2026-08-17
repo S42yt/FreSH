@@ -270,7 +270,7 @@ impl Parser {
             self.at += 1;
             return Ok(());
         }
-        Err(format!("expected {}", text))
+        Err(self.complaint(&format!("expected {}", text)))
     }
 
     fn expect_op(&mut self, text: &str) -> Result<(), String> {
@@ -278,7 +278,26 @@ impl Parser {
             self.at += 1;
             return Ok(());
         }
-        Err(format!("expected {}", text))
+        Err(self.complaint(&format!("expected {}", text)))
+    }
+
+    fn complaint(&self, wanted: &str) -> String {
+        let from = self.at.saturating_sub(6);
+        let to = (self.at + 4).min(self.toks.len());
+        let mut window = String::new();
+        for (at, tok) in self.toks[from..to].iter().enumerate() {
+            let text = match tok {
+                Tok::Word(w) => w.clone(),
+                Tok::Op(o) => o.clone(),
+                Tok::Newline => "\\n".to_string(),
+            };
+            if from + at == self.at {
+                window.push_str(&format!(" >>>{}<<<", text));
+            } else {
+                window.push_str(&format!(" {}", text));
+            }
+        }
+        format!("{} at token {}, near:{}", wanted, self.at, window)
     }
 
     fn parse_if(&mut self) -> Result<Node, String> {
@@ -455,7 +474,7 @@ impl Parser {
                                     self.at += 1;
                                     break;
                                 }
-                                _ => return Err("array without a closing bracket".to_string()),
+                                _ => return Err(self.complaint("array without a closing bracket")),
                             }
                         }
                         cmd.assigns.push(Assign {
@@ -474,6 +493,36 @@ impl Parser {
                     }
                     continue;
                 }
+            }
+
+            let declaring = matches!(
+                cmd.words.first().map(|w| w.as_str()),
+                Some("local") | Some("declare") | Some("export") | Some("readonly")
+            );
+            if declaring && word.ends_with('=') {
+                self.at += 1;
+                if self.op_is("(") {
+                    self.at += 1;
+                    let mut items = Vec::new();
+                    loop {
+                        match self.peek() {
+                            Some(Tok::Word(w)) => {
+                                items.push(w.clone());
+                                self.at += 1;
+                            }
+                            Some(Tok::Newline) => self.at += 1,
+                            Some(Tok::Op(o)) if o == ")" => {
+                                self.at += 1;
+                                break;
+                            }
+                            _ => return Err(self.complaint("array without a closing bracket")),
+                        }
+                    }
+                    cmd.words.push(format!("{}({})", word, items.join(" ")));
+                } else {
+                    cmd.words.push(word);
+                }
+                continue;
             }
 
             self.at += 1;

@@ -1,5 +1,10 @@
-binary=${1:?usage: bench-startup.frsh path-to-shell [rounds]}
+binary=$1
 rounds=${2:-20}
+
+if [ -z "$binary" ]; then
+  echo "usage: bench-startup.frsh path-to-shell [rounds]"
+  exit 2
+fi
 
 now() {
   local raw=$EPOCHREALTIME

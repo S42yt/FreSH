@@ -54,15 +54,30 @@ impl Shell {
                 self.continuing = args.first().and_then(|a| a.parse().ok()).unwrap_or(1);
                 0
             }
-            "local" => {
+            "local" | "declare" | "readonly" => {
                 for argument in args {
-                    match argument.find('=') {
-                        Some(at) => {
-                            let value = self.expand_to_string(&argument[at + 1..]);
-                            self.declare_local(&argument[..at], Value::Str(value));
+                    let at = match argument.find('=') {
+                        Some(at) => at,
+                        None => {
+                            self.declare_local(argument, Value::Str(String::new()));
+                            continue;
                         }
-                        None => self.declare_local(argument, Value::Str(String::new())),
+                    };
+                    let name = argument[..at].to_string();
+                    let text = &argument[at + 1..];
+
+                    if text.starts_with('(') && text.ends_with(')') {
+                        let inside = &text[1..text.len() - 1];
+                        let mut items = Vec::new();
+                        for piece in inside.split_whitespace() {
+                            items.extend(self.expand_word(piece));
+                        }
+                        self.declare_local(&name, Value::Arr(items));
+                        continue;
                     }
+
+                    let value = self.expand_to_string(text);
+                    self.declare_local(&name, Value::Str(value));
                 }
                 0
             }
