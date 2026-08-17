@@ -140,10 +140,10 @@ microsecond resolution.
 ## Would Rust be faster?
 
 A shell core was written in Rust and measured against the C one on the same
-scripts: startup and binary size favour the Rust build, every loop, expansion
-and test is two to three times slower, and the parts where Rust won are
-structural rather than about the language. The numbers, the method and what
-it means for FreSH are in [the Rust experiment](rust-experiment.md).
+scripts: startup and binary size favour the Rust build, loops, arithmetic,
+tests and `case` are about twice as slow, and the places Rust won it won on
+structure rather than on language. The numbers, the method and what it means
+for FreSH are in [the Rust experiment](rust-experiment.md).
 
 ## What is not measured here
 
