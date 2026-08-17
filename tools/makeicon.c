@@ -13,8 +13,8 @@ typedef struct {
     unsigned char b, g, r, a;
 } Pixel;
 
-static const int SIZES[] = {16, 24, 32, 48, 64, 128, 256};
-static const int SIZE_COUNT = 7;
+static const int SIZES[] = {16, 24, 32, 48, 64, 128};
+static const int SIZE_COUNT = 6;
 
 static const Pixel BACKGROUND = {40, 33, 27, 255};
 static const Pixel GLYPH = {120, 235, 120, 255};
