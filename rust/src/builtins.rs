@@ -11,7 +11,6 @@ use crate::exec::{Io, Shell, Sink, Value};
 use crate::expand::pattern_match;
 
 impl Shell {
-    /// `None` means the name is not a builtin and belongs to a real process.
     pub fn builtin(&mut self, words: &[String], io: &mut Io) -> Option<i32> {
         let name = words[0].as_str();
         let args = &words[1..];
@@ -300,7 +299,6 @@ impl Shell {
         0
     }
 
-    /// A name that can be run: a builtin, a function, or something on PATH.
     pub fn locate(&mut self, wanted: &str) -> Option<String> {
         const BUILTINS: [&str; 22] = [
             "echo", "printf", "cat", "true", "false", "pwd", "cd", "exit", "return", "break",
@@ -338,7 +336,6 @@ impl Shell {
         None
     }
 
-    /// `test`, `[ ]` and `[[ ]]`, with && and || read left to right.
     pub fn condition(&mut self, words: &[String], patterns: bool) -> bool {
         if words.is_empty() {
             return false;
@@ -442,7 +439,6 @@ fn unescape(text: &str) -> String {
     out
 }
 
-/// One pass over the format, consuming as many arguments as it has conversions.
 fn format_once(format: &str, args: &[String], out: &mut String) -> usize {
     let chars: Vec<char> = format.chars().collect();
     let mut used = 0;
@@ -516,7 +512,6 @@ fn format_once(format: &str, args: &[String], out: &mut String) -> usize {
     used
 }
 
-/// Kept next to the builtins because only they capture output like this.
 pub fn taken(sink: Sink) -> Vec<u8> {
     match sink {
         Sink::Capture(bytes) => bytes,

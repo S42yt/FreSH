@@ -2,9 +2,6 @@
  * Copyright (c) 2025-2026 Musa Bostanci
  * FreSH - First-Run Experience Shell
  * GNU General Public License v3.0 - See LICENSE file for details
- *
- * A Rust core of FreSH: the parts the benchmarks measure, built to be compared
- * with the C shell rather than to replace it. See docs/rust-experiment.md.
  */
 
 mod arith;

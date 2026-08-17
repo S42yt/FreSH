@@ -156,8 +156,6 @@ impl Shell {
             Node::Cmd(cmd) => self.run_simple(cmd, io),
             Node::Seq(list) | Node::Group(list) => self.run_list(list, io),
             Node::Subshell(list) => {
-                /* ponytail: a subshell shares this process, so it cannot isolate cd or a
-                 * variable. The experiment measures speed, not process semantics. */
                 let depth = self.scopes.len();
                 self.scopes.push(HashMap::new());
                 let status = self.run_list(list, io);
@@ -252,7 +250,6 @@ impl Shell {
         status
     }
 
-    /// `break` and `continue` stop one level here and pass the rest outwards.
     fn take_loop_signal(&mut self) -> bool {
         if self.breaking > 0 {
             self.breaking -= 1;
@@ -294,12 +291,6 @@ impl Shell {
         0
     }
 
-    /*
-     * ponytail: stages run one after another with the output of each becoming the
-     * input of the next, rather than concurrently as a real shell does. It is the
-     * same amount of work for the builtins the benchmarks pipe together, and the
-     * limitation is written down in docs/rust-experiment.md.
-     */
     fn run_pipe(&mut self, stages: &[Node], io: &mut Io) -> i32 {
         let mut carried: Option<Vec<u8>> = io.input.take();
         let mut status = 0;
@@ -349,11 +340,6 @@ impl Shell {
     }
 
     fn run_simple(&mut self, cmd: &Simple, io: &mut Io) -> i32 {
-        /*
-         * Assignments never split, and neither side of [[ ]] is split or globbed, so
-         * `[[ abc == a* ]]` compares against the pattern rather than against whatever
-         * file happens to sit in the directory.
-         */
         const KEEPS_WHOLE: [&str; 5] = ["local", "export", "declare", "readonly", "[["];
 
         let mut words: Vec<String> = Vec::new();
@@ -382,9 +368,6 @@ impl Shell {
             }
         };
 
-        /* Assignments in front of a command are only for that command in bash; a plain
-         * shell variable is close enough for the workloads here and is what the C shell
-         * does for its own builtins. */
         for assign in &cmd.assigns {
             self.assign(assign);
         }
@@ -393,7 +376,6 @@ impl Shell {
         let status = self.dispatch(&words, target);
 
         if let Some(inner) = local_io {
-            /* Anything captured for the outer command has to reach it. */
             if let Sink::Capture(bytes) = inner.out {
                 io.write(&bytes);
             }

@@ -129,7 +129,6 @@ impl Parser {
         }
     }
 
-    /// A list of and-or groups separated by `;` or newlines, ending at one of `stops`.
     fn list(&mut self, stops: &[&str]) -> Result<Vec<Node>, String> {
         let mut out = Vec::new();
         loop {
@@ -235,7 +234,6 @@ impl Parser {
             return self.parse_body(name);
         }
 
-        /* name() { ... } */
         if let Some(Tok::Word(name)) = self.peek().cloned() {
             if !RESERVED.contains(&name.as_str())
                 && matches!(self.toks.get(self.at + 1), Some(Tok::Op(o)) if o == "(")
@@ -308,7 +306,6 @@ impl Parser {
         })
     }
 
-    /// `elif` is an `if` in the else branch, so it parses as one and eats the shared `fi`.
     fn parse_if_tail(&mut self) -> Result<Node, String> {
         self.at += 1;
         let cond = self.list(&["then"])?;
@@ -482,7 +479,6 @@ impl Parser {
             self.at += 1;
             cmd.words.push(word);
 
-            /* [[ ... ]] and [ ... ] swallow their words as they are, brackets included. */
             if cmd.words.len() == 1 && (cmd.words[0] == "[[" || cmd.words[0] == "[") {
                 let close = if cmd.words[0] == "[[" { "]]" } else { "]" };
                 loop {
@@ -540,7 +536,6 @@ impl Parser {
     }
 }
 
-/// `name=`, `name+=` and `name[0]=` are assignments; anything else is a word.
 pub fn assignment_name(word: &str) -> Option<(String, bool)> {
     let equals = word.find('=')?;
     if equals == 0 {

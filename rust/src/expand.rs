@@ -7,14 +7,12 @@
 use crate::exec::{Shell, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// One field being built, and whether a glob character reached it unquoted.
 struct Field {
     text: String,
     globbable: bool,
 }
 
 impl Shell {
-    /// Full expansion of one word: substitutions, splitting, then globbing.
     pub fn expand_word(&mut self, word: &str) -> Vec<String> {
         let fields = self.expand_fields(word, true);
         let mut out = Vec::new();
@@ -32,7 +30,6 @@ impl Shell {
         out
     }
 
-    /// Expansion without splitting or globbing, for conditions and assignments.
     pub fn expand_to_string(&mut self, word: &str) -> String {
         let fields = self.expand_fields(word, false);
         fields
@@ -63,7 +60,6 @@ impl Shell {
             if c == '"' {
                 let (inner, next) = take_until(&chars, index + 1, '"');
 
-                /* "$@" is the one quoted thing that still becomes one field per parameter. */
                 if inner.trim() == "$@" || inner.trim() == "$*" {
                     let params = self.params.clone();
                     for (n, param) in params.iter().enumerate() {
@@ -150,7 +146,6 @@ impl Shell {
         fields
     }
 
-    /// Everything that starts with `$`. Returns one value, or many for `${arr[@]}`.
     fn expand_dollar(&mut self, chars: &[char], start: usize) -> (Vec<String>, usize) {
         let next = chars[start + 1];
 
@@ -205,7 +200,6 @@ impl Shell {
         (vec!["$".to_string()], start + 1)
     }
 
-    /// The inside of `${...}`.
     fn expand_braced(&mut self, body: &str) -> Vec<String> {
         if let Some(rest) = body.strip_prefix('#') {
             if let Some(name) = rest.strip_suffix("[@]").or_else(|| rest.strip_suffix("[*]")) {
@@ -214,7 +208,6 @@ impl Shell {
             return vec![self.var_string(rest).chars().count().to_string()];
         }
 
-        /* ${arr[@]} and ${arr[2]} */
         if let Some(open) = body.find('[') {
             if body.ends_with(']') {
                 let name = &body[..open];
@@ -421,7 +414,6 @@ fn unescape_double(text: &str) -> String {
     out
 }
 
-/// The text between `open` and its matching `close`, and the index just past it.
 fn balanced(chars: &[char], start: usize, open: char, close: char) -> (String, usize) {
     let mut depth = 0;
     let mut out = String::new();
@@ -447,7 +439,6 @@ fn balanced(chars: &[char], start: usize, open: char, close: char) -> (String, u
     (out, index)
 }
 
-/// The first operator at brace level zero, so `${v:-${x}}` splits on the outer one.
 fn find_operator(body: &str, op: &str) -> Option<usize> {
     let bytes: Vec<char> = body.chars().collect();
     let needle: Vec<char> = op.chars().collect();
@@ -529,7 +520,6 @@ fn replace(text: &str, pattern: &str, replacement: &str, all: bool) -> String {
     out
 }
 
-/// `*`, `?` and `[...]`, the same shapes the C shell matches.
 pub fn pattern_match(pattern: &str, text: &str) -> bool {
     let p: Vec<char> = pattern.chars().collect();
     let t: Vec<char> = text.chars().collect();
@@ -611,7 +601,6 @@ fn matches_from(p: &[char], mut pi: usize, t: &[char], mut ti: usize) -> bool {
     ti == t.len()
 }
 
-/// Expands a path pattern one directory level at a time.
 pub fn glob(pattern: &str) -> Vec<String> {
     let normalised = pattern.replace('\\', "/");
     let absolute = normalised.starts_with('/') || normalised.chars().nth(1) == Some(':');

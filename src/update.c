@@ -210,13 +210,6 @@ static int install_update(const char *version) {
     return 0;
 }
 
-/*
- * A tag is 26.10.1, 26.10.1-prerelease-2 or 26.11.0-experiment-1. The word in
- * the middle is the kind: a prerelease is the next version being tested and is
- * what --pre offers, anything else is an experiment that only the selector
- * shows, so a branch nobody should land on cannot arrive by asking for a
- * prerelease.
- */
 typedef struct {
     char tag[64];
     char base[32];
@@ -272,15 +265,9 @@ static int marked_prerelease(const char *object, const char *limit) {
     return strncmp(value, "true", 4) == 0;
 }
 
-/*
- * Newest first, one entry per version and kind: 26.11.0 experiment 1,
- * 26.10.1 prerelease 2, and so on. With keep_stable the finished releases come
- * too, which is how --pre finds the newest thing it is allowed to offer.
- */
 static int read_early_releases(Early *out, int max, int keep_stable) {
     StrBuf body;
     sb_init(&body);
-    /* A file of releases stands in for github, which is how the tests reach this parser. */
     const char *fixture = var_get("FRESH_RELEASES_JSON");
     if (fixture && *fixture) {
         FILE *file = fopen(fixture, "rb");
@@ -394,7 +381,6 @@ static int command_pre_selector(int check_only) {
     return install_update(releases[choice - 1].tag);
 }
 
-/* The newest release --pre may offer: a prerelease or a finished one, never an experiment. */
 static int read_offered_version(char *out, size_t out_size) {
     Early releases[32];
     int count = read_early_releases(releases, 32, 1);

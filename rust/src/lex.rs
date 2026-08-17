@@ -15,7 +15,6 @@ const OPERATORS: [&str; 12] = [
     "2>&1", "&>", "2>>", "2>", ">>", "<<", "||", "&&", ";;", "|", "&", ";",
 ];
 
-/// Words keep their quotes; the expander is what reads them.
 pub fn lex(source: &str) -> Vec<Tok> {
     let text: Vec<char> = source.chars().collect();
     let mut out: Vec<Tok> = Vec::new();
@@ -88,14 +87,12 @@ fn operator_at(text: &[char], index: usize) -> Option<&'static str> {
     for op in OPERATORS.iter() {
         let chars: Vec<char> = op.chars().collect();
         if index + chars.len() <= text.len() && text[index..index + chars.len()] == chars[..] {
-            /* A digit before > belongs to the redirection, not to the word before it. */
             return Some(op);
         }
     }
     None
 }
 
-/// Reads one word, keeping quotes, `$(...)`, `${...}` and `$((...))` whole.
 fn read_word(text: &[char], start: usize) -> (String, usize) {
     let mut word = String::new();
     let mut index = start;
@@ -174,7 +171,6 @@ fn read_quoted(text: &[char], start: usize, quote: char) -> (String, usize) {
     (out, index)
 }
 
-/// `$(`, `${` and `$((` all end at their matching close, quotes and all.
 fn read_nested(text: &[char], start: usize) -> (String, usize) {
     let open = text[start + 1];
     let close = if open == '(' { ')' } else { '}' };

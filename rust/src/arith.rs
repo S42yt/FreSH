@@ -14,7 +14,6 @@ enum Atom {
 }
 
 impl Shell {
-    /// `$(( ))`, after the parameters inside it have been expanded.
     pub fn arith(&mut self, expression: &str) -> i64 {
         let text = self.expand_to_string(expression);
         let atoms = split_atoms(&text);
@@ -47,7 +46,6 @@ impl Shell {
             };
             *at += 1;
 
-            /* && and || stop at a decided answer, the way the shell does. */
             if operator == "&&" && left == 0 {
                 self.binary(atoms, at, level + 1);
                 left = 0;
@@ -129,7 +127,6 @@ impl Shell {
             }
             Some(Atom::Name(name)) => {
                 *at += 1;
-                /* name++ and name-- read then step, which is all the loops here need. */
                 if let Some(Atom::Op(op)) = atoms.get(*at).cloned() {
                     if op == "++" || op == "--" {
                         *at += 1;
@@ -157,7 +154,6 @@ impl Shell {
     }
 }
 
-/// `10#0042` is decimal 42, `0x2a` is 42, and a leading zero is not octal here.
 fn parse_number(text: &str) -> Option<i64> {
     if let Some(rest) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
         return i64::from_str_radix(rest, 16).ok();
