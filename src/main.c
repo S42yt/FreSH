@@ -451,6 +451,7 @@ static LONG WINAPI crash_report(EXCEPTION_POINTERS *info) {
 }
 
 int main(int argc, char *argv[]) {
+    if (getenv("FRESH_PROBE")) return 0;
     timing_init();
     timing_mark("entry");
 
