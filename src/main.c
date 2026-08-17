@@ -153,6 +153,18 @@ static void timing_init(void) {
     if (!timing_enabled) return;
     QueryPerformanceFrequency(&timing_frequency);
     QueryPerformanceCounter(&timing_start);
+
+    FILETIME created, exited, kernel, user, now;
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
+        GetSystemTimePreciseAsFileTime(&now);
+        ULARGE_INTEGER from, to;
+        from.LowPart = created.dwLowDateTime;
+        from.HighPart = created.dwHighDateTime;
+        to.LowPart = now.dwLowDateTime;
+        to.HighPart = now.dwHighDateTime;
+        fprintf(stderr, "  %8llu us  before main\n",
+                (unsigned long long)((to.QuadPart - from.QuadPart) / 10));
+    }
 }
 
 static void timing_mark(const char *label) {
