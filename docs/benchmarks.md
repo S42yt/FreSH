@@ -87,23 +87,21 @@ FreSH's `while`, and neither is a good way to count to 20,000.
 Set `FRESH_TIMING=1` and FreSH prints how long each stage took:
 
 ```
-$ FRESH_TIMING=1 FreSH -c exit
+$ FRESH_TIMING=1 FreSH --norc -c exit
          3 us  entry
-       446 us  descriptors
-      1454 us  terminal
-      1945 us  variables
-      2895 us  path
-      4041 us  freshrc
-      5055 us  fresh home
-      5640 us  theme
-      8383 us  plugins
-      8900 us  command
-      9500 us  exit
+       516 us  descriptors
+       747 us  terminal
+      1182 us  variables
+      1483 us  path
+      1902 us  command
+      2111 us  exit
 ```
 
-About 9 ms is FreSH's own work, of which the configuration, the theme and the
-plugins are most; the rest of the wall clock time is Windows creating the
-process and loading the image, which is roughly what `cmd.exe` costs too.
+About 2 ms is FreSH's own work; with a `.freshrc`, a theme and plugins the
+configuration adds what it costs to run, which `FRESH_TIMING=1` will show per
+stage. The rest of the wall clock time is Windows creating the process and
+loading the image. The `PATH` merge and the registry reads behind it no longer
+appear at all, because they run on first use rather than at startup.
 
 ## What changed in 26.11
 
@@ -200,9 +198,27 @@ keeping so nobody tries again. Three builds from one commit, best of sixty:
 | C core with the registry `PATH` merge removed entirely | 6,065 us |
 
 The same three on the benchmark machine land inside a millisecond of each
-other. Startup is Windows creating a process and mapping an image; FreSH's own
-work is about 4 ms of it, spread across five stages that are each a millisecond
-or less. A language cannot move that floor, and neither can a smaller binary.
+other. Startup is Windows creating a process and mapping an image; a language
+cannot move that floor, and neither can a smaller binary.
+
+What did move startup was doing less of it. The `PATH` merge, the registry
+reads behind it, `advapi32` itself and the environment table are all deferred
+now: the merge runs on the first read of `$PATH` or the first command lookup,
+and a shell that never needs them never pays. `FRESH_TIMING=1` on the machine
+above, `--norc -c exit`:
+
+| | 26.10 | 26.11 |
+| --- | --- | --- |
+| FreSH's own startup work | 4.2 ms | **2.1 ms** |
+| `FreSH --norc -c exit`, best of 60 | 20.5 ms | **17.8 ms** |
+| `cmd /c exit`, same session | 14.3 ms | 14.7 ms |
+
+The remaining 3 to 4 ms of gap to `cmd` is not work FreSH does: about 2 ms of
+the wall time is Windows mapping an image it does not keep warm, where
+`cmd.exe` is a small signed system binary that is effectively always cached.
+Closing the gap further means deleting startup work that no longer exists.
+`cmd` keeps the empty case; the [Doing something](#doing-something) table above
+is what happens the moment either shell is asked to do anything.
 
 ## What changed in 26.10
 
