@@ -122,7 +122,7 @@ impl Shell {
                 continue;
             }
 
-            if c == '*' || c == '?' || c == '[' {
+            if c == '*' || c == '?' || (c == '[' && chars[index + 1..].contains(&']')) {
                 let last = fields.last_mut().unwrap();
                 last.globbable = true;
                 last.text.push(c);

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 use std::time::Instant;
 
 use crate::expand::pattern_match;
@@ -92,7 +93,7 @@ impl Io {
 
 pub struct Shell {
     pub scopes: Vec<HashMap<String, Value>>,
-    pub funcs: HashMap<String, Vec<Node>>,
+    pub funcs: HashMap<String, Rc<Vec<Node>>>,
     pub params: Vec<String>,
     pub name: String,
     pub status: i32,
@@ -183,7 +184,7 @@ impl Shell {
             }
             Node::Pipe(stages) => self.run_pipe(stages, io),
             Node::Func { name, body } => {
-                self.funcs.insert(name.clone(), body.clone());
+                self.funcs.insert(name.clone(), Rc::new(body.clone()));
                 self.status = 0;
                 0
             }
