@@ -170,7 +170,7 @@ static void apply_export(const char *name, const char *value) {
     SetEnvironmentVariableA(name, value);
     _putenv_s(name, value ? value : "");
 
-    env_ready();
+    if (!env_loaded) return;
     if (value) table_put(&env_table, name, xstrdup(value));
     else table_remove(&env_table, name);
 }
@@ -178,8 +178,8 @@ static void apply_export(const char *name, const char *value) {
 void vars_init(void) {
     char cwd[PATH_BUF];
     if (GetCurrentDirectoryA(sizeof(cwd), cwd)) var_set_exported("PWD", cwd);
-    if (!env_value("HOME")) var_set_exported("HOME", home_dir());
-    if (!env_value("SHELL")) {
+    if (!getenv("HOME")) var_set_exported("HOME", home_dir());
+    if (!getenv("SHELL")) {
         char exe[PATH_BUF];
         if (GetModuleFileNameA(NULL, exe, sizeof(exe))) var_set_exported("SHELL", exe);
     }
