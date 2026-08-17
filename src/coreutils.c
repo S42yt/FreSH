@@ -18,6 +18,7 @@
 #include "exec.h"
 #include "moreutils.h"
 #include "regex.h"
+#include "rustcore.h"
 #include "shell.h"
 #include "table.h"
 #include "util.h"
@@ -190,23 +191,18 @@ static int core_wc(int argc, char **argv) {
             index++;
             continue;
         }
-        long lines = 0, words = 0, bytes = 0;
-        int in_word = 0, c;
-        while ((c = fgetc(f)) != EOF) {
-            bytes++;
-            if (c == '\n') lines++;
-            if (isspace(c)) {
-                in_word = 0;
-            } else if (!in_word) {
-                in_word = 1;
-                words++;
-            }
-        }
+        FreshCounts counts;
+        memset(&counts, 0, sizeof(counts));
+
+        char block[65536];
+        size_t read;
+        while ((read = fread(block, 1, sizeof(block), f)) > 0)
+            core_count_block(block, read, &counts);
         close_input(f);
 
-        if (show_lines) printf("%8ld", lines);
-        if (show_words) printf("%8ld", words);
-        if (show_bytes) printf("%8ld", bytes);
+        if (show_lines) printf("%8llu", counts.lines);
+        if (show_words) printf("%8llu", counts.words);
+        if (show_bytes) printf("%8llu", counts.bytes);
         if (name) printf(" %s", name);
         printf("\n");
         index++;
@@ -306,16 +302,6 @@ static int core_grep(int argc, char **argv) {
     return status ? status : (found_any ? 0 : 1);
 }
 
-static int compare_lines(const void *a, const void *b) {
-    return strcmp(*(const char **)a, *(const char **)b);
-}
-
-static int compare_lines_numeric(const void *a, const void *b) {
-    double left = atof(*(const char **)a);
-    double right = atof(*(const char **)b);
-    return left < right ? -1 : left > right ? 1 : 0;
-}
-
 static void read_all_lines(int argc, char **argv, int start, StrList *out) {
     int index = start;
     do {
@@ -341,8 +327,7 @@ static int core_sort(int argc, char **argv) {
     sl_init(&lines);
     read_all_lines(argc, argv, first_operand(argc, argv), &lines);
 
-    if (lines.len > 1)
-        qsort(lines.items, lines.len, sizeof(char *), numeric ? compare_lines_numeric : compare_lines);
+    core_sort_pointers(lines.items, lines.len, numeric ? FRESH_SORT_NUMERIC : FRESH_SORT_BYTES);
 
     for (size_t i = 0; i < lines.len; i++) {
         size_t index = reverse ? lines.len - 1 - i : i;

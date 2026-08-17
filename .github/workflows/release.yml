@@ -58,6 +58,13 @@ jobs:
           install: mingw-w64-x86_64-gcc
           update: true
 
+      - name: Add the Rust target the C linker can use
+        shell: bash
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          rustc --version
+          cargo --version
+
       - name: Resolve version
         shell: bash
         run: |

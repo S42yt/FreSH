@@ -1,0 +1,17 @@
+[package]
+name = "fresh-core"
+version = "0.1.0"
+edition = "2021"
+description = "Compute kernels the C shell calls, built without the Rust runtime"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "fresh_core"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

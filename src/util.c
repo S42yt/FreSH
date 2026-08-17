@@ -6,6 +6,8 @@
 
 #include "util.h"
 
+#include "rustcore.h"
+
 #include <ctype.h>
 #include <direct.h>
 #include <stdarg.h>
@@ -167,12 +169,8 @@ void sl_push_copy(StrList *l, const char *s) {
     sl_push(l, xstrdup(s));
 }
 
-static int cmp_str(const void *a, const void *b) {
-    return _stricmp(*(const char **)a, *(const char **)b);
-}
-
 void sl_sort(StrList *l) {
-    if (l->len > 1) qsort(l->items, l->len, sizeof(char *), cmp_str);
+    core_sort_pointers(l->items, l->len, FRESH_SORT_FOLD);
 }
 
 int sl_contains(const StrList *l, const char *s) {
