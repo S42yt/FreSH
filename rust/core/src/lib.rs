@@ -20,7 +20,6 @@ fn panicked(_info: &PanicInfo) -> ! {
     unsafe { abort() }
 }
 
-const SORT_BYTES: u32 = 0;
 const SORT_FOLD: u32 = 1;
 const SORT_NUMERIC: u32 = 2;
 
@@ -86,9 +85,11 @@ pub extern "C" fn fresh_sort_pointers(items: *mut *const u8, len: usize, mode: u
     }
 
     let list = unsafe { slice::from_raw_parts_mut(items, len) };
-    match mode {
-        SORT_FOLD => list.sort_unstable_by(|a, b| unsafe { compare_folded(*a, *b) }),
-        SORT_NUMERIC => list.sort_unstable_by(|a, b| unsafe { compare_numeric(*a, *b) }),
-        SORT_BYTES | _ => list.sort_unstable_by(|a, b| unsafe { compare_bytes(*a, *b) }),
-    }
+    list.sort_unstable_by(|a, b| unsafe {
+        match mode {
+            SORT_FOLD => compare_folded(*a, *b),
+            SORT_NUMERIC => compare_numeric(*a, *b),
+            _ => compare_bytes(*a, *b),
+        }
+    });
 }
