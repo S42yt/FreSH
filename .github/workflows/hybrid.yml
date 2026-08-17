@@ -56,6 +56,15 @@ jobs:
           done
           ./build/FreSH-c.exe --norc tools/bench-startup.frsh cmd.exe 60 --cmd | tee -a startup.txt
 
+      - name: Build the floor probes
+        shell: msys2 {0}
+        run: |
+          printf 'int main(void){return 0;}\n' > probe.c
+          gcc -O2 -o build/probe-plain.exe probe.c
+          windres src/fresh.rc -O coff -o build/probe.res
+          gcc -O2 -o build/probe-manifest.exe probe.c build/probe.res
+          ls -l build/probe-plain.exe build/probe-manifest.exe
+
       - name: Sizes and cores
         shell: bash
         run: |
@@ -107,5 +116,7 @@ jobs:
           path: |
             build/FreSH-c.exe
             build/FreSH-rust.exe
+            build/probe-plain.exe
+            build/probe-manifest.exe
             utils.txt
           retention-days: 30
