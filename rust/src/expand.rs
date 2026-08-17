@@ -121,7 +121,9 @@ impl Shell {
             index += 1;
         }
 
-        fields.retain(|f| !f.text.is_empty() || fields.len() == 1);
+        if fields.len() > 1 {
+            fields.retain(|f| !f.text.is_empty());
+        }
         if fields.is_empty() {
             fields.push(Field {
                 text: String::new(),
