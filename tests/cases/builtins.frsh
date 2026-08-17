@@ -54,22 +54,22 @@ check case_inside_substitution "$(case hello in h*) echo matched ;; esac)" match
 
 check time_reports "$( { time true ; } 2>&1 | grep -c real )" 1
 
-printf '%s' '[{"tag_name":"v26.11.0-experiment-1","prerelease":true},{"tag_name":"v26.10.1-prerelease-2","prerelease":true},{"tag_name":"v26.10.1-prerelease-1","prerelease":true},{"tag_name":"v26.10.0","prerelease":false}]' > .fresh-test-releases
+printf '%s' '[{"tag_name":"v99.2.0-experiment-1","prerelease":true},{"tag_name":"v99.1.0-prerelease-2","prerelease":true},{"tag_name":"v99.1.0-prerelease-1","prerelease":true},{"tag_name":"v99.0.0","prerelease":false}]' > .fresh-test-releases
 export FRESH_RELEASES_JSON=.fresh-test-releases
 listing=$(fresh update --pre-selector --check)
 offer=$(fresh update --pre --check)
 unset FRESH_RELEASES_JSON
 rm .fresh-test-releases
 
-case "$listing" in *"26.11.0 experiment 1"*) newest=yes ;; *) newest=no ;; esac
+case "$listing" in *"99.2.0 experiment 1"*) newest=yes ;; *) newest=no ;; esac
 check selector_lists_experiments "$newest" yes
-case "$offer" in *"26.10.1-prerelease-2"*) offered=yes ;; *) offered=no ;; esac
+case "$offer" in *"99.1.0-prerelease-2"*) offered=yes ;; *) offered=no ;; esac
 check pre_offers_newest_prerelease "$offered" yes
 case "$offer" in *experiment*) leaked=yes ;; *) leaked=no ;; esac
 check pre_skips_experiments "$leaked" no
-case "$listing" in *"26.10.1 prerelease 2"*) step=yes ;; *) step=no ;; esac
+case "$listing" in *"99.1.0 prerelease 2"*) step=yes ;; *) step=no ;; esac
 check selector_keeps_last_step "$step" yes
-case "$listing" in *"26.10.1 prerelease 1"*) older=yes ;; *) older=no ;; esac
+case "$listing" in *"99.1.0 prerelease 1"*) older=yes ;; *) older=no ;; esac
 check selector_one_per_version "$older" no
-case "$listing" in *"26.10.0"*) stable=yes ;; *) stable=no ;; esac
+case "$listing" in *"99.0.0"*) stable=yes ;; *) stable=no ;; esac
 check selector_skips_stable "$stable" no
