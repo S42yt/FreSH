@@ -80,17 +80,6 @@ fresh update --pre       # take prereleases too
 fresh update --selector  # browse every release, arrows move, enter installs
 ```
 
-## Claude Code
-
-[fresh-claude](https://github.com/S42yt/fresh-claude) is a Claude Code plugin
-that makes Claude run its shell commands through FreSH instead of PowerShell:
-
-```
-/plugin marketplace add S42yt/fresh-claude
-/plugin install fresh-claude@fresh-claude
-/fresh on
-```
-
 ## License
 
 GNU General Public License v3.0, see [LICENSE](LICENSE).
