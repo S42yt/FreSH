@@ -72,6 +72,7 @@ int sl_contains(const StrList *l, const char *s);
 void sl_dedup_adjacent_fold(StrList *l);
 
 int win_user_name(char *out, unsigned long *size);
+int running_elevated(void);
 
 int str_ieq(const char *a, const char *b);
 int str_has_prefix(const char *s, const char *prefix);

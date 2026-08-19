@@ -323,6 +323,29 @@ int win_user_name(char *out, unsigned long *size) {
 
 #endif
 
+#ifdef _WIN32
+
+typedef BOOL(WINAPI *ElevatedFn)(void);
+
+int running_elevated(void) {
+    static ElevatedFn is_admin;
+    static HMODULE library = NULL;
+
+    if (!library) {
+        library = LoadLibraryA("shell32.dll");
+        if (library) is_admin = (ElevatedFn)(void *)GetProcAddress(library, "IsUserAnAdmin");
+    }
+    return is_admin ? is_admin() != 0 : 0;
+}
+
+#else
+
+int running_elevated(void) {
+    return 0;
+}
+
+#endif
+
 int str_ieq(const char *a, const char *b) {
     return _stricmp(a, b) == 0;
 }

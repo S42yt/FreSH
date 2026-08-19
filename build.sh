@@ -3,10 +3,11 @@ set -e
 
 CC=${CC:-gcc}
 WINDRES=${WINDRES:-windres}
-CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
-CFLAGS="$CFLAGS -ffunction-sections -fdata-sections $FRESH_EXTRA_CFLAGS"
+CFLAGS="-std=c11 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
+CFLAGS="$CFLAGS -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables $FRESH_EXTRA_CFLAGS"
 LDFLAGS="-s -Wl,--gc-sections"
 BUILD=build
+HOT_FILES="exec expand vars util parser coreutils regex"
 
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
 info() { printf '\033[36m%s\033[0m\n' "$1"; }
@@ -34,7 +35,20 @@ green "  $RUST_LIB"
 
 info "Building FreSH..."
 $WINDRES src/fresh.rc -O coff -o "$BUILD/fresh.res"
-$CC $CFLAGS src/*.c "$BUILD/fresh.res" $RUST_LIB -o "$BUILD/FreSH.exe" $LDFLAGS
+
+mkdir -p "$BUILD/obj"
+OBJECTS=""
+for source in src/*.c; do
+    name=$(basename "$source" .c)
+    level=-Os
+    case " $HOT_FILES " in
+        *" $name "*) level=-O2 ;;
+    esac
+    $CC $CFLAGS $level -c "$source" -o "$BUILD/obj/$name.o"
+    OBJECTS="$OBJECTS $BUILD/obj/$name.o"
+done
+
+$CC $OBJECTS "$BUILD/fresh.res" $RUST_LIB -o "$BUILD/FreSH.exe" $LDFLAGS
 green "  $BUILD/FreSH.exe"
 
 info "Building payload generator..."
@@ -45,7 +59,7 @@ info "Embedding FreSH.exe into the installer..."
 
 info "Building installer..."
 $WINDRES installation/setup.rc -O coff -o "$BUILD/setup.res"
-$CC $CFLAGS installation/*.c "$BUILD/setup.res" -o "$BUILD/FreSH-Setup.exe" $LDFLAGS \
+$CC $CFLAGS -Os installation/*.c "$BUILD/setup.res" -o "$BUILD/FreSH-Setup.exe" $LDFLAGS \
     -lole32 -luuid -lshell32 -ladvapi32 -luser32
 green "  $BUILD/FreSH-Setup.exe"
 

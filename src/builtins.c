@@ -1255,9 +1255,38 @@ static int builtin_jump(int argc, char **argv) {
     return 0;
 }
 
+typedef BOOL(WINAPI *ClipOpenFn)(HWND);
+typedef BOOL(WINAPI *ClipCloseFn)(void);
+typedef BOOL(WINAPI *ClipEmptyFn)(void);
+typedef HANDLE(WINAPI *ClipGetFn)(UINT);
+typedef HANDLE(WINAPI *ClipSetFn)(UINT, HANDLE);
+
+static ClipOpenFn clip_open;
+static ClipCloseFn clip_close;
+static ClipEmptyFn clip_empty;
+static ClipGetFn clip_get;
+static ClipSetFn clip_set;
+
+static int clipboard_ready(void) {
+    static HMODULE library = NULL;
+    if (library) return clip_open != NULL;
+
+    library = LoadLibraryA("user32.dll");
+    if (!library) return 0;
+
+    clip_open = (ClipOpenFn)(void *)GetProcAddress(library, "OpenClipboard");
+    clip_close = (ClipCloseFn)(void *)GetProcAddress(library, "CloseClipboard");
+    clip_empty = (ClipEmptyFn)(void *)GetProcAddress(library, "EmptyClipboard");
+    clip_get = (ClipGetFn)(void *)GetProcAddress(library, "GetClipboardData");
+    clip_set = (ClipSetFn)(void *)GetProcAddress(library, "SetClipboardData");
+
+    return clip_open && clip_close && clip_empty && clip_get && clip_set;
+}
+
 static int clipboard_open(void) {
+    if (!clipboard_ready()) return 0;
     for (int attempt = 0; attempt < 10; attempt++) {
-        if (OpenClipboard(NULL)) return 1;
+        if (clip_open(NULL)) return 1;
         Sleep(20);
     }
     return 0;
@@ -1282,15 +1311,15 @@ static int builtin_copy(int argc, char **argv) {
 
     int status = 1;
     if (clipboard_open()) {
-        EmptyClipboard();
+        clip_empty();
         HGLOBAL block = GlobalAlloc(GMEM_MOVEABLE, text.len + 1);
         if (block) {
             memcpy(GlobalLock(block), text.data, text.len + 1);
             GlobalUnlock(block);
-            SetClipboardData(CF_TEXT, block);
+            clip_set(CF_TEXT, block);
             status = 0;
         }
-        CloseClipboard();
+        clip_close();
     }
     if (status) shell_error("copy: the clipboard would not open");
     sb_free(&text);
@@ -1305,7 +1334,7 @@ static int builtin_paste(int argc, char **argv) {
         shell_error("paste: the clipboard would not open");
         return 1;
     }
-    HANDLE data = GetClipboardData(CF_TEXT);
+    HANDLE data = clip_get(CF_TEXT);
     if (data) {
         const char *text = GlobalLock(data);
         if (text) {
@@ -1313,7 +1342,7 @@ static int builtin_paste(int argc, char **argv) {
             GlobalUnlock(data);
         }
     }
-    CloseClipboard();
+    clip_close();
     return 0;
 }
 

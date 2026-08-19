@@ -34,6 +34,52 @@ jobs:
           chmod +x build.sh
           ./build.sh
 
+      - name: Build padded floor probes
+        shell: msys2 {0}
+        run: |
+          for kb in 0 100 200 300; do
+            {
+              printf '#define NOINLINE __attribute__((noinline))\n'
+              count=$((kb * 12))
+              i=0
+              while [ $i -lt $count ]; do
+                printf 'NOINLINE int f_%d(volatile int x) { return x * %d + (x >> 3) - (x << 1) + %d; }\n' $i $i $((i * 7))
+                i=$((i + 1))
+              done
+              printf 'int main(int argc, char **argv) { (void)argv; volatile int s = argc;\n'
+              i=0
+              while [ $i -lt $count ]; do
+                printf 's += f_%d(s);\n' $i
+                i=$((i + 1))
+              done
+              printf 'return 0; }\n'
+            } > probe_pad.c
+            gcc -O1 -o "build/probe-$kb.exe" probe_pad.c
+            ls -l "build/probe-$kb.exe"
+          done
+
+      - name: Build the strings probe
+        shell: msys2 {0}
+        run: |
+          {
+            printf '#include <string.h>\n'
+            printf 'static const char *SPICE[] = {\n'
+            printf '"https://api.github.com/repos/S42yt/FreSH/releases/latest",\n'
+            printf '"https://github.com/S42yt/FreSH/releases/download/v%%s/FreSH-Setup.exe",\n'
+            printf '"cmd.exe /d /c timeout /t 2 /nobreak > nul & \\\"%%s\\\" /silent /user",\n'
+            printf '"wininet.dll", "InternetOpenA", "InternetOpenUrlA", "InternetReadFile",\n'
+            printf '"advapi32.dll", "RegOpenKeyExA", "RegQueryValueExA", "GetUserNameA",\n'
+            printf '"SYSTEM\\\\CurrentControlSet\\\\Control\\\\Session Manager\\\\Environment",\n'
+            printf '"powershell.exe -NoProfile -Command", "CreateProcessA", "WriteProcessMemory",\n'
+            printf '"cmd.exe", "/silent", "$(whoami)", "curl -fsSL | bash",\n'
+            printf '};\n'
+            printf 'int main(int argc, char **argv) { (void)argv; size_t s = (size_t)argc;\n'
+            printf 'for (unsigned i = 0; i < sizeof(SPICE)/sizeof(SPICE[0]); i++) s += strlen(SPICE[i]);\n'
+            printf 'return (int)(s & 1); }\n'
+          } > probe_spice.c
+          gcc -O1 -o build/probe-spice.exe probe_spice.c
+          ls -l build/probe-spice.exe
+
       - name: Size and core
         shell: bash
         run: |
@@ -84,6 +130,8 @@ jobs:
           name: bench
           path: |
             build/FreSH.exe
+            build/probe-*.exe
+            build/probe-spice.exe
             startup.txt
             work.txt
             utils.txt

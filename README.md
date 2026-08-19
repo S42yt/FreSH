@@ -160,8 +160,8 @@ executable. Open a new one when it is done.
 
 | Shell | start, run nothing, exit |
 | --- | --- |
-| `cmd /c exit` | 14 ms |
-| **`FreSH -c exit`** | **22 ms** |
+| **`FreSH -c exit`** | **11.8 ms** |
+| `cmd /c exit` | 12.9 ms |
 | `bash -c exit` (Git Bash) | 236 ms |
 | `powershell -c exit` | 271 ms |
 | `pwsh -c exit` | 570 ms |
@@ -176,12 +176,14 @@ through `cmd.exe` and once through FreSH:
 | count matching lines in a 2000 line file | 24 ms | **22 ms** |
 
 FreSH wins all three because `sort`, `grep` and `echo` run inside the shell,
-while cmd spawns a process for each. cmd wins the empty case and loses every
-real one.
+while cmd spawns a process for each. Since 26.11 it wins the empty case too:
+the libraries behind `md5sum`, `id` and `copy` used to load before `main` ran,
+and now they load when something asks for them.
 
-Best of forty on an AMD Ryzen 3 7330U with Defender on, measured by
+Best of sixty on an AMD Ryzen 3 7330U with Defender on, measured by
 `tools/bench.frsh`, which measures every shell the same way. `FRESH_TIMING=1`
-prints where a start goes. The full table is in
+prints where a start goes, `before main` included. The full table, and the
+padded probe that proved the cost was imports rather than bytes, are in
 [benchmarks](docs/benchmarks.md).
 
 ## Two interpreters, written from scratch
