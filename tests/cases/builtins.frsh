@@ -106,3 +106,11 @@ greet_bg() { printf '%s' "$BG_GREETING"; }
 wait $! 2> /dev/null
 check background_sees_functions_and_vars "$(cat $bg_out)" hidden
 rm -f "$bg_out"
+
+cleared=$(clear)
+case "$cleared" in *"[3J"*) scrollback=yes ;; *) scrollback=no ;; esac
+check clear_erases_scrollback "$scrollback" yes
+case "$cleared" in *"[2J"*) screen=yes ;; *) screen=no ;; esac
+check clear_erases_screen "$screen" yes
+case "$cleared" in *"[H"*) home=yes ;; *) home=no ;; esac
+check clear_homes_cursor "$home" yes
