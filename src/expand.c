@@ -258,6 +258,10 @@ static int expand_array_body(const char *body, StrList *out) {
     return 1;
 }
 
+static int pattern_is_literal(const char *pattern) {
+    return !shell.nocasematch && pattern[strcspn(pattern, "*?[\\(")] == '\0';
+}
+
 static int match_at(const char *pattern, const char *text, size_t start, size_t limit,
                     int longest, size_t *length) {
     int found = 0;
@@ -265,15 +269,25 @@ static int match_at(const char *pattern, const char *text, size_t start, size_t 
     size_t available = strlen(text) - start;
     if (limit < available) available = limit;
 
+    if (pattern_is_literal(pattern)) {
+        size_t want = strlen(pattern);
+        if (want > available || strncmp(text + start, pattern, want) != 0) return 0;
+        *length = want;
+        return 1;
+    }
+
+    char *piece = xstrndup(text + start, available);
     for (size_t take = 0; take <= available; take++) {
-        char *piece = xstrndup(text + start, take);
+        char saved = piece[take];
+        piece[take] = '\0';
         int matched = pattern_match(pattern, piece);
-        free(piece);
+        piece[take] = saved;
         if (!matched) continue;
         found = 1;
         best = take;
         if (!longest) break;
     }
+    free(piece);
     if (found) *length = best;
     return found;
 }
@@ -286,6 +300,14 @@ static char *strip_prefix(const char *text, const char *pattern, int longest) {
 
 static char *strip_suffix(const char *text, const char *pattern, int longest) {
     size_t total = strlen(text);
+
+    if (pattern_is_literal(pattern)) {
+        size_t want = strlen(pattern);
+        if (want <= total && strcmp(text + total - want, pattern) == 0)
+            return xstrndup(text, total - want);
+        return xstrdup(text);
+    }
+
     size_t best = total;
     int found = 0;
 
@@ -1114,6 +1136,30 @@ static int declaration_command(const char *word) {
            strcmp(word, "readonly") == 0;
 }
 
+static int word_is_plain(const char *word) {
+    for (const char *p = word; *p; p++) {
+        switch (*p) {
+        case '"':
+        case '\'':
+        case '\\':
+        case '$':
+        case '`':
+        case '~':
+        case '*':
+        case '?':
+        case '[':
+        case '{':
+        case '(':
+        case '!':
+        case '=':
+            return 0;
+        default:
+            break;
+        }
+    }
+    return 1;
+}
+
 void expand_words(const StrList *in, StrList *out) {
     int leading = 1;
 
@@ -1124,6 +1170,11 @@ void expand_words(const StrList *in, StrList *out) {
 
         if (prefix) {
             expand_assignment(in->items[i], prefix, out);
+            continue;
+        }
+
+        if (word_is_plain(in->items[i])) {
+            sl_push_copy(out, in->items[i]);
             continue;
         }
 
