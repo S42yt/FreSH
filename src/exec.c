@@ -1214,11 +1214,25 @@ static int exec_background_child(Node *node) {
         return 1;
     }
 
+    char *script = temp_acquire();
+    if (!script) {
+        sb_free(&source);
+        return 1;
+    }
+    FILE *file = fopen(script, "wb");
+    if (!file) {
+        temp_release(script);
+        sb_free(&source);
+        return 1;
+    }
+    fwrite(source.data, 1, source.len, file);
+    fclose(file);
+    sb_free(&source);
+
     StrBuf command_line;
     sb_init(&command_line);
-    sb_printf(&command_line, "\"%s\" --norc -c ", exe);
-    quote_argument(&command_line, source.data);
-    sb_free(&source);
+    sb_printf(&command_line, "\"%s\" --norc \"%s\"", exe, script);
+    free(script);
 
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
