@@ -314,9 +314,33 @@ static char *scan_process_substitution(const char **p, int *incomplete) {
 
     int depth = 0;
     while (**p) {
-        if (**p == '(') depth++;
-        if (**p == ')') depth--;
-        sb_putc(&sb, **p);
+        char c = **p;
+        if (c == '\'' || c == '"') {
+            sb_putc(&sb, c);
+            (*p)++;
+            while (**p && **p != c) {
+                if (c == '"' && **p == '\\' && (*p)[1]) {
+                    sb_putc(&sb, **p);
+                    (*p)++;
+                }
+                sb_putc(&sb, **p);
+                (*p)++;
+            }
+            if (**p == c) {
+                sb_putc(&sb, c);
+                (*p)++;
+            }
+            continue;
+        }
+        if (c == '\\' && (*p)[1]) {
+            sb_putc(&sb, c);
+            sb_putc(&sb, (*p)[1]);
+            *p += 2;
+            continue;
+        }
+        if (c == '(') depth++;
+        if (c == ')') depth--;
+        sb_putc(&sb, c);
         (*p)++;
         if (depth == 0) break;
     }

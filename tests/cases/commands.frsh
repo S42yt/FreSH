@@ -28,6 +28,16 @@ printf -v padded '%*s' 5 ''
 check printf_star_width "[${padded// /-}]" '[-----]'
 check printf_star_precision "$(printf '%.*f' 2 3.14159)" 3.14
 
+lines=""
+while IFS= read -r one; do
+  lines="$lines$one,"
+done < <(
+  printf 'get: a\nreal line\nhit: b\n' \
+  | grep -vE '^(get:|hit:|\(reading database)' \
+  | tail -n 2
+)
+check procsub_quoted_parens "$lines" "real line,"
+
 mkdir -p .rm-tree/inner
 echo one > .rm-tree/file
 echo two > .rm-tree/inner/file
