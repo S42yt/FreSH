@@ -275,6 +275,38 @@ void sl_sort(StrList *l) {
     core_sort_pointers(l->items, l->len, FRESH_SORT_FOLD);
 }
 
+char *sl_take_at(StrList *l, size_t index) {
+    ASSERT_UNBORROWED(l, "a list");
+    if (index >= l->len) return NULL;
+
+    char *taken = l->items[index];
+    memmove(l->items + index, l->items + index + 1, (l->len - index - 1) * sizeof(char *));
+    l->len--;
+    return taken;
+}
+
+void sl_adopt(StrList *into, StrList *from) {
+    ASSERT_UNBORROWED(into, "a list");
+    ASSERT_UNBORROWED(from, "a list");
+
+    for (size_t i = 0; i < from->len; i++) sl_push(into, from->items[i]);
+    from->len = 0;
+}
+
+void sl_dedup_adjacent_fold(StrList *l) {
+    ASSERT_UNBORROWED(l, "a list");
+
+    size_t kept = 0;
+    for (size_t i = 0; i < l->len; i++) {
+        if (kept > 0 && _stricmp(l->items[kept - 1], l->items[i]) == 0) {
+            free(l->items[i]);
+            continue;
+        }
+        l->items[kept++] = l->items[i];
+    }
+    l->len = kept;
+}
+
 int sl_contains(const StrList *l, const char *s) {
     ASSERT_LIVE(l, "a list");
     for (size_t i = 0; i < l->len; i++) {

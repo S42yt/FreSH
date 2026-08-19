@@ -141,14 +141,14 @@ static const HelpEntry ENTRIES[] = {
      "Arguments arrive as $1 $2 and $@, and local keeps a variable inside.\n"
      "  greet() { echo \"hi $1\"; }"},
 
-    {"fresh", "fresh [version|doctor|update [--check] [--pre] [--pre-selector]]",
+    {"fresh", "fresh [version|doctor|update [--check] [--pre] [--selector]]",
      "about this shell, and looking after it",
-     "  fresh                        version, paths, theme and plugins\n"
-     "  fresh doctor                 check ~/.freshrc and say where it breaks\n"
-     "  fresh update                 fetch and install the newest release\n"
-     "  fresh update --check         only say whether there is one\n"
-     "  fresh update --pre           take the newest prerelease as well\n"
-     "  fresh update --pre-selector  list the prereleases and pick one"},
+     "  fresh                    version, paths, theme and plugins\n"
+     "  fresh doctor             check ~/.freshrc and say where it breaks\n"
+     "  fresh update             fetch and install the newest release\n"
+     "  fresh update --check     only say whether there is one\n"
+     "  fresh update --pre       take the newest prerelease as well\n"
+     "  fresh update --selector  browse every release, arrows move, enter installs"},
 
     {"gitinfo", "gitinfo", "repository, branch, user and whether the tree is dirty", NULL},
 

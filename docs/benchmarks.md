@@ -159,20 +159,20 @@ resource the shell never reads, and `FRESH_TIMING=1` puts FreSH's own work at
 about 4 ms of that 20. The rest is Windows creating a process, which is the same
 floor `cmd` pays.
 
-## The Rust compute core
+## The Rust core
 
 The experiment said Rust loses at interpreting a shell language. It did not say
-Rust loses at everything, so 26.11 also carries the smallest honest way to find
-out: `rust/core`, a `no_std` static library linked straight into the C binary.
-No allocator, no Rust runtime, no second copy of anything, and
-`src/rustcore.c` holds a C version of every kernel so a machine without `cargo`
-builds the same shell. `fresh` prints which core the binary carries.
+Rust loses at everything, so 26.11 carries `rust/core`: a `no_std` static
+library linked straight into the C binary, with no allocator and no Rust
+runtime. As of this release it is **the only implementation** of the kernels it
+holds: sorting, the line and word counting behind `wc`, and the `PATH` merge
+all live in Rust, the C fallbacks are gone, and building FreSH needs `cargo`.
+`fresh` prints `rust core` so a binary can say so itself.
 
-Three kernels were written and measured. **One survived.**
-
-`sort` calls its comparator through a function pointer in C, which the compiler
+The kernels earned their place with numbers before the C fell away. `sort`
+calls its comparator through a function pointer in C, which the compiler
 cannot inline; the Rust version inlines it into the sort. Best of five, 40,000
-lines, both binaries built from the same commit on the same runner:
+lines, both cores built from the same commit on the same runner:
 
 | Task | C core | Rust core |
 | --- | --- | --- |
@@ -180,15 +180,15 @@ lines, both binaries built from the same commit on the same runner:
 | `sort -n` 40k numbers | 200,061 us | **173,219 us** |
 | `sort -u` 40k lines | 19,219 us | **16,201 us** |
 
-The other two were dropped for saying nothing. Counting lines and words came
-out identical, because the win there was reading 64 KB blocks instead of one
-`fgetc` per byte, which is a change the C path got as well. Merging the `PATH`
-came out identical too, so that one stayed in C.
+Counting and the `PATH` merge measured identical in either language, because
+their wins were structural, reading 64 KB blocks instead of one `fgetc` per
+byte. They moved to Rust anyway when the C fallbacks were retired, at no
+measured cost either way.
 
-The kernel costs **11,776 bytes**, which is the whole price of having Rust in
-the binary. It was 46,080 until the three sort instantiations were collapsed
-into one; keeping them separate bought about a quarter more speed on `sort -n`
-for another 34 KB, which is not a trade this shell should make.
+The Rust side costs about **12 KB** of binary, which was 46 KB until the three
+sort instantiations were collapsed into one; keeping them separate bought about
+a quarter more speed on `sort -n` for another 34 KB, which is not a trade this
+shell should make.
 
 **Startup is not one of the things Rust can fix**, and the numbers are worth
 keeping so nobody tries again. Three builds from one commit, best of sixty:

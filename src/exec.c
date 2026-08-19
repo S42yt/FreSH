@@ -383,18 +383,6 @@ static void scan_directory(const char *dir, const StrList *extensions, StrList *
     FindClose(find);
 }
 
-static void drop_adjacent_duplicates(StrList *list) {
-    size_t kept = 0;
-    for (size_t i = 0; i < list->len; i++) {
-        if (kept > 0 && _stricmp(list->items[kept - 1], list->items[i]) == 0) {
-            free(list->items[i]);
-            continue;
-        }
-        list->items[kept++] = list->items[i];
-    }
-    list->len = kept;
-}
-
 static void ensure_command_cache(void) {
     if (command_cache_valid) return;
     sl_clear(&command_cache);
@@ -417,7 +405,7 @@ static void ensure_command_cache(void) {
 
     if (command_cache.len > 1)
         qsort(command_cache.items, command_cache.len, sizeof(char *), compare_names_fold);
-    drop_adjacent_duplicates(&command_cache);
+    sl_dedup_adjacent_fold(&command_cache);
     command_cache_valid = 1;
 }
 

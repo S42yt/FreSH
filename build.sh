@@ -22,25 +22,15 @@ cp "$BUILD/fresh.ico" installation/fresh.ico
 RUST_TARGET=${FRESH_RUST_TARGET:-x86_64-pc-windows-gnu}
 RUST_LIB=rust/core/target/$RUST_TARGET/release/libfresh_core.a
 
-if [ -n "$FRESH_NO_RUST" ]; then
-    RUST_LIB=""
-    info "Building without the Rust core, as asked."
-elif [ ! -f "$RUST_LIB" ] && command -v cargo > /dev/null 2>&1; then
-    info "Building the Rust compute core..."
+if [ ! -f "$RUST_LIB" ] && command -v cargo > /dev/null 2>&1; then
+    info "Building the Rust core..."
     (cd rust/core && cargo build --release --target "$RUST_TARGET")
 fi
-
-if [ -n "$RUST_LIB" ] && [ -f "$RUST_LIB" ]; then
-    CFLAGS="$CFLAGS -DFRESH_RUST"
-    green "  $RUST_LIB"
-elif [ -z "$FRESH_NO_RUST" ]; then
-    RUST_LIB=""
-    if [ -n "$FRESH_REQUIRE_RUST" ]; then
-        printf '\033[31m%s\033[0m\n' "The Rust core was required and is not there. Run: cargo build --release --target $RUST_TARGET, in rust/core" >&2
-        exit 1
-    fi
-    info "No Rust core found, building C only. Set FRESH_REQUIRE_RUST=1 to make that an error."
+if [ ! -f "$RUST_LIB" ]; then
+    printf '\033[31m%s\033[0m\n' "FreSH needs its Rust core. Install rust, then: cargo build --release --target $RUST_TARGET, in rust/core" >&2
+    exit 1
 fi
+green "  $RUST_LIB"
 
 info "Building FreSH..."
 $WINDRES src/fresh.rc -O coff -o "$BUILD/fresh.res"
