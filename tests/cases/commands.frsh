@@ -27,6 +27,10 @@ check ansi_hex_escape "$hex" AB
 printf -v padded '%*s' 5 ''
 check printf_star_width "[${padded// /-}]" '[-----]'
 check printf_star_precision "$(printf '%.*f' 2 3.14159)" 3.14
+octal=$(printf '\033')
+check printf_octal_format "${#octal}" 1
+check printf_hex_format "$(printf '\x41\x42')" AB
+check printf_octal_b "$(printf '%b' 'a\061b')" a1b
 
 collect_filtered() {
   while IFS= read -r one; do

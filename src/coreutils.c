@@ -987,6 +987,38 @@ static char escape_char(char name) {
     }
 }
 
+static int numeric_escape(const char **p, StrBuf *out) {
+    const char *c = *p;
+    if (*c >= '0' && *c <= '7') {
+        int value = 0;
+        int digits = 0;
+        if (*c == '0') c++;
+        while (digits < 3 && *c >= '0' && *c <= '7') {
+            value = value * 8 + (*c - '0');
+            c++;
+            digits++;
+        }
+        if (digits == 0 && c[-1] != '0') return 0;
+        sb_putc(out, (char)value);
+        *p = c;
+        return 1;
+    }
+    if (*c == 'x' && isxdigit((unsigned char)c[1])) {
+        int value = 0;
+        int digits = 0;
+        c++;
+        while (digits < 2 && isxdigit((unsigned char)*c)) {
+            value = value * 16 + (isdigit((unsigned char)*c) ? *c - '0' : (tolower(*c) - 'a') + 10);
+            c++;
+            digits++;
+        }
+        sb_putc(out, (char)value);
+        *p = c;
+        return 1;
+    }
+    return 0;
+}
+
 static void printf_escapes(const char *s, StrBuf *out) {
     for (const char *p = s; *p; p++) {
         if (*p != '\\' || !p[1]) {
@@ -996,6 +1028,7 @@ static void printf_escapes(const char *s, StrBuf *out) {
         p++;
         if (*p == '\\') sb_putc(out, '\\');
         else if (strchr("ntrabfve", *p)) sb_putc(out, escape_char(*p));
+        else if (numeric_escape(&p, out)) p--;
         else {
             sb_putc(out, '\\');
             sb_putc(out, *p);
@@ -1025,6 +1058,7 @@ static int core_printf(int argc, char **argv) {
             if (*p == '\\' && p[1]) {
                 p++;
                 if (*p == '\\') sb_putc(&rendered, '\\');
+                else if (numeric_escape(&p, &rendered)) p--;
                 else sb_putc(&rendered, escape_char(*p));
                 continue;
             }
