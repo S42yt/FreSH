@@ -8,8 +8,9 @@ because they have to: `cd` cannot be a separate process.
 **Bundled commands** are the unix tools Windows does not ship. They are
 fallbacks. If an executable of the same name is on `PATH`, that one runs
 instead, so installing GNU coreutils or busybox transparently upgrades them.
-`find` and `sort` are the exceptions: Windows has unrelated tools with those
-names, so FreSH always uses its own.
+`find`, `sort`, `kill`, `printf`, `echo`, `awk`, `more` and `where` are the
+exceptions: Windows or other shells ship unrelated tools with those names, and
+`kill` must speak FreSH's own job table, so FreSH always uses its own.
 
 Only the flags listed here are implemented. Anything else is ignored rather
 than rejected, so check this page when a script behaves oddly.

@@ -1217,7 +1217,7 @@ static const Coreutil COREUTILS[] = {
 
 int coreutil_preferred(const char *name) {
     static const char *SHADOWED[] = {"find", "sort", "more",  "where",
-                                     "printf", "echo", "awk", NULL};
+                                     "printf", "echo", "awk", "kill", NULL};
     for (int i = 0; SHADOWED[i]; i++) {
         if (strcmp(SHADOWED[i], name) == 0) return coreutil_lookup(name) != NULL;
     }
