@@ -54,25 +54,89 @@ char *xstrndup(const char *s, size_t n) {
     return p;
 }
 
+#ifdef FRESH_BORROWS
+
+#define STATE_LIVE 0xa11fe5u
+#define STATE_DEAD 0xdeadd1eu
+
+static void borrow_fail(const char *what) {
+    fprintf(stderr, "FreSH: borrow violation: %s\n", what);
+    fflush(stderr);
+    abort();
+}
+
+#define ASSERT_LIVE(p, kind) \
+    do { \
+        if ((p)->state == STATE_DEAD) borrow_fail(kind " used after free"); \
+        if ((p)->state != STATE_LIVE) MARK_LIVE(p); \
+    } while (0)
+
+#define ASSERT_UNBORROWED(p, kind) \
+    do { \
+        ASSERT_LIVE(p, kind); \
+        if ((p)->borrows > 0) borrow_fail(kind " mutated while borrowed"); \
+    } while (0)
+
+#define MARK_LIVE(p) (*(unsigned *)&(p)->state = STATE_LIVE, *(int *)&(p)->borrows = 0)
+#define MARK_DEAD(p) (*(unsigned *)&(p)->state = STATE_DEAD)
+
+const StrList *sl_borrow(const StrList *l) {
+    ASSERT_LIVE(l, "a list");
+    ((StrList *)l)->borrows++;
+    return l;
+}
+
+void sl_release(const StrList *l) {
+    ASSERT_LIVE(l, "a list");
+    if (l->borrows <= 0) borrow_fail("a list released more often than borrowed");
+    ((StrList *)l)->borrows--;
+}
+
+const StrBuf *sb_borrow(const StrBuf *sb) {
+    ASSERT_LIVE(sb, "a buffer");
+    ((StrBuf *)sb)->borrows++;
+    return sb;
+}
+
+void sb_release(const StrBuf *sb) {
+    ASSERT_LIVE(sb, "a buffer");
+    if (sb->borrows <= 0) borrow_fail("a buffer released more often than borrowed");
+    ((StrBuf *)sb)->borrows--;
+}
+
+#else
+
+#define ASSERT_LIVE(p, kind) ((void)0)
+#define ASSERT_UNBORROWED(p, kind) ((void)0)
+#define MARK_LIVE(p) ((void)0)
+#define MARK_DEAD(p) ((void)0)
+
+#endif
+
 void sb_init(StrBuf *sb) {
     sb->cap = 64;
     sb->len = 0;
     sb->data = xmalloc(sb->cap);
     sb->data[0] = '\0';
+    MARK_LIVE(sb);
 }
 
 void sb_free(StrBuf *sb) {
+    ASSERT_UNBORROWED(sb, "a buffer");
     free(sb->data);
     sb->data = NULL;
     sb->len = sb->cap = 0;
+    MARK_DEAD(sb);
 }
 
 void sb_clear(StrBuf *sb) {
+    ASSERT_UNBORROWED(sb, "a buffer");
     sb->len = 0;
     if (sb->data) sb->data[0] = '\0';
 }
 
 void sb_reserve(StrBuf *sb, size_t extra) {
+    ASSERT_UNBORROWED(sb, "a buffer");
     if (sb->len + extra + 1 <= sb->cap) return;
     while (sb->cap < sb->len + extra + 1) sb->cap *= 2;
     sb->data = xrealloc(sb->data, sb->cap);
@@ -109,9 +173,11 @@ void sb_printf(StrBuf *sb, const char *fmt, ...) {
 }
 
 char *sb_take(StrBuf *sb) {
+    ASSERT_UNBORROWED(sb, "a buffer");
     char *p = sb->data;
     sb->data = NULL;
     sb->len = sb->cap = 0;
+    MARK_DEAD(sb);
     return p;
 }
 
@@ -172,21 +238,27 @@ void sl_init(StrList *l) {
     l->cap = 8;
     l->len = 0;
     l->items = xmalloc(l->cap * sizeof(char *));
+    MARK_LIVE(l);
 }
 
 void sl_free(StrList *l) {
-    sl_clear(l);
+    ASSERT_UNBORROWED(l, "a list");
+    for (size_t i = 0; i < l->len; i++) free(l->items[i]);
     free(l->items);
     l->items = NULL;
+    l->len = 0;
     l->cap = 0;
+    MARK_DEAD(l);
 }
 
 void sl_clear(StrList *l) {
+    ASSERT_UNBORROWED(l, "a list");
     for (size_t i = 0; i < l->len; i++) free(l->items[i]);
     l->len = 0;
 }
 
 void sl_push(StrList *l, char *s) {
+    ASSERT_UNBORROWED(l, "a list");
     if (l->len + 1 >= l->cap) {
         l->cap = l->cap ? l->cap * 2 : 8;
         l->items = xrealloc(l->items, l->cap * sizeof(char *));
@@ -199,10 +271,12 @@ void sl_push_copy(StrList *l, const char *s) {
 }
 
 void sl_sort(StrList *l) {
+    ASSERT_UNBORROWED(l, "a list");
     core_sort_pointers(l->items, l->len, FRESH_SORT_FOLD);
 }
 
 int sl_contains(const StrList *l, const char *s) {
+    ASSERT_LIVE(l, "a list");
     for (size_t i = 0; i < l->len; i++) {
         if (strcmp(l->items[i], s) == 0) return 1;
     }

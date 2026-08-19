@@ -1117,6 +1117,7 @@ static int declaration_command(const char *word) {
 void expand_words(const StrList *in, StrList *out) {
     int leading = 1;
 
+    sl_borrow(in);
     for (size_t i = 0; i < in->len; i++) {
         size_t prefix = leading ? assignment_prefix(in->items[i]) : 0;
         if (!prefix && !(i == 0 && declaration_command(in->items[i]))) leading = 0;
@@ -1145,6 +1146,7 @@ void expand_words(const StrList *in, StrList *out) {
         }
         sl_free(&braced);
     }
+    sl_release(in);
 }
 
 char *expand_heredoc(const char *body) {

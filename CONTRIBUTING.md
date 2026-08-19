@@ -73,6 +73,17 @@ add trailers naming the tools you used.
   stderr and a non zero status. [How FreSH fails](docs/errors.md) is the rule
   in full, and it is not negotiable: a shell that dies with a clear message is
   trustworthy, one that quietly produces different output than bash is not.
+- `StrList` and `StrBuf` carry borrow discipline. Code that holds pointers
+  into one, the way `argv` points into its word list, wraps the hold in
+  `sl_borrow`/`sl_release` (or `sb_borrow`/`sb_release`). In a release build
+  those are free; built with `-DFRESH_BORROWS` every mutation of a borrowed
+  container, every use after free and every unbalanced release aborts with a
+  message. C cannot check borrows at compile time, so the checked build runs
+  where mistakes surface: the fuzzers always build with it, and CI runs the
+  whole test suite under it before building the release binary.
+  ```sh
+  FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
+  ```
 
 ### The Rust core
 

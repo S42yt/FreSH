@@ -97,10 +97,16 @@ jobs:
           cd rust/core
           cargo build --release --target x86_64-pc-windows-gnu
 
-      - name: Build
+      - name: Build with borrow checking and run the suite under it
         shell: msys2 {0}
         run: |
           chmod +x build.sh
+          FRESH_REQUIRE_RUST=1 FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
+          ./build/FreSH.exe tests/run.frsh
+
+      - name: Build
+        shell: msys2 {0}
+        run: |
           FRESH_REQUIRE_RUST=1 ./build.sh
           test -f build/FreSH.exe
           test -f build/FreSH-Setup.exe

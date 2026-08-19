@@ -1291,6 +1291,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     char **argv = xmalloc((size_t)(argc + 1) * sizeof(char *));
     for (int i = 0; i < argc; i++) argv[i] = words.items[first + (size_t)i];
     argv[argc] = NULL;
+    sl_borrow(&words);
     int status = 0;
 
     if (shell.xtrace) {
@@ -1370,6 +1371,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
 
     if (argc > 0) var_set("_", argv[argc - 1]);
 
+    sl_release(&words);
     free(argv);
     sl_free(&saved_names);
     sl_free(&saved_values);

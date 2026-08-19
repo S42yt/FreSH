@@ -16,13 +16,33 @@ typedef struct {
     char *data;
     size_t len;
     size_t cap;
+#ifdef FRESH_BORROWS
+    int borrows;
+    unsigned state;
+#endif
 } StrBuf;
 
 typedef struct {
     char **items;
     size_t len;
     size_t cap;
+#ifdef FRESH_BORROWS
+    int borrows;
+    unsigned state;
+#endif
 } StrList;
+
+#ifdef FRESH_BORROWS
+const StrList *sl_borrow(const StrList *l);
+void sl_release(const StrList *l);
+const StrBuf *sb_borrow(const StrBuf *sb);
+void sb_release(const StrBuf *sb);
+#else
+#define sl_borrow(l) (l)
+#define sl_release(l) ((void)(l))
+#define sb_borrow(sb) (sb)
+#define sb_release(sb) ((void)(sb))
+#endif
 
 void *xmalloc(size_t size);
 void *xrealloc(void *ptr, size_t size);
