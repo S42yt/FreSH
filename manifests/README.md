@@ -40,3 +40,15 @@ set, a classic GitHub token with the `public_repo` scope.
 
 Until they merge, install with the installer, the portable exe, or the
 [Scoop bucket](../bucket/README.md).
+
+## While the first pull requests are open
+
+A package that is not in the community index yet has one "New package" pull
+request per manifest waiting on a moderator. Until those merge there is nothing
+to update, so `tools/winget-submit.sh` checks for them and skips rather than
+opening a second submission for the same package. Once they merge, catch winget
+up with the current release by hand:
+
+```sh
+bash tools/winget-submit.sh 26.11.0
+```

@@ -17,6 +17,13 @@ owner=$(gh api user --jq .login)
 gh repo fork microsoft/winget-pkgs --clone=false > /dev/null 2>&1 || true
 sha=$(gh api repos/microsoft/winget-pkgs/git/ref/heads/master --jq .object.sha)
 
+awaiting_first_merge() {
+    local package=$1
+    gh api -X GET search/issues \
+        -f q="repo:microsoft/winget-pkgs is:pr is:open author:$owner in:title $package" \
+        --jq '[.items[] | select(.title | startswith("New package"))] | length' 2> /dev/null || echo 0
+}
+
 submit() {
     local package=$1
     local target=$2
@@ -25,6 +32,12 @@ submit() {
 
     if [ ! -d "$source" ]; then
         echo "$source is missing, so $package is not submitted" >&2
+        return 0
+    fi
+
+    if [ "$(awaiting_first_merge "$package")" != "0" ]; then
+        echo "$package is still waiting on its first winget pull request, so $version is not submitted"
+        echo "  submit it with: bash tools/winget-submit.sh $version, once that one merges"
         return 0
     fi
 
