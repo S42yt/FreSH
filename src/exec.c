@@ -687,7 +687,7 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
                 char *command = xstrndup(r->target + 2, strlen(r->target) - 3);
                 StrBuf script;
                 sb_init(&script);
-                sb_printf(&script, "%s > \"%s\"", command, file);
+                sb_printf(&script, "{ %s\n} > \"%s\"", command, file);
                 exec_text(script.data);
                 sb_free(&script);
                 free(command);
@@ -1037,7 +1037,7 @@ static int substitute_processes(StrList *words, Substitution *pending, int max) 
         if (input) {
             StrBuf script;
             sb_init(&script);
-            sb_printf(&script, "%s > \"%s\"", command, file);
+            sb_printf(&script, "{ %s\n} > \"%s\"", command, file);
             exec_text(script.data);
             sb_free(&script);
             free(command);
@@ -1059,7 +1059,7 @@ static void finish_substitutions(Substitution *pending, int count) {
         if (pending[i].command) {
             StrBuf script;
             sb_init(&script);
-            sb_printf(&script, "%s < \"%s\"", pending[i].command, pending[i].path);
+            sb_printf(&script, "{ %s\n} < \"%s\"", pending[i].command, pending[i].path);
             exec_text(script.data);
             sb_free(&script);
             free(pending[i].command);
