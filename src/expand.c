@@ -25,6 +25,7 @@ typedef struct {
     StrList *out;
     int split;
     int glob;
+    int escape_meta;
 } Expander;
 
 static const char *param_get(int index) {
@@ -53,6 +54,18 @@ static void field_flush(Expander *ex) {
 
 static void field_add(Expander *ex, const char *text, size_t len) {
     sb_putn(&ex->field, text, len);
+    ex->has_content = 1;
+}
+
+static void field_add_quoted(Expander *ex, const char *text, size_t len) {
+    if (!ex->escape_meta) {
+        field_add(ex, text, len);
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (strchr("*?[]\\", text[i])) sb_putc(&ex->field, '\\');
+        sb_putc(&ex->field, text[i]);
+    }
     ex->has_content = 1;
 }
 
@@ -495,7 +508,7 @@ static char *brace_expand(const char *body) {
             if (operator == '#' || operator == '%') {
                 int longest = *rest == operator;
                 if (longest) rest++;
-                char *pattern = expand_single(rest);
+                char *pattern = expand_pattern(rest);
                 char *result = operator == '#' ? strip_prefix(text, pattern, longest)
                                                : strip_suffix(text, pattern, longest);
                 free(pattern);
@@ -767,7 +780,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
             result = capture_trimmed(inner.data);
         }
         sb_free(&inner);
-        if (in_quotes) field_add(ex, result, strlen(result));
+        if (in_quotes) field_add_quoted(ex, result, strlen(result));
         else field_add_split(ex, result);
         free(result);
         return;
@@ -791,7 +804,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
                     }
                 }
                 if (in_quotes) {
-                    field_add(ex, elements.items[i], strlen(elements.items[i]));
+                    field_add_quoted(ex, elements.items[i], strlen(elements.items[i]));
                     ex->quoted = 1;
                 } else {
                     field_add_split(ex, elements.items[i]);
@@ -806,7 +819,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
 
         char *result = brace_expand(inner.data);
         sb_free(&inner);
-        if (in_quotes) field_add(ex, result, strlen(result));
+        if (in_quotes) field_add_quoted(ex, result, strlen(result));
         else field_add_split(ex, result);
         free(result);
         return;
@@ -816,7 +829,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         for (size_t i = 1; i < shell.params.len; i++) {
             if (i > 1) field_flush(ex);
             if (in_quotes) {
-                field_add(ex, shell.params.items[i], strlen(shell.params.items[i]));
+                field_add_quoted(ex, shell.params.items[i], strlen(shell.params.items[i]));
                 ex->quoted = 1;
             } else {
                 field_add_split(ex, shell.params.items[i]);
@@ -833,14 +846,14 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
             shell.running = 0;
         }
         free(name);
-        if (in_quotes) field_add(ex, value ? value : "", value ? strlen(value) : 0);
+        if (in_quotes) field_add_quoted(ex, value ? value : "", value ? strlen(value) : 0);
         else field_add_split(ex, value);
         return;
     }
     if (c && strchr("?$#*@!0123456789", c)) {
         (*p)++;
         char *value = special_value(c);
-        if (in_quotes) field_add(ex, value, strlen(value));
+        if (in_quotes) field_add_quoted(ex, value, strlen(value));
         else field_add_split(ex, value);
         free(value);
         return;
@@ -897,7 +910,7 @@ static void expand_into(const char *word, Expander *ex) {
         if (c == '\\') {
             p++;
             if (*p) {
-                field_add(ex, p, 1);
+                field_add_quoted(ex, p, 1);
                 ex->quoted = 1;
                 p++;
             }
@@ -908,7 +921,7 @@ static void expand_into(const char *word, Expander *ex) {
             ex->quoted = 1;
             ex->has_content = 1;
             while (*p && *p != '\'') {
-                field_add(ex, p, 1);
+                field_add_quoted(ex, p, 1);
                 p++;
             }
             if (*p) p++;
@@ -920,7 +933,7 @@ static void expand_into(const char *word, Expander *ex) {
             ex->has_content = 1;
             while (*p && *p != '"') {
                 if (*p == '\\' && p[1] && strchr("\"\\$`", p[1])) {
-                    field_add(ex, p + 1, 1);
+                    field_add_quoted(ex, p + 1, 1);
                     p += 2;
                     continue;
                 }
@@ -934,12 +947,12 @@ static void expand_into(const char *word, Expander *ex) {
                     char *command = xstrndup(p + 1, (size_t)(end - p - 1));
                     char *result = capture_trimmed(command);
                     free(command);
-                    field_add(ex, result, strlen(result));
+                    field_add_quoted(ex, result, strlen(result));
                     free(result);
                     p = *end ? end + 1 : end;
                     continue;
                 }
-                field_add(ex, p, 1);
+                field_add_quoted(ex, p, 1);
                 p++;
             }
             if (*p) p++;
@@ -1122,6 +1135,7 @@ static void expand_assignment(const char *word, size_t prefix, StrList *out) {
     ex.out = out;
     ex.split = 0;
     ex.glob = 0;
+    ex.escape_meta = 0;
 
     sb_putn(&ex.field, word, prefix);
     expand_into(word + prefix, &ex);
@@ -1191,6 +1205,7 @@ void expand_words(const StrList *in, StrList *out) {
             ex.out = out;
             ex.split = 1;
             ex.glob = 1;
+            ex.escape_meta = 0;
             expand_into(braced.items[b], &ex);
             field_flush(&ex);
             sb_free(&ex.field);
@@ -1212,6 +1227,7 @@ char *expand_heredoc(const char *body) {
     ex.out = &fields;
     ex.split = 0;
     ex.glob = 0;
+    ex.escape_meta = 0;
 
     StrBuf quoted;
     sb_init(&quoted);
@@ -1234,7 +1250,7 @@ char *expand_heredoc(const char *body) {
     return sb_take(&joined);
 }
 
-char *expand_single(const char *word) {
+static char *expand_joined(const char *word, int escape_meta) {
     StrList fields;
     sl_init(&fields);
     Expander ex;
@@ -1245,6 +1261,7 @@ char *expand_single(const char *word) {
     ex.out = &fields;
     ex.split = 0;
     ex.glob = 0;
+    ex.escape_meta = escape_meta;
     expand_into(word, &ex);
     field_flush(&ex);
     sb_free(&ex.field);
@@ -1257,6 +1274,14 @@ char *expand_single(const char *word) {
     }
     sl_free(&fields);
     return sb_take(&joined);
+}
+
+char *expand_single(const char *word) {
+    return expand_joined(word, 0);
+}
+
+char *expand_pattern(const char *word) {
+    return expand_joined(word, 1);
 }
 
 static void glob_one_level(const char *pattern, StrList *matches) {
