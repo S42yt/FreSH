@@ -115,3 +115,25 @@ way to interrupt.
   [plugins](plugins.md#help-pages).
 - Themes and plugins live in `~/.fresh`, see [themes](themes.md) and
   [plugins](plugins.md).
+
+## The keys as they ship
+
+| Key | Action |
+| --- | --- |
+| `Tab` | complete commands, files, directories and `$variables` |
+| `Tab` again | cycle through the candidates |
+| `Up` / `Down` | history, filtered by what you have already typed |
+| `Right` / `End` | accept the greyed out suggestion from history |
+| `Ctrl+R` | search history |
+| `Ctrl+A` / `Ctrl+E` | start and end of line |
+| `Ctrl+Backspace` / `Ctrl+W` | delete the previous word |
+| `Ctrl+U` / `Ctrl+K` | cut to start, cut to end |
+| `Ctrl+Left` / `Ctrl+Right` | move by word |
+| `Ctrl+L` | clear the screen and the scrollback |
+| `Ctrl+C` | abandon the line |
+| `Ctrl+D` | exit on an empty line |
+
+Commands are colour highlighted as you type: known commands green, unknown
+red, strings and variable assignments yellow, variables cyan, operators
+magenta.
+
