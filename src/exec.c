@@ -1926,8 +1926,10 @@ static int evaluate_bracket(const StrList *words) {
             sl_push_copy(&b.words, word);
             continue;
         }
-        char *expanded = expand_single(word);
-        sl_push(&b.words, expanded);
+        const char *before = i > 0 ? words->items[i - 1] : "";
+        int is_pattern = strcmp(before, "==") == 0 || strcmp(before, "=") == 0 ||
+                         strcmp(before, "!=") == 0;
+        sl_push(&b.words, is_pattern ? expand_pattern(word) : expand_single(word));
     }
 
     int value = bracket_or(&b);
@@ -2019,6 +2021,12 @@ static int same_char(char a, char b) {
 
 int pattern_match(const char *pattern, const char *text) {
     while (*pattern) {
+        if (*pattern == '\\' && pattern[1]) {
+            if (!*text || !same_char(pattern[1], *text)) return 0;
+            pattern += 2;
+            text++;
+            continue;
+        }
         if (strchr("?*+@!", *pattern) && pattern[1] == '(') {
             int result = match_extended(pattern, text);
             if (result >= 0) return result;
@@ -2253,7 +2261,7 @@ static int exec_switch(Node *node) {
         for (Node *item = node->right; item; item = item->extra) {
             int matched = running_on;
             for (size_t i = 0; i < item->words.len && !matched; i++) {
-                char *pattern = expand_single(item->words.items[i]);
+                char *pattern = expand_pattern(item->words.items[i]);
                 matched = pattern_match(pattern, subject);
                 free(pattern);
             }

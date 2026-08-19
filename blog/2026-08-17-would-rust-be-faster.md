@@ -32,7 +32,7 @@ Two differences matter when reading the numbers:
 ## How it was measured
 
 Both binaries run the same scripts, from the same harness, on the machine in
-[benchmarks](benchmarks.md):
+[benchmarks](../docs/benchmarks.md):
 
 - `tests/rust/parity.frsh` for correctness, diffed line by line in CI. The Rust
   core has to agree with the C shell on every line before any timing is
@@ -58,7 +58,7 @@ other rather than to produce timings.
 | `FreSH.exe` | 786 KB |
 | `fresh-rs.exe` | 442 KB |
 
-These are higher than the 22 ms in [benchmarks](benchmarks.md) because both
+These are higher than the 22 ms in [benchmarks](../docs/benchmarks.md) because both
 binaries were run out of a temporary directory with Defender watching it. The
 comparison is what matters: `fresh-rs` starts in about two thirds of the time
 `FreSH --norc` takes, from an image about half the size, and it has no
@@ -101,7 +101,7 @@ between two function calls.
   the features it is missing
 - **The safety argument is real and is not measured here.** The C shell has
   fuzz targets and sanitizers in CI because it needs them; the heap overflow in
-  [errors](errors.md) is a class of bug the Rust core cannot have
+  [errors](../docs/errors.md) is a class of bug the Rust core cannot have
 - **The cost is the other 13,000 lines**, which is everything that took the
   longest to get right in C
 
@@ -118,7 +118,7 @@ safety in a program that is already fuzzed, sanitised and differentially tested
 against bash. The places Rust won were a hash table and an in-process pipeline,
 so the C shell got both: variables are looked up through a hash table and
 pipeline buffers stay open. What that was worth is in
-[benchmarks](benchmarks.md).
+[benchmarks](../docs/benchmarks.md).
 
 ## Running it yourself
 
@@ -147,7 +147,7 @@ routine where Rust pays for itself? Three were tried, one survived, and it is
 `sort`, where C calls its comparator through a function pointer and Rust inlines
 it. Counting and `PATH` merging measured identical and stayed in C. The whole
 Rust side costs 11,776 bytes of binary. The numbers are in
-[benchmarks](benchmarks.md).
+[benchmarks](../docs/benchmarks.md).
 
 Startup was measured again on the way past, three builds from one commit, and
 it does not move: not with Rust, not with a third of the binary removed, not

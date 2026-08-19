@@ -11,6 +11,7 @@
 
 void expand_words(const StrList *in, StrList *out);
 char *expand_single(const char *word);
+char *expand_pattern(const char *word);
 char *expand_heredoc(const char *body);
 void brace_expand_word(const char *word, StrList *out);
 long eval_arith(const char *expr, int *ok);

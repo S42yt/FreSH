@@ -52,3 +52,28 @@ shopt -u nocasematch
 check nocasematch_off "$(case ABC in abc) echo yes ;; *) echo no ;; esac)" no
 
 check ifs_splitting "$(IFS=:; set -- $(echo a:b:c); echo $#)" 3
+
+esc=$(printf '\033')
+seq="${esc}[2J"
+case "$seq" in *"[2J"*) quoted_class=yes ;; *) quoted_class=no ;; esac
+check case_quoted_brackets_are_literal "$quoted_class" yes
+case "abc" in "[abc]") literal_class=yes ;; *) literal_class=no ;; esac
+check case_quoted_class_matches_itself "$literal_class" no
+case "[abc]" in "[abc]") exact=yes ;; *) exact=no ;; esac
+check case_quoted_class_matches_text "$exact" yes
+case "a" in [abc]) unquoted=yes ;; *) unquoted=no ;; esac
+check case_unquoted_class_still_matches "$unquoted" yes
+
+star='a*b'
+case "$star" in "a*b") quoted_star=yes ;; *) quoted_star=no ;; esac
+check case_quoted_star_is_literal "$quoted_star" yes
+case "axxb" in "a*b") wrong=yes ;; *) wrong=no ;; esac
+check case_quoted_star_does_not_glob "$wrong" no
+
+check bracket_quoted_pattern_literal "$([[ "[2J" == "[2J" ]] && echo yes || echo no)" yes
+check bracket_quoted_pattern_not_class "$([[ "2" == "[2J]" ]] && echo yes || echo no)" no
+check bracket_unquoted_pattern_globs "$([[ abc == a* ]] && echo yes || echo no)" yes
+
+pat='[2J'
+value="x[2Jy"
+check strip_quoted_prefix "${value#"x[2J"}" y

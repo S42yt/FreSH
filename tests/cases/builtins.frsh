@@ -106,3 +106,7 @@ greet_bg() { printf '%s' "$BG_GREETING"; }
 wait $! 2> /dev/null
 check background_sees_functions_and_vars "$(cat $bg_out)" hidden
 rm -f "$bg_out"
+
+cleared=$(clear)
+check clear_sequence "$cleared" "$(printf '\033[H\033[2J\033[3J')"
+check clear_erases_scrollback "$(printf '%s' "$cleared" | grep -c '3J')" 1

@@ -25,6 +25,8 @@
 
 ## Installing and trusting it
 
+- [Installing](installing.md), Scoop, winget, the installer, the portable
+  build, and how to run FreSH from another program
 - [Verifying a download](verifying.md), build provenance, checksums, and what
   the SmartScreen prompt actually means
 - [Code signing](code-signing.md), what would be signed, who holds the key, and
@@ -32,6 +34,7 @@
 
 ## Working on FreSH
 
+- [Building from source](building.md), what the build needs and what it makes
 - [Benchmarks](benchmarks.md), startup and throughput against cmd, Git Bash and
   PowerShell, with the method written down
 - [Tests](../tests/README.md), the suite that runs on every build
@@ -39,6 +42,12 @@
   bash and through FreSH, diffed
 - [Fuzzing](../fuzz/README.md), the parser, the regular expression engine and
   awk under libFuzzer and the sanitizers
+
+## The story behind the numbers
+
+This folder is reference: what the shell does today. How it got there, what
+was measured, and what was tried and thrown away lives in the
+[blog](../blog/README.md).
 
 New here? Read [Shortcuts](shortcuts.md) first, it is the shortest path to a
 shell that feels like your own. Then skim

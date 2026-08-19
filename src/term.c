@@ -89,7 +89,18 @@ void term_write(const char *s) {
 }
 
 void term_clear_screen(void) {
-    term_write("\x1b[2J\x1b[H");
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    COORD origin = {0, 0};
+
+    if (GetConsoleScreenBufferInfo(out, &info)) {
+        DWORD cells = (DWORD)info.dwSize.X * (DWORD)info.dwSize.Y;
+        DWORD written;
+        FillConsoleOutputCharacterA(out, ' ', cells, origin, &written);
+        FillConsoleOutputAttribute(out, info.wAttributes, cells, origin, &written);
+        SetConsoleCursorPosition(out, origin);
+    }
+    term_write("\x1b[H\x1b[2J\x1b[3J");
 }
 
 void term_set_title(const char *title) {
