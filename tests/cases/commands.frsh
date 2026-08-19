@@ -30,14 +30,14 @@ check printf_star_precision "$(printf '%.*f' 2 3.14159)" 3.14
 
 collect_filtered() {
   while IFS= read -r one; do
-    printf '%s,' "$one"
+    printf '[%s]' "$one"
   done < <(
     printf 'get: a\nreal line\nhit: b\n' \
     | grep -vE '^(get:|hit:|\(reading database)' \
     | tail -n 2
   )
 }
-check procsub_quoted_parens "$(collect_filtered)" "real line,"
+check procsub_quoted_parens "$(collect_filtered)" "[real line]"
 
 mkdir -p .rm-tree/inner
 echo one > .rm-tree/file
