@@ -127,13 +127,15 @@ fresh                  # version, where things live, active theme and plugins
 Prereleases are tagged `26.10.1-prerelease-1` and are never offered by a plain
 `fresh update`, so you only get one by asking.
 
-`--pre-selector` shows the newest prerelease of every version, one line each,
-and installs the one you number:
+`--pre-selector` shows what is current and installs the one you number: the
+prerelease of the version being worked on, its experiment underneath, and the
+newest finished release. Early builds of anything older disappear the moment a
+newer version starts, so the list never grows stale entries:
 
 ```
-   1  26.11.0 experiment 1
-   2  26.10.1 prerelease 2  installed
-   3  26.10.0 prerelease 4  older than yours
+   1  26.11.0 prerelease 3  installed
+   2  26.11.0 experiment 2
+   3  26.10.0 release       older than yours
 
   which one? 1-3, or enter to cancel:
 ```

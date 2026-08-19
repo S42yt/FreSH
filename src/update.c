@@ -336,17 +336,72 @@ static int read_early_releases(Early *out, int max, int keep_stable) {
     return count;
 }
 
-static int command_pre_selector(int check_only) {
-    Early releases[32];
-    printf("  %sasking github for the prereleases%s\n", style(S_DIM), style(S_RESET));
+static int base_newer(const char *a, const char *b) {
+    int left[3];
+    int right[3];
+    int ignored;
+    split_version(a, left, &ignored);
+    split_version(b, right, &ignored);
+    for (int i = 0; i < 3; i++) {
+        if (left[i] != right[i]) return left[i] > right[i];
+    }
+    return 0;
+}
 
-    int count = read_early_releases(releases, 32, 0);
-    if (count < 0) {
+/*
+ * The list a tester wants: the prerelease and the experiment of the version
+ * being worked on, then the newest finished release. A version bump hides the
+ * early builds of everything older, because nobody should land on them.
+ */
+static int select_current(const Early *all, int count, Early *out) {
+    const char *stable = NULL;
+    const char *early = NULL;
+
+    for (int i = 0; i < count; i++) {
+        if (!all[i].kind[0]) {
+            if (!stable || base_newer(all[i].base, stable)) stable = all[i].base;
+        } else {
+            if (!early || base_newer(all[i].base, early)) early = all[i].base;
+        }
+    }
+
+    int kept = 0;
+    if (early && (!stable || base_newer(early, stable))) {
+        for (int i = 0; i < count; i++) {
+            if (strcmp(all[i].base, early) == 0 && strcmp(all[i].kind, "prerelease") == 0)
+                out[kept++] = all[i];
+        }
+        for (int i = 0; i < count; i++) {
+            if (strcmp(all[i].base, early) == 0 && all[i].kind[0] &&
+                strcmp(all[i].kind, "prerelease") != 0)
+                out[kept++] = all[i];
+        }
+    }
+    if (stable) {
+        for (int i = 0; i < count; i++) {
+            if (!all[i].kind[0] && strcmp(all[i].base, stable) == 0) {
+                out[kept++] = all[i];
+                break;
+            }
+        }
+    }
+    return kept;
+}
+
+static int command_pre_selector(int check_only) {
+    Early all[32];
+    Early releases[32];
+    printf("  %sasking github for the releases%s\n", style(S_DIM), style(S_RESET));
+
+    int fetched = read_early_releases(all, 32, 1);
+    if (fetched < 0) {
         shell_error("update: could not reach github, see %s", RELEASE_PAGE);
         return 1;
     }
+
+    int count = select_current(all, fetched, releases);
     if (count == 0) {
-        printf("  %s\xe2\x9c\x93%s there are no prereleases right now\n", style(S_ACCENT),
+        printf("  %s\xe2\x9c\x93%s there is nothing to offer right now\n", style(S_ACCENT),
                style(S_RESET));
         return 0;
     }
@@ -357,9 +412,14 @@ static int command_pre_selector(int check_only) {
         if (strcmp(releases[i].tag, FRESH_VERSION) == 0) note = "  installed";
         else if (!version_newer(releases[i].tag, FRESH_VERSION)) note = "  older than yours";
 
-        printf("  %s%2d%s  %s %s %d%s%s%s\n", style(S_ACCENT), i + 1, style(S_RESET),
-               releases[i].base, releases[i].kind, releases[i].step, style(S_DIM), note,
-               style(S_RESET));
+        if (releases[i].kind[0]) {
+            printf("  %s%2d%s  %s %s %d%s%s%s\n", style(S_ACCENT), i + 1, style(S_RESET),
+                   releases[i].base, releases[i].kind, releases[i].step, style(S_DIM), note,
+                   style(S_RESET));
+        } else {
+            printf("  %s%2d%s  %s release%s%s%s\n", style(S_ACCENT), i + 1, style(S_RESET),
+                   releases[i].base, style(S_DIM), note, style(S_RESET));
+        }
     }
     printf("\n");
 

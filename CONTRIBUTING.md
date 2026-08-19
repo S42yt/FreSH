@@ -183,9 +183,11 @@ fresh update --pre           # the newest prerelease of any version
 fresh update --pre-selector  # list them and pick one, --check only lists
 ```
 
-`--pre-selector` shows the newest prerelease of every version, so a tester on
-`26.10.1-prerelease-2` can drop onto `26.11.0-prerelease-1` and back again
-without hunting through the releases page.
+`--pre-selector` shows what is current: the prerelease of the version being
+worked on, its experiment under it, and the newest finished release, so a
+tester can hop between the three without hunting through the releases page.
+Early builds of older versions leave the list as soon as a newer version has
+any, which is what makes the list safe to pick from blindly.
 
 ## Experiments
 
