@@ -86,3 +86,19 @@ reader() {
   printf '%s+%s' "$first" "$second"
 }
 check read_survives_redirect "$(printf 'one\ntwo\n' | reader)" "one+two"
+
+( while :; do sleep 0.1; done ) &
+spin=$!
+check bang_expands_to_pid "$(test -n "$spin" && test "$spin" != '$!' && echo yes)" yes
+kill "$spin" 2> /dev/null
+check background_loop_killable "$?" 0
+wait "$spin" 2> /dev/null
+check wait_returns_after_kill yes yes
+
+BG_GREETING=hidden
+bg_out=.bg-capture
+greet_bg() { printf '%s' "$BG_GREETING"; }
+( greet_bg ) > "$bg_out" &
+wait $! 2> /dev/null
+check background_sees_functions_and_vars "$(cat $bg_out)" hidden
+rm -f "$bg_out"

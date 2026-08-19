@@ -30,6 +30,7 @@ typedef struct {
     int dotglob;
     int nocasematch;
     int condition_depth;
+    unsigned long last_background_pid;
     StrList params;
     char *script_name;
     char *trap_exit;

@@ -1147,6 +1147,113 @@ static void report_not_found(const char *name) {
     free(closest);
 }
 
+static void quote_argument(const char *text, StrBuf *out) {
+    sb_putc(out, '"');
+    size_t backslashes = 0;
+    for (const char *p = text; *p; p++) {
+        if (*p == '\\') {
+            backslashes++;
+            continue;
+        }
+        if (*p == '"') {
+            for (size_t i = 0; i < backslashes * 2 + 1; i++) sb_putc(out, '\\');
+            sb_putc(out, '"');
+            backslashes = 0;
+            continue;
+        }
+        for (size_t i = 0; i < backslashes; i++) sb_putc(out, '\\');
+        backslashes = 0;
+        sb_putc(out, *p);
+    }
+    for (size_t i = 0; i < backslashes * 2; i++) sb_putc(out, '\\');
+    sb_putc(out, '"');
+}
+
+static void quoted_assignment(const char *line, StrBuf *out) {
+    const char *equals = strchr(line, '=');
+    if (!equals) return;
+
+    sb_putn(out, line, (size_t)(equals - line) + 1);
+    const char *value = equals + 1;
+
+    if (value[0] == '(' && value[strlen(value) ? strlen(value) - 1 : 0] == ')') {
+        sb_puts(out, value);
+    } else {
+        sb_putc(out, '\'');
+        for (const char *p = value; *p; p++) {
+            if (*p == '\'') sb_puts(out, "'\\''");
+            else sb_putc(out, *p);
+        }
+        sb_putc(out, '\'');
+    }
+    sb_putc(out, '\n');
+}
+
+static void background_preamble(StrBuf *out) {
+    StrList entries;
+    sl_init(&entries);
+    vars_list(&entries);
+    for (size_t i = 0; i < entries.len; i++) quoted_assignment(entries.items[i], out);
+    sl_free(&entries);
+
+    StrList names;
+    sl_init(&names);
+    function_names(&names);
+    for (size_t i = 0; i < names.len; i++) {
+        Node *body = function_find(names.items[i]);
+        if (!body) continue;
+        sb_printf(out, "%s() {\n", names.items[i]);
+        node_source(body, out);
+        sb_puts(out, "\n}\n");
+    }
+    sl_free(&names);
+}
+
+static int exec_background_child(Node *node) {
+    StrBuf source;
+    sb_init(&source);
+    background_preamble(&source);
+
+    int was_background = node->background;
+    node->background = 0;
+    int serialized = node_source(node, &source);
+    node->background = was_background;
+
+    if (!serialized) {
+        shell_error("this command cannot run in the background");
+        sb_free(&source);
+        return 1;
+    }
+
+    char exe[PATH_BUF];
+    if (!GetModuleFileNameA(NULL, exe, sizeof(exe))) {
+        sb_free(&source);
+        return 1;
+    }
+
+    StrBuf command_line;
+    sb_init(&command_line);
+    sb_printf(&command_line, "\"%s\" --norc -c ", exe);
+    quote_argument(source.data, &command_line);
+    sb_free(&source);
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    memset(&si, 0, sizeof(si));
+    memset(&pi, 0, sizeof(pi));
+    si.cb = sizeof(si);
+
+    if (!CreateProcessA(NULL, command_line.data, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        shell_error("could not start the background job");
+        sb_free(&command_line);
+        return 1;
+    }
+    sb_free(&command_line);
+    CloseHandle(pi.hThread);
+    job_add(pi.hProcess, "background");
+    return 0;
+}
+
 static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) {
     StrList words;
     sl_init(&words);
@@ -1224,6 +1331,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         status = enter(2, arguments);
     } else if (resolved && !is_shell_script(path)) {
         status = run_program(path, argv, argc, &io, background, async_out);
+    } else if (background) {
+        status = exec_background_child(node);
     } else {
         FdSave save;
         int redirected = !io_is_default(&io);
@@ -1518,7 +1627,8 @@ static void job_add(HANDLE process, const char *command) {
     jobs[job_count].pid = GetProcessId(process);
     jobs[job_count].process = process;
     jobs[job_count].command = xstrdup(command);
-    printf("[%d] %lu\n", jobs[job_count].id, jobs[job_count].pid);
+    shell.last_background_pid = jobs[job_count].pid;
+    if (shell.interactive) printf("[%d] %lu\n", jobs[job_count].id, jobs[job_count].pid);
     job_count++;
 }
 
@@ -1979,7 +2089,9 @@ int exec_node(Node *node) {
     int mark = tracked_count;
     int status;
 
-    if (node->kind != N_SIMPLE && node->kind != N_PIPE && node->redirs)
+    if (node->background && node->kind != N_SIMPLE && node->kind != N_PIPE)
+        status = exec_background_child(node);
+    else if (node->kind != N_SIMPLE && node->kind != N_PIPE && node->redirs)
         status = exec_command(node, io_default(), node->background, NULL);
     else status = exec_switch(node);
 

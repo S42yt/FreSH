@@ -123,6 +123,9 @@ static char *special_value(char c) {
     case '$':
         sb_printf(&sb, "%lu", (unsigned long)GetCurrentProcessId());
         break;
+    case '!':
+        if (shell.last_background_pid) sb_printf(&sb, "%lu", shell.last_background_pid);
+        break;
     case '#':
         sb_printf(&sb, "%d", shell.params.len > 0 ? (int)shell.params.len - 1 : 0);
         break;
@@ -812,7 +815,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         else field_add_split(ex, value);
         return;
     }
-    if (c && strchr("?$#*@0123456789", c)) {
+    if (c && strchr("?$#*@!0123456789", c)) {
         (*p)++;
         char *value = special_value(c);
         if (in_quotes) field_add(ex, value, strlen(value));

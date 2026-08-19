@@ -604,6 +604,152 @@ void node_free(Node *node) {
     free(node);
 }
 
+static void source_redirs(const Redir *r, StrBuf *out) {
+    for (; r; r = r->next) {
+        switch (r->type) {
+        case R_IN: sb_printf(out, " %d< %s", r->fd, r->target); break;
+        case R_OUT: sb_printf(out, " %d> %s", r->fd, r->target); break;
+        case R_APPEND: sb_printf(out, " %d>> %s", r->fd, r->target); break;
+        case R_DUP: sb_printf(out, " %d>&%s", r->fd, r->target); break;
+        case R_HERESTRING: sb_printf(out, " <<< %s", r->target); break;
+        case R_HEREDOC:
+        case R_HEREDOC_RAW:
+            sb_printf(out, " <<%s'FRESH_HEREDOC_END'\n%s\nFRESH_HEREDOC_END\n",
+                      r->type == R_HEREDOC_RAW ? "-" : "", r->target ? r->target : "");
+            break;
+        }
+    }
+}
+
+static void source_words(const StrList *words, StrBuf *out, size_t from) {
+    for (size_t i = from; i < words->len; i++) {
+        if (i > from) sb_putc(out, ' ');
+        sb_puts(out, words->items[i]);
+    }
+}
+
+int node_source(const Node *node, StrBuf *out) {
+    if (!node) return 1;
+    int ok = 1;
+
+    switch (node->kind) {
+    case N_SIMPLE:
+        source_words(&node->words, out, 0);
+        break;
+    case N_PIPE:
+        ok = node_source(node->left, out);
+        sb_puts(out, " | ");
+        ok = ok && node_source(node->right, out);
+        break;
+    case N_AND:
+        ok = node_source(node->left, out);
+        sb_puts(out, " && ");
+        ok = ok && node_source(node->right, out);
+        break;
+    case N_OR:
+        ok = node_source(node->left, out);
+        sb_puts(out, " || ");
+        ok = ok && node_source(node->right, out);
+        break;
+    case N_SEQ:
+        ok = node_source(node->left, out);
+        sb_puts(out, "\n");
+        ok = ok && node_source(node->right, out);
+        break;
+    case N_NOT:
+        sb_puts(out, "! ");
+        ok = node_source(node->right, out);
+        break;
+    case N_IF:
+        sb_puts(out, "if ");
+        ok = node_source(node->left, out);
+        sb_puts(out, "\nthen\n");
+        ok = ok && node_source(node->right, out);
+        if (node->extra) {
+            sb_puts(out, "\nelse\n");
+            ok = ok && node_source(node->extra, out);
+        }
+        sb_puts(out, "\nfi");
+        break;
+    case N_WHILE:
+    case N_UNTIL:
+        sb_puts(out, node->kind == N_WHILE ? "while " : "until ");
+        ok = node_source(node->left, out);
+        sb_puts(out, "\ndo\n");
+        ok = ok && node_source(node->right, out);
+        sb_puts(out, "\ndone");
+        break;
+    case N_FOR:
+        sb_printf(out, "for %s in ", node->name);
+        source_words(&node->words, out, 0);
+        sb_puts(out, "\ndo\n");
+        ok = node_source(node->right, out);
+        sb_puts(out, "\ndone");
+        break;
+    case N_FOR_C:
+        sb_printf(out, "for (( %s; %s; %s ))\ndo\n", node->words.items[0], node->words.items[1],
+                  node->words.items[2]);
+        ok = node_source(node->right, out);
+        sb_puts(out, "\ndone");
+        break;
+    case N_CASE:
+        sb_printf(out, "case %s in\n", node->name);
+        for (const Node *item = node->right; item; item = item->extra) {
+            source_words(&item->words, out, 0);
+            sb_puts(out, ") ");
+            ok = ok && node_source(item->right, out);
+            sb_puts(out, " ;;\n");
+        }
+        sb_puts(out, "esac");
+        break;
+    case N_GROUP:
+        sb_puts(out, "{\n");
+        ok = node_source(node->right, out);
+        sb_puts(out, "\n}");
+        break;
+    case N_SUBSHELL:
+        sb_puts(out, "( ");
+        ok = node_source(node->right, out);
+        sb_puts(out, " )");
+        break;
+    case N_FUNC:
+        sb_printf(out, "%s() {\n", node->name);
+        ok = node_source(node->right, out);
+        sb_puts(out, "\n}");
+        break;
+    case N_ASSIGN_ARRAY:
+        sb_printf(out, "%s=(", node->name);
+        source_words(&node->words, out, 0);
+        sb_puts(out, ")");
+        break;
+    case N_SELECT:
+        sb_printf(out, "select %s in ", node->name);
+        source_words(&node->words, out, 0);
+        sb_puts(out, "\ndo\n");
+        ok = node_source(node->right, out);
+        sb_puts(out, "\ndone");
+        break;
+    case N_TEST:
+        sb_puts(out, "[[ ");
+        source_words(&node->words, out, 0);
+        sb_puts(out, " ]]");
+        break;
+    case N_ARITH:
+        sb_printf(out, "(( %s ))", node->name);
+        break;
+    case N_TIME:
+        sb_puts(out, "time ");
+        ok = node_source(node->right, out);
+        break;
+    case N_CASE_ITEM:
+        ok = 0;
+        break;
+    }
+
+    source_redirs(node->redirs, out);
+    return ok;
+}
+
 static Token *peek(Parser *ps) {
     return &ps->tokens.items[ps->pos];
 }
