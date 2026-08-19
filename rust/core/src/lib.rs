@@ -20,6 +20,9 @@ fn panicked(_info: &PanicInfo) -> ! {
     unsafe { abort() }
 }
 
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
+
 const SORT_FOLD: u32 = 1;
 const SORT_NUMERIC: u32 = 2;
 
