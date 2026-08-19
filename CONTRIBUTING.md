@@ -87,20 +87,18 @@ add trailers naming the tools you used.
 
 ### The Rust core
 
-`rust/core` is a `no_std` static library holding compute kernels the C shell
-calls, and it is optional:
+`rust/core` is a `no_std` static library holding the compute kernels the shell
+calls: sorting, counting, the `PATH` merge. It is the only implementation of
+them, so building FreSH needs `rust` installed; `build.sh` builds the library
+itself when `cargo` is on the path and stops with a clear message when it is
+not. The library allocates nothing, carries no runtime, and only touches
+memory the C side hands it, which is what keeps it a dozen kilobytes rather
+than a second program.
 
-```sh
-./build.sh                      # uses it when cargo is there
-FRESH_NO_RUST=1 ./build.sh      # C only, same shell
-FRESH_REQUIRE_RUST=1 ./build.sh # fail rather than quietly drop it
-```
-
-`src/rustcore.c` holds a C version of every kernel and the two must agree, so
-nothing may live only in Rust. A kernel goes in only when a measurement says it
-is faster than the C one, and it comes back out when the measurement says it is
-not: two of the first three were removed that way. `fresh` prints which core a
-binary carries.
+A kernel earns its place with a measurement on the same machine, best of many
+runs, or it does not go in. The rule ran in both directions already: sorting
+stayed because it measured faster, and two early candidates were folded back
+until the C fell away entirely.
 
 ## Tests
 
@@ -179,13 +177,14 @@ The workflow reads the suffix and behaves differently in three ways:
 Anyone who wants them asks for them:
 
 ```sh
-fresh update --pre           # the newest prerelease of any version
-fresh update --pre-selector  # list them and pick one, --check only lists
+fresh update --pre       # the newest prerelease, never an experiment
+fresh update --selector  # browse every release ever and install any of them
 ```
 
-`--pre-selector` shows the newest prerelease of every version, so a tester on
-`26.10.1-prerelease-2` can drop onto `26.11.0-prerelease-1` and back again
-without hunting through the releases page.
+`--selector` is a small interactive browser over the whole release history,
+newest first, prereleases and experiments included: arrows move, left and
+right switch pages, enter installs, escape leaves. Outside a terminal or with
+`--check` it prints the same list numbered and plain.
 
 ## Experiments
 
@@ -200,7 +199,7 @@ release, and it is tagged from that branch rather than from master. It is built
 and released the same way, and the selector lists it as `26.11.0 experiment 1`,
 but `fresh update --pre` skips it: `--pre` offers prereleases and finished
 releases only. Somebody who wants an experiment picks it out of
-`fresh update --pre-selector` on purpose, and can leave it the same way.
+`fresh update --selector` on purpose, and can leave it the same way.
 
 A prerelease sorts below the release of the same number, so someone running
 `26.10.1-prerelease-2` is offered `26.10.1` when it arrives, and

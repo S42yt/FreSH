@@ -13,6 +13,8 @@
 #define FRESH_SORT_FOLD 1u
 #define FRESH_SORT_NUMERIC 2u
 
+#define FRESH_CORE "rust"
+
 typedef struct {
     unsigned long long lines;
     unsigned long long words;
@@ -20,20 +22,17 @@ typedef struct {
     unsigned int in_word;
 } FreshCounts;
 
-#ifdef FRESH_RUST
-
 void fresh_sort_pointers(const unsigned char **items, size_t len, unsigned int mode);
+void fresh_count_block(const unsigned char *data, size_t len, FreshCounts *counts);
+size_t fresh_path_merge(const unsigned char *const *parts, size_t count, unsigned char *out,
+                        size_t cap);
 
-#define FRESH_CORE "rust"
-
-#else
-
-#define FRESH_CORE "c"
-
-#endif
-
-void core_sort_pointers(char **items, size_t len, unsigned int mode);
-void core_count_block(const char *data, size_t len, FreshCounts *counts);
-size_t core_path_merge(const char *const *parts, size_t count, char *out, size_t cap);
+#define core_sort_pointers(items, len, mode) \
+    fresh_sort_pointers((const unsigned char **)(void *)(items), (len), (mode))
+#define core_count_block(data, len, counts) \
+    fresh_count_block((const unsigned char *)(data), (len), (counts))
+#define core_path_merge(parts, count, out, cap) \
+    fresh_path_merge((const unsigned char *const *)(const void *)(parts), (count), \
+                     (unsigned char *)(out), (cap))
 
 #endif

@@ -275,6 +275,20 @@ void sl_sort(StrList *l) {
     core_sort_pointers(l->items, l->len, FRESH_SORT_FOLD);
 }
 
+void sl_dedup_adjacent_fold(StrList *l) {
+    ASSERT_UNBORROWED(l, "a list");
+
+    size_t kept = 0;
+    for (size_t i = 0; i < l->len; i++) {
+        if (kept > 0 && _stricmp(l->items[kept - 1], l->items[i]) == 0) {
+            free(l->items[i]);
+            continue;
+        }
+        l->items[kept++] = l->items[i];
+    }
+    l->len = kept;
+}
+
 int sl_contains(const StrList *l, const char *s) {
     ASSERT_LIVE(l, "a list");
     for (size_t i = 0; i < l->len; i++) {

@@ -119,26 +119,31 @@ FreSH updates itself:
 ```sh
 fresh update           # check github, download and install the newest release
 fresh update --check   # only tell me whether there is one
-fresh update --pre     # take prereleases too
-fresh update --pre-selector   # list the prereleases and pick one
-fresh                  # version, where things live, active theme and plugins
+fresh update --pre       # take prereleases too
+fresh update --selector  # browse every release and install any of them
+fresh                    # version, where things live, active theme and plugins
 ```
 
 Prereleases are tagged `26.10.1-prerelease-1` and are never offered by a plain
 `fresh update`, so you only get one by asking.
 
-`--pre-selector` shows the newest prerelease of every version, one line each,
-and installs the one you number:
+`--selector` opens a small browser over every release there has ever been,
+newest first: releases, prereleases and experiments alike. Arrows move, left
+and right switch pages, enter installs the one under the cursor, escape leaves
+without touching anything:
 
 ```
-   1  26.11.0 experiment 1
-   2  26.10.1 prerelease 2  installed
-   3  26.10.0 prerelease 4  older than yours
-
-  which one? 1-3, or enter to cancel:
+  14 releases, page 1 of 2
+  ❯ 26.11.0 prerelease 3  installed
+    26.11.0 experiment 2
+    26.10.1 prerelease 3
+    26.10.0 release
+    ...
+  ↑↓ move   ←→ page   enter install   esc leave
 ```
 
-Adding `--check` to it lists them and stops, installing nothing.
+Outside a terminal, or with `--check`, it prints the same list numbered and
+plain so scripts can read it.
 
 Tags carry the kind in the middle. A `-prerelease-n` is the next version being
 tested and is what `fresh update --pre` gives you. Anything else, such as

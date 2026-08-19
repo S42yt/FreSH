@@ -383,18 +383,6 @@ static void scan_directory(const char *dir, const StrList *extensions, StrList *
     FindClose(find);
 }
 
-static void drop_adjacent_duplicates(StrList *list) {
-    size_t kept = 0;
-    for (size_t i = 0; i < list->len; i++) {
-        if (kept > 0 && _stricmp(list->items[kept - 1], list->items[i]) == 0) {
-            free(list->items[i]);
-            continue;
-        }
-        list->items[kept++] = list->items[i];
-    }
-    list->len = kept;
-}
-
 static void ensure_command_cache(void) {
     if (command_cache_valid) return;
     sl_clear(&command_cache);
@@ -417,7 +405,7 @@ static void ensure_command_cache(void) {
 
     if (command_cache.len > 1)
         qsort(command_cache.items, command_cache.len, sizeof(char *), compare_names_fold);
-    drop_adjacent_duplicates(&command_cache);
+    sl_dedup_adjacent_fold(&command_cache);
     command_cache_valid = 1;
 }
 
@@ -1288,7 +1276,10 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     }
 
     int argc = (int)(words.len - first);
-    char **argv = xmalloc((size_t)(argc + 1) * sizeof(char *));
+    char *argv_local[16];
+    char **argv = argc + 1 <= (int)(sizeof(argv_local) / sizeof(argv_local[0]))
+                      ? argv_local
+                      : xmalloc((size_t)(argc + 1) * sizeof(char *));
     for (int i = 0; i < argc; i++) argv[i] = words.items[first + (size_t)i];
     argv[argc] = NULL;
     sl_borrow(&words);
@@ -1372,7 +1363,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     if (argc > 0) var_set("_", argv[argc - 1]);
 
     sl_release(&words);
-    free(argv);
+    if (argv != argv_local) free(argv);
     sl_free(&saved_names);
     sl_free(&saved_values);
     sl_free(&words);
