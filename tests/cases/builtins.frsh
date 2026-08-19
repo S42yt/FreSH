@@ -77,3 +77,12 @@ check selector_skips_stable "$stable" no
 case "$PATH" in *[Ss]ystem32*) merged=yes ;; *) merged=no ;; esac
 check path_merge_on_first_read "$merged" yes
 check path_resolves_commands "$(command -v cmd > /dev/null && echo yes)" yes
+
+reader() {
+  local first second
+  read -r first
+  probe=$(cat <<< "buffered")
+  read -r second
+  printf '%s+%s' "$first" "$second"
+}
+check read_survives_redirect "$(printf 'one\ntwo\n' | reader)" "one+two"

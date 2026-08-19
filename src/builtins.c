@@ -1042,7 +1042,8 @@ static int builtin_read(int argc, char **argv) {
 
     StrBuf input;
     sb_init(&input);
-    if (read_line(stdin, &input) == 0) {
+    fflush(stdout);
+    if (read_line_fd(0, &input) == 0) {
         sb_free(&input);
         return 1;
     }

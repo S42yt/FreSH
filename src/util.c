@@ -10,6 +10,11 @@
 
 #include <ctype.h>
 #include <direct.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -135,6 +140,30 @@ int read_line(FILE *f, StrBuf *out) {
             out->data[out->len] = '\0';
         }
         return 1;
+    }
+    return any ? 2 : 0;
+}
+
+#ifndef _WIN32
+#define _read read
+#endif
+
+int read_line_fd(int fd, StrBuf *out) {
+    sb_clear(out);
+
+    char c;
+    int any = 0;
+
+    while (_read(fd, &c, 1) == 1) {
+        any = 1;
+        if (c == '\n') {
+            if (out->len && out->data[out->len - 1] == '\r') {
+                out->len--;
+                out->data[out->len] = '\0';
+            }
+            return 1;
+        }
+        sb_putc(out, c);
     }
     return any ? 2 : 0;
 }

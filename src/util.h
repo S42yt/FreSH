@@ -40,6 +40,7 @@ void sb_printf(StrBuf *sb, const char *fmt, ...);
 char *sb_take(StrBuf *sb);
 
 int read_line(FILE *f, StrBuf *out);
+int read_line_fd(int fd, StrBuf *out);
 
 void sl_init(StrList *l);
 void sl_free(StrList *l);
