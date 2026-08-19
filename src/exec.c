@@ -1147,28 +1147,6 @@ static void report_not_found(const char *name) {
     free(closest);
 }
 
-static void quote_argument(const char *text, StrBuf *out) {
-    sb_putc(out, '"');
-    size_t backslashes = 0;
-    for (const char *p = text; *p; p++) {
-        if (*p == '\\') {
-            backslashes++;
-            continue;
-        }
-        if (*p == '"') {
-            for (size_t i = 0; i < backslashes * 2 + 1; i++) sb_putc(out, '\\');
-            sb_putc(out, '"');
-            backslashes = 0;
-            continue;
-        }
-        for (size_t i = 0; i < backslashes; i++) sb_putc(out, '\\');
-        backslashes = 0;
-        sb_putc(out, *p);
-    }
-    for (size_t i = 0; i < backslashes * 2; i++) sb_putc(out, '\\');
-    sb_putc(out, '"');
-}
-
 static void quoted_assignment(const char *line, StrBuf *out) {
     const char *equals = strchr(line, '=');
     if (!equals) return;
@@ -1234,7 +1212,7 @@ static int exec_background_child(Node *node) {
     StrBuf command_line;
     sb_init(&command_line);
     sb_printf(&command_line, "\"%s\" --norc -c ", exe);
-    quote_argument(source.data, &command_line);
+    quote_argument(&command_line, source.data);
     sb_free(&source);
 
     STARTUPINFOA si;
