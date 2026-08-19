@@ -360,7 +360,7 @@ static int selector_interactive(const Early *releases, int count) {
         int end = start + SELECTOR_PAGE;
         if (end > count) end = count;
 
-        if (drawn) printf("\x1b[%dA", drawn);
+        if (drawn) printf("\x1b[%dA\x1b[J", drawn);
         drawn = 0;
 
         printf("\x1b[K  %s%d releases, page %d of %d%s\n", style(S_DIM), count, page + 1, pages,

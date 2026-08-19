@@ -199,7 +199,7 @@ release, and it is tagged from that branch rather than from master. It is built
 and released the same way, and the selector lists it as `26.11.0 experiment 1`,
 but `fresh update --pre` skips it: `--pre` offers prereleases and finished
 releases only. Somebody who wants an experiment picks it out of
-`fresh update --pre-selector` on purpose, and can leave it the same way.
+`fresh update --selector` on purpose, and can leave it the same way.
 
 A prerelease sorts below the release of the same number, so someone running
 `26.10.1-prerelease-2` is offered `26.10.1` when it arrives, and
