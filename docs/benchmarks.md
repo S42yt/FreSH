@@ -24,21 +24,23 @@ machine was doing. Windows Defender was left on, as it is on a real machine.
 
 How long a shell takes to start, run nothing, and exit.
 
-| Shell | Best of 40 |
+| Shell | Best of 60 |
 | --- | --- |
-| `cmd /c exit` | 14 ms |
-| **`FreSH --norc -c exit`** | **19 ms** |
-| **`FreSH -c exit`** | **22 ms** |
+| **`FreSH --norc -c exit`** | **9.5 ms** |
+| **`FreSH -c exit`** | **11.8 ms** |
+| `cmd /c exit` | 12.9 ms |
 | `bash -c exit` (Git Bash) | 236 ms |
 | `powershell -c exit` (5.1) | 271 ms |
 | `pwsh -c exit` (7.6) | 570 ms |
 
-FreSH starts about **10× faster than Git Bash and 25× faster than PowerShell 7**.
-The 22 ms includes reading `~/.freshrc`, loading the theme and loading four
-plugins; `--norc` skips all of that, the way bash skips its rc file for a non
-interactive shell.
+FreSH starts about **25× faster than Git Bash and 60× faster than PowerShell 7**,
+and since 26.11 it starts quicker than `cmd` as well, with or without its
+configuration. The 11.8 ms includes reading `~/.freshrc`, loading the theme and
+loading four plugins; `--norc` skips all of that, the way bash skips its rc file
+for a non interactive shell.
 
-Only `cmd` starts quicker, and only when it does nothing at all. See below.
+`cmd` used to win the empty case. [What changed in 26.11](#what-changed-in-2611)
+is how it stopped.
 
 ## Doing something
 
@@ -56,10 +58,10 @@ shell, while cmd spawns `sort.exe`, `findstr.exe` and `find.exe`. On Windows a
 process costs about 10 ms whoever asks for it, so the shell that spawns fewer
 of them wins.
 
-The honest summary: **cmd wins the empty case and loses every real one.** Its
-empty case is hard to beat because `cmd.exe` is a small system binary that
-Windows keeps warm; for scale, `hostname.exe` from System32 takes 20 ms to
-start on this machine, more than FreSH does.
+The honest summary: **cmd used to win the empty case and lose every real one.**
+Since 26.11 it loses the empty case too, by about 3 ms. For scale on how little
+of this is really about the shell, `hostname.exe` from System32 takes 20 ms to
+start on this machine, twice what FreSH does.
 
 ## Work inside one shell
 
@@ -203,41 +205,56 @@ The same three on the benchmark machine land inside a millisecond of each
 other. Startup is Windows creating a process and mapping an image; a language
 cannot move that floor, and neither can a smaller binary.
 
-What did move startup was doing less of it, and then carrying fewer bytes.
+What moved startup was doing less of it, and then importing less of Windows.
 
-**Doing less.** The `PATH` merge, the registry reads behind it, `advapi32`
-itself and the environment table are all deferred: the merge runs on the first
-read of `$PATH` or the first command lookup, and a shell that never needs them
-never pays. FreSH's own startup work fell from **4.2 ms to 0.7 ms**, measured
-by `FRESH_TIMING=1`, which now also prints the time from process creation to
+**Doing less.** The `PATH` merge, the registry reads behind it and the
+environment table are all deferred: the merge runs on the first read of `$PATH`
+or the first command lookup, and a shell that never needs them never pays.
+FreSH's own startup work fell from **4.2 ms to 0.7 ms**, measured by
+`FRESH_TIMING=1`, which now also prints the time from process creation to
 `main` so the two costs cannot be confused.
 
-**Carrying fewer bytes.** With the shell's own work under a millisecond, an
-experiment settled where the rest goes: a build whose `main` returns
-immediately takes the same wall time as a full `--norc -c exit` run, so the
-whole cost is Windows loading and scanning the image. That cost tracks size at
-roughly 2 ms per 100 KB on the machine above, which is Defender reading
-unsigned code on every launch. So the icon keeps only the sizes Windows
-renders, and `FreSH.exe` went **519 KB to 447 KB**.
+**Importing less.** With the shell's own work under a millisecond, everything
+left was in front of `main`, and the first theory was wrong. It looked like
+size, because a smaller binary had measured quicker, so the guess was Defender
+reading unsigned bytes at roughly 2 ms per 100 KB. Padded probes killed it: an
+otherwise empty program grown to **462 KB starts in 8.9 ms**, while FreSH at
+**418 KB took 16.6 ms**. Bytes were not the tax, and a probe stuffed with the
+strings a scanner ought to dislike started just as fast, so it was not the
+contents either.
+
+The import table was. FreSH pulled in three libraries before `main` for three
+commands almost nobody runs in a given shell: `advapi32` for the `Crypt`
+functions behind `md5sum` and friends, `shell32` for the one call `id` and
+`groups` make, and `user32` for the five clipboard calls behind `copy` and
+`paste`. `shell32` alone drags a long dependency chain in with it. All three
+load on first use now, and a shell that starts and exits imports `kernel32`
+and the C runtime and nothing else:
+
+| | before | after |
+| --- | --- | --- |
+| libraries at load | kernel32, msvcrt, advapi32, shell32, user32 | **kernel32, msvcrt** |
+| `FreSH --norc -c exit` | 16.6 ms | **9.5 ms** |
 
 Interleaved in one session, best of 60 per round, across rounds:
 
 | | best seen |
 | --- | --- |
-| `cmd /c exit` | 8.1 ms |
-| **`FreSH --norc -c exit`, 26.11** | **11.2 ms** |
-| `FreSH --norc -c exit`, 26.10 | 11.5 ms, and 3 to 7 ms worse under load |
+| **`FreSH --norc -c exit`** | **9.5 ms** |
+| **`FreSH -c exit`**, reading `.freshrc` | **11.8 ms** |
+| `cmd /c exit` | 12.9 ms |
+| `FreSH --norc -c exit`, 26.10 | 20.5 ms |
 
-The absolute numbers move several milliseconds with machine load, which is why
-they are given as the best of interleaved rounds rather than a single pair.
-The stable part is the gap: **2 to 4 ms behind `cmd`**, down from 5 to 6, and
-none of it is FreSH's own work any more. What remains is that `cmd.exe` is a
-small signed system binary Windows keeps warm and trusts, and FreSH is a
-447 KB unsigned one Defender reads every time. The honest path to parity is
-code signing, which is [in progress](code-signing.md); the dishonest one is
-asking users to exclude their shell from their antivirus, which FreSH will not
-do. `cmd` keeps the empty case; the [Doing something](#doing-something) table
-above is what happens the moment either shell is asked to do anything.
+**FreSH now starts quicker than `cmd`**, with or without its configuration,
+having been half again slower at the start of 26.11. The empty case was the
+last thing `cmd` won; the [Doing something](#doing-something) table above is
+what happens once either shell is asked to do anything.
+
+Two things are worth keeping from how this was found. The measurement that
+mattered was a control, not a profile: an empty program built the same way,
+padded to the same size, told us in one run that 7 ms had nothing to do with
+bytes. And the number that finally moved was not in FreSH's code at all, which
+is why `FRESH_TIMING=1` prints `before main` now.
 
 ## What changed in 26.10
 
