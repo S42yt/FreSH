@@ -20,6 +20,15 @@ check cut_field "$(echo 'a:b:c' | cut -d: -f2)" b
 check basename_path "$(basename /tmp/file.txt)" file.txt
 check dirname_path "$(dirname /tmp/file.txt)" /tmp
 
+mkdir -p .rm-tree/inner
+echo one > .rm-tree/file
+echo two > .rm-tree/inner/file
+rm -rf .rm-tree
+check rm_rf_removes_folder "$(test -d .rm-tree && echo still || echo gone)" gone
+mkdir -p .rm-slash
+rm -rf .rm-slash/
+check rm_rf_trailing_slash "$(test -d .rm-slash && echo still || echo gone)" gone
+
 check grep_match "$(printf 'apple\nbanana\n' | grep an)" banana
 check grep_invert "$(printf 'apple\nbanana\n' | grep -v an)" apple
 check grep_count "$(printf 'a\na\nb\n' | grep -c a)" 2

@@ -487,8 +487,41 @@ static int core_tee(int argc, char **argv) {
     return 0;
 }
 
+typedef struct {
+    DWORD Flags;
+} DispositionEx;
+
+#define DISPOSE_DELETE 0x1
+#define DISPOSE_POSIX 0x2
+#define DISPOSE_IGNORE_READONLY 0x10
+#define INFO_DISPOSITION_EX 21
+
+static int delete_entry(const char *path, int directory) {
+    HANDLE handle = CreateFileA(path, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                NULL, OPEN_EXISTING,
+                                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (handle != INVALID_HANDLE_VALUE) {
+        DispositionEx ex = {DISPOSE_DELETE | DISPOSE_POSIX | DISPOSE_IGNORE_READONLY};
+        BOOL done = SetFileInformationByHandle(handle, (FILE_INFO_BY_HANDLE_CLASS)INFO_DISPOSITION_EX,
+                                               &ex, sizeof(ex));
+        CloseHandle(handle);
+        if (done) return 0;
+    }
+
+    SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+    if (directory) {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            if (RemoveDirectoryA(path)) return 0;
+            if (GetLastError() != ERROR_DIR_NOT_EMPTY) break;
+            Sleep(10);
+        }
+        return 1;
+    }
+    return DeleteFileA(path) ? 0 : 1;
+}
+
 static int remove_recursive(const char *path) {
-    if (!path_is_dir(path)) return DeleteFileA(path) ? 0 : 1;
+    if (!path_is_dir(path)) return delete_entry(path, 0);
 
     char pattern[PATH_BUF];
     snprintf(pattern, sizeof(pattern), "%s\\*", path);
@@ -503,7 +536,7 @@ static int remove_recursive(const char *path) {
         } while (FindNextFileA(find, &data));
         FindClose(find);
     }
-    return RemoveDirectoryA(path) ? 0 : 1;
+    return delete_entry(path, 1);
 }
 
 static int core_rm(int argc, char **argv) {
@@ -515,6 +548,9 @@ static int core_rm(int argc, char **argv) {
         char native[PATH_BUF];
         snprintf(native, sizeof(native), "%s", argv[i]);
         path_to_backslashes(native);
+        size_t length = strlen(native);
+        while (length > 1 && native[length - 1] == '\\' && native[length - 2] != ':')
+            native[--length] = '\0';
 
         if (path_is_dir(native)) {
             if (!recursive) {
@@ -528,7 +564,7 @@ static int core_rm(int argc, char **argv) {
             }
             continue;
         }
-        if (!DeleteFileA(native) && !force) {
+        if (delete_entry(native, 0) != 0 && !force) {
             shell_error("rm: %s: no such file", argv[i]);
             status = 1;
         }
