@@ -258,6 +258,22 @@ static void assign_word(char *word) {
         return;
     }
     *eq = '\0';
+    size_t value_length = strlen(eq + 1);
+    if (eq[1] == '(' && value_length >= 2 && eq[value_length] == ')') {
+        char *inside = xstrndup(eq + 2, value_length - 2);
+        StrList items;
+        sl_init(&items);
+        char *cursor = inside;
+        char *item;
+        while ((item = str_next_field(&cursor, ' ')) != NULL) {
+            if (*item) sl_push_copy(&items, item);
+        }
+        var_set_array(word, &items, VAR_INDEXED);
+        sl_free(&items);
+        free(inside);
+        *eq = '=';
+        return;
+    }
     char *open = strchr(word, '[');
     if (open && word[strlen(word) - 1] == ']') {
         *open = '\0';

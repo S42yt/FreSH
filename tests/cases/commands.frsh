@@ -39,6 +39,20 @@ collect_filtered() {
 }
 check procsub_quoted_parens "$(collect_filtered)" "[real line]"
 
+local_arrays() {
+  local pkgs=() p
+  for p in one two; do
+    pkgs+=("$p")
+  done
+  printf '%d:%s' "${#pkgs[@]}" "${pkgs[1]}"
+}
+check local_empty_array_then_name "$(local_arrays)" "2:two"
+seeded() {
+  local seeds=(a b c) tail=z
+  printf '%d:%s:%s' "${#seeds[@]}" "${seeds[2]}" "$tail"
+}
+check local_seeded_array_then_scalar "$(seeded)" "3:c:z"
+
 mkdir -p .rm-tree/inner
 echo one > .rm-tree/file
 echo two > .rm-tree/inner/file

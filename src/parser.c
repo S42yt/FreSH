@@ -1033,6 +1033,36 @@ static Node *parse_simple(Parser *ps) {
 
         size_t text_length = t->text ? strlen(t->text) : 0;
         if (text_length > 1 && t->text[text_length - 1] == '=' &&
+            ps->tokens.items[ps->pos + 1].type == T_LPAREN && node->words.len > 0) {
+            StrBuf folded;
+            sb_init(&folded);
+            sb_puts(&folded, t->text);
+            sb_putc(&folded, '(');
+            advance(ps);
+            advance(ps);
+
+            int first = 1;
+            while (peek(ps)->type == T_WORD || peek(ps)->type == T_NEWLINE) {
+                if (peek(ps)->type == T_WORD) {
+                    if (!first) sb_putc(&folded, ' ');
+                    sb_puts(&folded, peek(ps)->text);
+                    first = 0;
+                }
+                advance(ps);
+            }
+            if (peek(ps)->type != T_RPAREN) {
+                unfinished(ps, ps->pos, "this array assignment has no closing )",
+                           "write: names=(one two three)");
+                sb_free(&folded);
+                node_free(node);
+                return NULL;
+            }
+            advance(ps);
+            sb_putc(&folded, ')');
+            sl_push(&node->words, sb_take(&folded));
+            continue;
+        }
+        if (text_length > 1 && t->text[text_length - 1] == '=' &&
             ps->tokens.items[ps->pos + 1].type == T_LPAREN) {
             Node *assign = node_new(N_ASSIGN_ARRAY);
             assign->name = xstrndup(t->text, text_length - 1);
