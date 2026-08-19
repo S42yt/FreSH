@@ -242,6 +242,30 @@ static char *scan_word(const char **p, int *quoted, int *incomplete) {
                     case '"': out = '"'; break;
                     default: handled = 0; break;
                     }
+                    if (!handled && escaped >= '0' && escaped <= '7') {
+                        int value = 0;
+                        int digits = 0;
+                        while (digits < 3 && (*p)[1 + digits] >= '0' && (*p)[1 + digits] <= '7') {
+                            value = value * 8 + ((*p)[1 + digits] - '0');
+                            digits++;
+                        }
+                        sb_putc(&sb, (char)value);
+                        *p += 1 + digits;
+                        continue;
+                    }
+                    if (!handled && escaped == 'x' && isxdigit((unsigned char)(*p)[2])) {
+                        int value = 0;
+                        int digits = 0;
+                        while (digits < 2 && isxdigit((unsigned char)(*p)[2 + digits])) {
+                            char h = (*p)[2 + digits];
+                            value = value * 16 +
+                                    (isdigit((unsigned char)h) ? h - '0' : (tolower(h) - 'a') + 10);
+                            digits++;
+                        }
+                        sb_putc(&sb, (char)value);
+                        *p += 2 + digits;
+                        continue;
+                    }
                     if (handled) {
                         sb_putc(&sb, out);
                         *p += 2;

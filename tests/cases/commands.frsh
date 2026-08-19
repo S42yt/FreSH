@@ -20,6 +20,14 @@ check cut_field "$(echo 'a:b:c' | cut -d: -f2)" b
 check basename_path "$(basename /tmp/file.txt)" file.txt
 check dirname_path "$(dirname /tmp/file.txt)" /tmp
 
+esc=$'\033[0m'
+check ansi_octal_escape "${#esc}" 4
+hex=$'\x41\x42'
+check ansi_hex_escape "$hex" AB
+printf -v padded '%*s' 5 ''
+check printf_star_width "[${padded// /-}]" '[-----]'
+check printf_star_precision "$(printf '%.*f' 2 3.14159)" 3.14
+
 mkdir -p .rm-tree/inner
 echo one > .rm-tree/file
 echo two > .rm-tree/inner/file

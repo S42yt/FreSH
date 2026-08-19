@@ -1043,10 +1043,23 @@ static int core_printf(int argc, char **argv) {
             spec[s++] = '%';
             p++;
             while (*p && strchr("-+ #0", *p) && s < sizeof(spec) - 4) spec[s++] = *p++;
-            while (isdigit((unsigned char)*p) && s < sizeof(spec) - 4) spec[s++] = *p++;
+            if (*p == '*') {
+                p++;
+                const char *width = next < argc ? argv[next++] : "0";
+                s += (size_t)snprintf(spec + s, sizeof(spec) - s - 4, "%ld", strtol(width, NULL, 10));
+            } else {
+                while (isdigit((unsigned char)*p) && s < sizeof(spec) - 4) spec[s++] = *p++;
+            }
             if (*p == '.') {
                 spec[s++] = *p++;
-                while (isdigit((unsigned char)*p) && s < sizeof(spec) - 4) spec[s++] = *p++;
+                if (*p == '*') {
+                    p++;
+                    const char *precision = next < argc ? argv[next++] : "0";
+                    s += (size_t)snprintf(spec + s, sizeof(spec) - s - 4, "%ld",
+                                          strtol(precision, NULL, 10));
+                } else {
+                    while (isdigit((unsigned char)*p) && s < sizeof(spec) - 4) spec[s++] = *p++;
+                }
             }
             char conv = *p;
             if (!conv) break;
