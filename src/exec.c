@@ -1149,7 +1149,12 @@ static void report_not_found(const char *name) {
 
 static void quoted_assignment(const char *line, StrBuf *out) {
     const char *equals = strchr(line, '=');
-    if (!equals) return;
+    if (!equals || equals == line) return;
+
+    if (!isalpha((unsigned char)line[0]) && line[0] != '_') return;
+    for (const char *p = line + 1; p < equals; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_') return;
+    }
 
     sb_putn(out, line, (size_t)(equals - line) + 1);
     const char *value = equals + 1;
