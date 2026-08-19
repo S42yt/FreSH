@@ -4,7 +4,7 @@ set -e
 CC=${CC:-gcc}
 WINDRES=${WINDRES:-windres}
 CFLAGS="-std=c11 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601"
-CFLAGS="$CFLAGS -ffunction-sections -fdata-sections $FRESH_EXTRA_CFLAGS"
+CFLAGS="$CFLAGS -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables $FRESH_EXTRA_CFLAGS"
 LDFLAGS="-s -Wl,--gc-sections"
 BUILD=build
 HOT_FILES="exec expand vars util parser coreutils regex"
