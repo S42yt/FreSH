@@ -602,14 +602,14 @@ static int more_id(int argc, char **argv) {
     DWORD host_size = sizeof(host);
     if (!GetComputerNameA(host, &host_size)) snprintf(host, sizeof(host), "?");
 
-    printf("user=%s host=%s admin=%s\n", user, host, IsUserAnAdmin() ? "yes" : "no");
+    printf("user=%s host=%s admin=%s\n", user, host, running_elevated() ? "yes" : "no");
     return 0;
 }
 
 static int more_groups(int argc, char **argv) {
     (void)argc;
     (void)argv;
-    printf("%s\n", IsUserAnAdmin() ? "users administrators" : "users");
+    printf("%s\n", running_elevated() ? "users administrators" : "users");
     return 0;
 }
 
@@ -723,38 +723,72 @@ static int more_open(int argc, char **argv) {
     return 0;
 }
 
+typedef BOOL(WINAPI *AcquireFn)(HCRYPTPROV *, LPCSTR, LPCSTR, DWORD, DWORD);
+typedef BOOL(WINAPI *CreateHashFn)(HCRYPTPROV, ALG_ID, HCRYPTKEY, DWORD, HCRYPTHASH *);
+typedef BOOL(WINAPI *HashDataFn)(HCRYPTHASH, const BYTE *, DWORD, DWORD);
+typedef BOOL(WINAPI *HashParamFn)(HCRYPTHASH, DWORD, BYTE *, DWORD *, DWORD);
+typedef BOOL(WINAPI *DestroyHashFn)(HCRYPTHASH);
+typedef BOOL(WINAPI *ReleaseFn)(HCRYPTPROV, DWORD);
+
+static AcquireFn crypt_acquire;
+static CreateHashFn crypt_create_hash;
+static HashDataFn crypt_hash_data;
+static HashParamFn crypt_hash_param;
+static DestroyHashFn crypt_destroy_hash;
+static ReleaseFn crypt_release;
+
+static int crypt_ready(void) {
+    static HMODULE library = NULL;
+    if (library) return crypt_acquire != NULL;
+
+    library = LoadLibraryA("advapi32.dll");
+    if (!library) return 0;
+
+    crypt_acquire = (AcquireFn)(void *)GetProcAddress(library, "CryptAcquireContextA");
+    crypt_create_hash = (CreateHashFn)(void *)GetProcAddress(library, "CryptCreateHash");
+    crypt_hash_data = (HashDataFn)(void *)GetProcAddress(library, "CryptHashData");
+    crypt_hash_param = (HashParamFn)(void *)GetProcAddress(library, "CryptGetHashParam");
+    crypt_destroy_hash = (DestroyHashFn)(void *)GetProcAddress(library, "CryptDestroyHash");
+    crypt_release = (ReleaseFn)(void *)GetProcAddress(library, "CryptReleaseContext");
+
+    return crypt_acquire && crypt_create_hash && crypt_hash_data && crypt_hash_param &&
+           crypt_destroy_hash && crypt_release;
+}
+
 static int hash_file(const char *path, ALG_ID algorithm, char *out, size_t out_size) {
     HCRYPTPROV provider = 0;
     HCRYPTHASH hash = 0;
+    if (!crypt_ready()) return 0;
+
     FILE *f = open_input(path);
     if (!f) return 0;
 
-    if (!CryptAcquireContextA(&provider, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+    if (!crypt_acquire(&provider, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
         close_input(f);
         return 0;
     }
-    if (!CryptCreateHash(provider, algorithm, 0, 0, &hash)) {
-        CryptReleaseContext(provider, 0);
+    if (!crypt_create_hash(provider, algorithm, 0, 0, &hash)) {
+        crypt_release(provider, 0);
         close_input(f);
         return 0;
     }
 
     unsigned char buffer[8192];
     size_t n;
-    while ((n = fread(buffer, 1, sizeof(buffer), f)) > 0) CryptHashData(hash, buffer, (DWORD)n, 0);
+    while ((n = fread(buffer, 1, sizeof(buffer), f)) > 0) crypt_hash_data(hash, buffer, (DWORD)n, 0);
     close_input(f);
 
     unsigned char digest[64];
     DWORD digest_size = sizeof(digest);
-    int ok = CryptGetHashParam(hash, HP_HASHVAL, digest, &digest_size, 0) != 0;
+    int ok = crypt_hash_param(hash, HP_HASHVAL, digest, &digest_size, 0) != 0;
 
     if (ok) {
         size_t offset = 0;
         for (DWORD i = 0; i < digest_size && offset + 2 < out_size; i++)
             offset += (size_t)snprintf(out + offset, out_size - offset, "%02x", digest[i]);
     }
-    CryptDestroyHash(hash);
-    CryptReleaseContext(provider, 0);
+    crypt_destroy_hash(hash);
+    crypt_release(provider, 0);
     return ok;
 }
 
