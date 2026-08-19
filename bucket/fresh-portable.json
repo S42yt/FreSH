@@ -1,12 +1,12 @@
 {
-    "version": "26.10.0",
+    "version": "26.11.0",
     "description": "FreSH portable - a fast, zsh flavoured shell for Windows. Single executable, no installer.",
     "homepage": "https://github.com/S42yt/FreSH",
     "license": "GPL-3.0-only",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/S42yt/FreSH/releases/download/v26.10.0/FreSH.exe",
-            "hash": "527f4ceef3603c387bb2b34a4b7af32a2872febab448a8ed4e660af5c9d67d7d"
+            "url": "https://github.com/S42yt/FreSH/releases/download/v26.11.0/FreSH.exe",
+            "hash": "6db753204f7ed3b7051eb80a76aa490233789c158be7d1e4729ff5b4fb0219ab"
         }
     },
     "bin": "FreSH.exe",
@@ -19,11 +19,11 @@
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/S42yt/FreSH/releases/download/v26.10.0/FreSH.exe"
+                "url": "https://github.com/S42yt/FreSH/releases/download/v26.11.0/FreSH.exe"
             }
         },
         "hash": {
-            "url": "https://github.com/S42yt/FreSH/releases/download/v26.10.0/SHA256SUMS.txt"
+            "url": "https://github.com/S42yt/FreSH/releases/download/v26.11.0/SHA256SUMS.txt"
         }
     }
 }
