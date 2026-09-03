@@ -1505,9 +1505,12 @@ static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out)
 
 static int stage_runs_in_process(Node *node) {
     if (node->kind != N_SIMPLE) return 1;
-    if (node->words.len == 0) return 1;
 
-    const char *word = node->words.items[0];
+    size_t first = 0;
+    while (first < node->words.len && is_assignment(node->words.items[first])) first++;
+    if (first == node->words.len) return 1;
+
+    const char *word = node->words.items[first];
     if (strpbrk(word, "$`\"'\\*?")) return 0;
     if (function_find(word) || builtin_lookup(word)) return 1;
     if (coreutil_preferred(word)) return 1;
