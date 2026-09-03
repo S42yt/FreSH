@@ -139,6 +139,7 @@ jobs:
           ./build/FreSH.exe -c 'echo hello from $(pwd)'
           ./build/FreSH.exe -c 'for i in 1 2 3; do echo $i; done'
           ./build/FreSH.exe -c 'uname -a'
+          ./build/FreSH.exe --norc -c 'echo "TEMP=$TEMP"; f=$(mktemp); echo "tmp=$f"; echo data > "$f"; cat "$f"; cat <(echo substituted); echo "procsub status $?"; ( echo bg ) > bg.out & wait $!; echo "bg status $?"; cat bg.out' || echo "diagnostic exit $?"
 
       - name: Test suite
         timeout-minutes: 10
