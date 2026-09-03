@@ -13,7 +13,7 @@
 #include "platform.h"
 
 #include "builtins.h"
-#include "coreutils.h"
+#include "commands.h"
 #include "exec.h"
 #include "foreign.h"
 #include "help.h"

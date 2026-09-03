@@ -25,7 +25,7 @@ extern char **environ;
 #include "term.h"
 
 #include "builtins.h"
-#include "coreutils.h"
+#include "commands.h"
 #include "expand.h"
 #include "foreign.h"
 #include "parser.h"
@@ -1510,6 +1510,7 @@ static int stage_runs_in_process(Node *node) {
     const char *word = node->words.items[0];
     if (strpbrk(word, "$`\"'\\*?")) return 0;
     if (function_find(word) || builtin_lookup(word)) return 1;
+    if (coreutil_preferred(word)) return 1;
 
     char path[PATH_BUF];
     if (resolve_command(word, path, sizeof(path))) return is_shell_script(path);
@@ -1816,6 +1817,25 @@ static int walk_threads(DWORD pid, int suspend) {
 }
 
 #endif
+
+long jobs_pid(int id) {
+    int index = job_index(id);
+    return index < 0 ? -1 : (long)jobs[index].pid;
+}
+
+int jobs_suspend_pid(unsigned long pid) {
+    int stopped = walk_threads((DWORD)pid, 1) != 0;
+    for (int i = 0; i < job_count; i++)
+        if (jobs[i].pid == pid && stopped) jobs[i].stopped = 1;
+    return stopped;
+}
+
+int jobs_resume_pid(unsigned long pid) {
+    int resumed = walk_threads((DWORD)pid, 0) != 0;
+    for (int i = 0; i < job_count; i++)
+        if (jobs[i].pid == pid && resumed) jobs[i].stopped = 0;
+    return resumed;
+}
 
 int jobs_suspend(int id) {
     int index = job_index(id);

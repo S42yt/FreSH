@@ -47,6 +47,9 @@ int jobs_wait_all(void);
 int jobs_foreground(int id);
 int jobs_resume(int id);
 int jobs_suspend(int id);
+long jobs_pid(int id);
+int jobs_suspend_pid(unsigned long pid);
+int jobs_resume_pid(unsigned long pid);
 void jobs_cleanup(void);
 void run_trap(const char *command);
 

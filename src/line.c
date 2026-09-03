@@ -13,7 +13,7 @@
 
 #include "builtins.h"
 #include "complete.h"
-#include "coreutils.h"
+#include "commands.h"
 #include "exec.h"
 #include "foreign.h"
 #include "history.h"

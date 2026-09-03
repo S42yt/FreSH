@@ -1,0 +1,3 @@
+# case	reason, one per line, tab separated
+system	macOS has BSD hashes, its own uid layout and no GNU date to compare with
+files	macOS file types, stat fields and du block sizes differ from Linux

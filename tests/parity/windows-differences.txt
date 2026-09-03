@@ -1,0 +1,3 @@
+# case	reason, one per line, tab separated
+files	Windows has no permission bits, links need developer mode, and the file type strings differ
+system	Windows has no uid, no signals beyond terminate, and the hash tools are the Windows ones

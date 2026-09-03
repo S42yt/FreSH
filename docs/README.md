@@ -40,6 +40,8 @@
 - [Tests](../tests/README.md), the suite that runs on every build
 - [Differential tests](../tests/diff/README.md), the same scripts through real
   bash and through FreSH, diffed
+- [Command parity tests](../tests/parity/README.md), the bundled unix commands
+  against the GNU originals, diffed the same way
 - [Fuzzing](../fuzz/README.md), the parser, the regular expression engine and
   awk under libFuzzer and the sanitizers
 

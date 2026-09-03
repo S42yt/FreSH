@@ -22,7 +22,8 @@ typedef enum {
     R_GROUP_END,
     R_BOL,
     R_EOL,
-    R_BACKREF
+    R_BACKREF,
+    R_BOUNDARY
 } RegexKind;
 
 typedef struct RegexNode {
@@ -64,7 +65,13 @@ typedef struct {
     int start[REGEX_GROUPS];
     int end[REGEX_GROUPS];
     int steps;
+    int icase;
 } State;
+
+static int same_char(const State *st, char a, char b) {
+    if (a == b) return 1;
+    return st->icase && tolower((unsigned char)a) == tolower((unsigned char)b);
+}
 
 static RegexNode *node_new(NodePool *pool, RegexKind kind) {
     if (pool->len + 1 >= pool->cap) {
@@ -120,6 +127,35 @@ static RegexNode *parse_class(Parser *ps) {
     int first = 1;
     while (*ps->pattern && (*ps->pattern != ']' || first)) {
         first = 0;
+        if (*ps->pattern == '[' && ps->pattern[1] == ':') {
+            const char *close = strstr(ps->pattern + 2, ":]");
+            if (close) {
+                size_t length = (size_t)(close - ps->pattern - 2);
+                char name[16];
+                if (length < sizeof(name)) {
+                    memcpy(name, ps->pattern + 2, length);
+                    name[length] = '\0';
+                    for (int c = 1; c < 256; c++) {
+                        int in = 0;
+                        if (strcmp(name, "alpha") == 0) in = isalpha(c);
+                        else if (strcmp(name, "digit") == 0) in = isdigit(c);
+                        else if (strcmp(name, "alnum") == 0) in = isalnum(c);
+                        else if (strcmp(name, "upper") == 0) in = isupper(c);
+                        else if (strcmp(name, "lower") == 0) in = islower(c);
+                        else if (strcmp(name, "space") == 0) in = isspace(c);
+                        else if (strcmp(name, "blank") == 0) in = c == ' ' || c == '\t';
+                        else if (strcmp(name, "punct") == 0) in = ispunct(c);
+                        else if (strcmp(name, "print") == 0) in = isprint(c);
+                        else if (strcmp(name, "graph") == 0) in = isgraph(c);
+                        else if (strcmp(name, "cntrl") == 0) in = iscntrl(c);
+                        else if (strcmp(name, "xdigit") == 0) in = isxdigit(c);
+                        if (in) set_add(node, (unsigned char)c);
+                    }
+                    ps->pattern = close + 2;
+                    continue;
+                }
+            }
+        }
         if (*ps->pattern == '\\' && ps->pattern[1]) {
             ps->pattern++;
             char escape = *ps->pattern++;
@@ -199,6 +235,11 @@ static RegexNode *parse_atom(Parser *ps) {
         if (isdigit((unsigned char)escape)) {
             RegexNode *node = node_new(ps->pool, R_BACKREF);
             node->group = escape - '0';
+            return node;
+        }
+        if (escape == 'b' || escape == 'B' || escape == '<' || escape == '>') {
+            RegexNode *node = node_new(ps->pool, R_BOUNDARY);
+            node->ch = escape;
             return node;
         }
         RegexNode *node = node_new(ps->pool, R_CHAR);
@@ -326,16 +367,21 @@ static int match_node(RegexNode *node, const char *pos, Cont *k, State *st) {
 
     switch (node->kind) {
     case R_CHAR:
-        if (*pos != node->ch) return 0;
+        if (!*pos || !same_char(st, *pos, node->ch)) return 0;
         return match_cont(k, pos + 1, st);
 
     case R_ANY:
-        if (!*pos || *pos == '\n') return 0;
+        if (!*pos) return 0;
         return match_cont(k, pos + 1, st);
 
     case R_CLASS: {
         if (!*pos) return 0;
         int has = set_has(node, (unsigned char)*pos);
+        if (!has && st->icase) {
+            unsigned char lower = (unsigned char)tolower((unsigned char)*pos);
+            unsigned char upper = (unsigned char)toupper((unsigned char)*pos);
+            has = set_has(node, lower) || set_has(node, upper);
+        }
         if (node->negate ? has : !has) return 0;
         return match_cont(k, pos + 1, st);
     }
@@ -347,6 +393,18 @@ static int match_node(RegexNode *node, const char *pos, Cont *k, State *st) {
     case R_EOL:
         if (*pos && *pos != '\n') return 0;
         return match_cont(k, pos, st);
+
+    case R_BOUNDARY: {
+        int before = pos > st->text && (isalnum((unsigned char)pos[-1]) || pos[-1] == '_');
+        int after = *pos && (isalnum((unsigned char)*pos) || *pos == '_');
+        int ok;
+        if (node->ch == 'b') ok = before != after;
+        else if (node->ch == 'B') ok = before == after;
+        else if (node->ch == '<') ok = !before && after;
+        else ok = before && !after;
+        if (!ok) return 0;
+        return match_cont(k, pos, st);
+    }
 
     case R_SEQ: {
         Cont frame = {node->right, NULL, 0, NULL, k};
@@ -377,7 +435,10 @@ static int match_node(RegexNode *node, const char *pos, Cont *k, State *st) {
         int group = node->group;
         if (group >= REGEX_GROUPS || st->start[group] < 0 || st->end[group] < 0) return 0;
         size_t length = (size_t)(st->end[group] - st->start[group]);
-        if (strncmp(pos, st->text + st->start[group], length) != 0) return 0;
+        const char *captured = st->text + st->start[group];
+        for (size_t i = 0; i < length; i++) {
+            if (!pos[i] || !same_char(st, pos[i], captured[i])) return 0;
+        }
         return match_cont(k, pos + length, st);
     }
 
@@ -389,7 +450,8 @@ static int match_node(RegexNode *node, const char *pos, Cont *k, State *st) {
     return 0;
 }
 
-static int run(const char *pattern, const char *text, RegexMatch *match) {
+static int run(const char *pattern, const char *text, size_t offset, int flags,
+               RegexMatch *match) {
     NodePool pool;
     memset(&pool, 0, sizeof(pool));
 
@@ -405,10 +467,11 @@ static int run(const char *pattern, const char *text, RegexMatch *match) {
         return 0;
     }
 
-    for (const char *start = text;; start++) {
+    for (const char *start = text + offset;; start++) {
         State st;
         st.text = text;
         st.steps = 0;
+        st.icase = (flags & REGEX_ICASE) != 0;
         for (int i = 0; i < REGEX_GROUPS; i++) {
             st.start[i] = -1;
             st.end[i] = -1;
@@ -456,7 +519,26 @@ void regex_bre_to_ere(const char *bre, StrBuf *out) {
 
 int regex_search(const char *pattern, const char *text, RegexMatch *match) {
     if (!pattern || !text) return 0;
-    return run(pattern, text, match);
+    return run(pattern, text, 0, 0, match);
+}
+
+int regex_search_at(const char *pattern, const char *text, size_t offset, int flags,
+                    RegexMatch *match) {
+    if (!pattern || !text || offset > strlen(text)) return 0;
+    return run(pattern, text, offset, flags, match);
+}
+
+int regex_valid(const char *pattern) {
+    NodePool pool;
+    memset(&pool, 0, sizeof(pool));
+    Parser ps;
+    ps.pattern = pattern;
+    ps.pool = &pool;
+    ps.groups = 0;
+    ps.failed = 0;
+    parse_alt(&ps);
+    pool_free(&pool);
+    return !ps.failed;
 }
 
 int regex_replace(const char *pattern, const char *replacement, const char *text, int global,

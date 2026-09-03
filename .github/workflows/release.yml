@@ -40,10 +40,24 @@ jobs:
           chmod +x tests/diff/*.sh
           tests/diff/record.sh bash tests/diff/expected
 
+      - name: Record what the GNU commands do
+        shell: bash
+        run: |
+          sed --version | head -n 1
+          grep --version | head -n 1
+          find --version | head -n 1
+          CASES=$PWD/tests/parity/cases tests/diff/record.sh bash tests/parity/expected
+
       - uses: actions/upload-artifact@v4
         with:
           name: bash-expectations
           path: tests/diff/expected
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parity-expectations
+          path: tests/parity/expected
           retention-days: 7
 
   windows:
@@ -160,6 +174,17 @@ jobs:
           tests/diff/record.sh "$PWD/build/FreSH.exe" tests/diff/actual
           tests/diff/compare.sh tests/diff/expected tests/diff/actual
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: parity-expectations
+          path: tests/parity/expected
+
+      - name: Command parity against GNU
+        shell: bash
+        run: |
+          FRESH_PREFER_BUNDLED=1 CASES=$PWD/tests/parity/cases tests/diff/record.sh "$PWD/build/FreSH.exe" tests/parity/actual
+          KNOWN=$PWD/tests/parity/windows-differences.txt tests/diff/compare.sh tests/parity/expected tests/parity/actual
+
       - name: Name the binaries
         shell: bash
         run: |
@@ -245,6 +270,17 @@ jobs:
           chmod +x tests/diff/*.sh
           tests/diff/record.sh "$PWD/build/fresh" tests/diff/actual
           tests/diff/compare.sh tests/diff/expected tests/diff/actual
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: parity-expectations
+          path: tests/parity/expected
+
+      - name: Command parity against GNU
+        shell: bash
+        run: |
+          FRESH_PREFER_BUNDLED=1 CASES=$PWD/tests/parity/cases tests/diff/record.sh "$PWD/build/fresh" tests/parity/actual
+          KNOWN=$PWD/tests/parity/macos-differences.txt tests/diff/compare.sh tests/parity/expected tests/parity/actual
 
       - name: Differential test against the bash that ships with macOS
         continue-on-error: true
@@ -354,6 +390,17 @@ jobs:
           chmod +x tests/diff/*.sh
           tests/diff/record.sh "$PWD/build/fresh" tests/diff/actual
           tests/diff/compare.sh tests/diff/expected tests/diff/actual
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: parity-expectations
+          path: tests/parity/expected
+
+      - name: Command parity against GNU
+        shell: bash
+        run: |
+          FRESH_PREFER_BUNDLED=1 CASES=$PWD/tests/parity/cases tests/diff/record.sh "$PWD/build/fresh" tests/parity/actual
+          KNOWN=$PWD/tests/parity/known-differences.txt tests/diff/compare.sh tests/parity/expected tests/parity/actual
 
       - name: Name the binary
         shell: bash

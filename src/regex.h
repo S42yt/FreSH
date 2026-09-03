@@ -17,8 +17,13 @@ typedef struct {
     int count;
 } RegexMatch;
 
+#define REGEX_ICASE 1
+
 void regex_bre_to_ere(const char *bre, StrBuf *out);
 int regex_search(const char *pattern, const char *text, RegexMatch *match);
+int regex_search_at(const char *pattern, const char *text, size_t offset, int flags,
+                    RegexMatch *match);
+int regex_valid(const char *pattern);
 int regex_replace(const char *pattern, const char *replacement, const char *text, int global,
                   StrBuf *out);
 

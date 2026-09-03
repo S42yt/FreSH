@@ -17,7 +17,7 @@
 #include <shellapi.h>
 #endif
 
-#include "coreutils.h"
+#include "commands.h"
 #include "exec.h"
 #include "expand.h"
 #include "foreign.h"
@@ -869,9 +869,11 @@ static int builtin_ls(int argc, char **argv) {
     WIN32_FIND_DATAA data;
     HANDLE find = FindFirstFileA(pattern, &data);
     if (find == INVALID_HANDLE_VALUE) {
-        shell_error("ls: %s: no such file or directory", target);
-        return 1;
+        shell_error("ls: cannot access '%s': No such file or directory", target);
+        return 2;
     }
+    int plain = !_isatty(_fileno(stdout));
+    if (plain) one_per_line = 1;
 
     StrList names;
     sl_init(&names);
@@ -897,7 +899,7 @@ static int builtin_ls(int argc, char **argv) {
         }
 
         const char *color = entry_color(&data);
-        char marker = entry_marker(&data);
+        char marker = plain ? (char)0 : entry_marker(&data);
         size_t visible = strlen(data.cFileName) + (marker ? 1 : 0);
         if (visible > longest) longest = visible;
 
@@ -930,7 +932,7 @@ static int builtin_ls(int argc, char **argv) {
     }
     sl_free(&names);
 
-    if (directories + files > 0) {
+    if (directories + files > 0 && !plain) {
         char size_text[32];
         human_size(total, size_text, sizeof(size_text));
         printf("%s%s %d director%s, %d file%s, %s%s\n", style(S_DIM), S_LAMBDA, directories,
@@ -1389,8 +1391,7 @@ static int builtin_copy(int argc, char **argv) {
 }
 
 static int builtin_paste(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    if (argc > 1 || !_isatty(_fileno(stdin))) return coreutil_lookup("paste")(argc, argv);
 
     StrBuf text;
     sb_init(&text);
