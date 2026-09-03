@@ -109,8 +109,7 @@ jobs:
           cd rust/core
           cargo build --release --target ${{ matrix.rust_target }}
 
-      - name: Build with borrow checking and run the suite under it
-        timeout-minutes: 10
+      - name: Build with borrow checking
         shell: msys2 {0}
         env:
           CC: ${{ matrix.cc }}
@@ -119,9 +118,16 @@ jobs:
         run: |
           chmod +x build.sh
           FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
-          ./build/FreSH.exe --norc -c 'set -x; cat <(echo substituted) 2>&1; echo "procsub status $?"; ls "$TEMP" | head -5; { echo grouped; } > grp.out; cat grp.out' 2>&1 || echo "diagnostic exit $?"
-          ./build/FreSH.exe --norc -c 'source tests/lib.frsh; BG=hidden; bg_out=.bgp; g() { printf "%s" "$BG"; }; ( g ) > "$bg_out" & wait $! 2> /dev/null; echo "bg status $?"; ls -la .bgp; cat .bgp; echo' 2>&1 || echo "diagnostic exit $?"
-          ./build/FreSH.exe --norc -c 'g() { printf hidden; }; ( g ) > .bgq & wait $!; echo "plain bg status $?"; cat .bgq; echo' 2>&1 || echo "diagnostic exit $?"
+          echo "msys TEMP=$TEMP"
+          ./build/FreSH.exe --norc -c 'set -x; PATH=""; cat <(echo bundled-cat) 2>&1; echo "bundled procsub status $?"' 2>&1 || echo "diagnostic exit $?"
+          ./build/FreSH.exe --norc -c 'set -x; export TEMP="$USERPROFILE\AppData\Local\Temp" TMP="$USERPROFILE\AppData\Local\Temp"; cat <(echo windows-temp) 2>&1; echo "windows temp procsub status $?"' 2>&1 || echo "diagnostic exit $?"
+          ./build/FreSH.exe --norc -c 'set -x; cat <(echo msys-temp) 2>&1; echo "msys temp procsub status $?"; ls -la "$TEMP"' 2>&1 || echo "diagnostic exit $?"
+
+      - name: Run the suite under borrow checking
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          echo "bash TEMP=$TEMP"
           ./build/FreSH.exe tests/run.frsh
 
       - name: Build
