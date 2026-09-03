@@ -180,6 +180,7 @@ jobs:
           path: tests/parity/expected
 
       - name: Command parity against GNU
+        timeout-minutes: 20
         shell: bash
         run: |
           FRESH_PREFER_BUNDLED=1 CASES=$PWD/tests/parity/cases tests/diff/record.sh "$PWD/build/FreSH.exe" tests/parity/actual
@@ -277,6 +278,7 @@ jobs:
           path: tests/parity/expected
 
       - name: Command parity against GNU
+        timeout-minutes: 20
         shell: bash
         run: |
           FRESH_PREFER_BUNDLED=1 CASES=$PWD/tests/parity/cases tests/diff/record.sh "$PWD/build/fresh" tests/parity/actual
@@ -397,6 +399,7 @@ jobs:
           path: tests/parity/expected
 
       - name: Command parity against GNU
+        timeout-minutes: 20
         shell: bash
         run: |
           FRESH_PREFER_BUNDLED=1 CASES=$PWD/tests/parity/cases tests/diff/record.sh "$PWD/build/fresh" tests/parity/actual
