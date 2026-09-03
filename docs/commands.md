@@ -154,22 +154,27 @@ than rejected, so check this page when a script behaves oddly.
 
 ## Platforms
 
-FreSH is one set of sources on Windows and macOS, and the builtins and the
-bundled commands above are the same on both. What differs:
+FreSH is one set of sources on Windows, macOS and Linux, and the builtins and
+the bundled commands above are the same everywhere. What differs:
 
 - the PowerShell and cmd routing below, `ps1` and `cmd` exist only on Windows
-- `copy` and `paste` use the Windows clipboard or the macOS pasteboard
-- `admin` reopens FreSH elevated on Windows and runs it through `sudo` on macOS
-- `extract` unpacks zip files with PowerShell on Windows and `unzip` on macOS
-- `ps`, `pkill` and `df` are Windows fallbacks; macOS always has the real ones
-- `md5sum`, `sha1sum` and `sha256sum` call `md5` and `shasum` on macOS
-- `uname` says `Windows` on Windows and, on macOS, what the system `uname` says
-- `PATH` is split on `;` on Windows and `:` on macOS, and only files with the
+- `copy` and `paste` use the Windows clipboard, the macOS pasteboard, or
+  `xclip` / `wl-copy` on Linux
+- `admin` reopens FreSH elevated on Windows and runs it through `sudo` elsewhere
+- `extract` unpacks zip files with PowerShell on Windows and `unzip` elsewhere
+- `open` uses the shell association on Windows, `open` on macOS, `xdg-open` on
+  Linux
+- `ps`, `pkill` and `df` are Windows fallbacks; unix systems have the real ones
+- `md5sum`, `sha1sum` and `sha256sum` call `md5` and `shasum` on macOS and the
+  coreutils of the same name on Linux
+- `uname` says `Windows` on Windows and, elsewhere, what the system `uname` says
+- `PATH` is split on `;` on Windows and `:` elsewhere, and only files with the
   execute bit count as commands there, the way bash sees them
 
 Because a bundled command only runs when nothing on `PATH` has its name, a Mac
-uses its own `ls`, `sort`, `sed` and so on for everything but the shadowed
-list above, so scripts behave the way the rest of the machine does.
+or a Linux box uses its own `ls`, `sort`, `sed` and so on for everything but
+the shadowed list above, so scripts behave the way the rest of the machine
+does.
 
 ## PowerShell and cmd
 

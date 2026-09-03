@@ -7,7 +7,7 @@
 <p align="center">
   <b>Runs bash scripts on Windows, unchanged.</b><br>
   No WSL, no MSYS2, no Git Bash. One executable, written in C, starts in 9.5 ms.<br>
-  The same shell builds and runs on macOS.
+  The same shell runs on macOS and Linux, and on ARM as well as x64.
 </p>
 
 ![FreSH](./assets/FreSH_tui.png)
@@ -18,10 +18,16 @@ scoop install fresh/fresh              # or: scoop install fresh/fresh-portable
 ```
 
 Or download `FreSH.exe` from the [releases](https://github.com/S42yt/FreSH/releases)
-and put it on your `PATH`. Nothing else is needed. On a Mac, download
-`fresh-macos-arm64` instead. Every way to install it, including the installer,
-the portable build and the macOS binary, is in [installing](docs/installing.md),
-and [verifying the download](docs/verifying.md) takes one command.
+and put it on your `PATH`. Nothing else is needed. On a Mac or a Linux
+box:
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/S42yt/FreSH/master/install.sh)"
+```
+
+Windows on ARM gets `FreSH-Setup-arm64.exe`. Every way to install it is in
+[installing](docs/installing.md), and [verifying the download](docs/verifying.md)
+takes one command.
 
 ## What it is
 

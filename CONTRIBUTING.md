@@ -87,7 +87,8 @@ add trailers naming the tools you used.
 
 ### The platform layer
 
-FreSH runs on Windows and macOS from one set of sources. No file includes
+FreSH runs on Windows, macOS and Linux, on x64 and ARM, from one set of
+sources. No file includes
 `<windows.h>`; they include `"platform.h"`, which is the Win32 API on Windows
 and, on POSIX, the subset of it FreSH uses, implemented in
 `src/platform_posix.c` over `open`, `opendir`, `posix_spawn` and `termios`.
@@ -100,9 +101,9 @@ the clipboard, it gets an `#ifdef _WIN32` fork at the smallest point that
 works, with the POSIX side doing the equivalent thing (`pbcopy`, `sudo`,
 `unzip`) or saying plainly that it is not available. Paths use `PATH_SEP` and
 `PATH_LIST_SEP`, never a literal backslash or semicolon, and `path_last_sep`
-finds the leaf on both. The macOS job in CI builds, runs the suite and runs
-the bash differential on every push, so a change that only compiles on one
-side does not merge.
+finds the leaf on both. CI builds, runs the suite and runs the bash
+differential on Windows x64, Windows ARM64, macOS and Linux on every push, so
+a change that only compiles on one side does not merge.
 
 ### The Rust core
 

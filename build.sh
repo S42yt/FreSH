@@ -21,14 +21,31 @@ if [ "$windows" = 1 ]; then
     LDFLAGS="-s -Wl,--gc-sections"
     RUST_TARGET=${FRESH_RUST_TARGET:-x86_64-pc-windows-gnu}
     OUTPUT="$BUILD/FreSH.exe"
+    if ! command -v "$WINDRES" > /dev/null 2>&1 && command -v llvm-windres > /dev/null 2>&1; then
+        WINDRES=llvm-windres
+    fi
 else
     CC=${FRESH_CC:-cc}
     CFLAGS="$CFLAGS -D_GNU_SOURCE"
-    case "$(uname -s)" in
+    host=$(uname -s)
+    case "$host" in
         Darwin) LDFLAGS="-Wl,-dead_strip" ;;
         *) LDFLAGS="-s -Wl,--gc-sections" ;;
     esac
-    RUST_TARGET=${FRESH_RUST_TARGET:-$(rustc -vV 2> /dev/null | sed -n 's/^host: //p')}
+    if [ -n "$FRESH_TARGET_ARCH" ] && [ "$host" = Darwin ]; then
+        CFLAGS="$CFLAGS -arch $FRESH_TARGET_ARCH"
+        LDFLAGS="$LDFLAGS -arch $FRESH_TARGET_ARCH"
+        case "$FRESH_TARGET_ARCH" in
+            arm64) rust_arch=aarch64 ;;
+            *) rust_arch=$FRESH_TARGET_ARCH ;;
+        esac
+        RUST_TARGET=${FRESH_RUST_TARGET:-$rust_arch-apple-darwin}
+    else
+        RUST_TARGET=${FRESH_RUST_TARGET:-$(rustc -vV 2> /dev/null | sed -n 's/^host: //p')}
+    fi
+    if [ "$FRESH_STATIC" = 1 ] && [ "$host" != Darwin ]; then
+        LDFLAGS="$LDFLAGS -static"
+    fi
     OUTPUT="$BUILD/fresh"
 fi
 
@@ -61,6 +78,7 @@ if [ "$windows" = 1 ]; then
     RESOURCES="$BUILD/fresh.res"
 fi
 
+rm -rf "$BUILD/obj"
 mkdir -p "$BUILD/obj"
 OBJECTS=""
 for source in src/*.c; do
@@ -77,11 +95,23 @@ if [ "$windows" = 1 ]; then
     $CC $OBJECTS $RESOURCES $RUST_LIB -o "$OUTPUT" $LDFLAGS
 else
     $CC $OBJECTS $RUST_LIB -lpthread -lm -o "$OUTPUT" $LDFLAGS
-    if [ "$(uname -s)" = Darwin ] && command -v strip > /dev/null 2>&1; then strip "$OUTPUT"; fi
+    if [ "$host" = Darwin ] && command -v strip > /dev/null 2>&1; then strip "$OUTPUT"; fi
 fi
 green "  $OUTPUT"
 
 if [ "$windows" != 1 ]; then
+    info "Building payload generator..."
+    $CC -O2 -o "$BUILD/bin2c" tools/bin2c.c
+
+    info "Embedding fresh into the installer..."
+    "./$BUILD/bin2c" "$OUTPUT" installation/posix/payload.h FRESH_PAYLOAD
+
+    info "Building installer..."
+    version=$(sed -n 's/#define FRESH_VERSION "\(.*\)"/\1/p' src/shell.h)
+    $CC $CFLAGS -Os -DFRESH_VERSION="\"$version\"" -Iinstallation/posix installation/posix/setup.c \
+        -o "$BUILD/fresh-setup" $LDFLAGS
+    if [ "$host" = Darwin ] && command -v strip > /dev/null 2>&1; then strip "$BUILD/fresh-setup"; fi
+    green "  $BUILD/fresh-setup"
     green "Build complete."
     exit 0
 fi
