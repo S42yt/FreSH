@@ -18,7 +18,7 @@ find tree -size -3c -type f | sort
 find tree -size +2c -type f | sort
 find tree -name '*.txt' -o -name '*.log' | sort
 find tree \( -name '*.txt' -o -name '*.log' \) -type f | sort
-find tree ! -name '*.txt' -type f
+find tree ! -name '*.txt' -type f | sort
 find tree -not -type d | sort
 find tree -name sub -prune -o -type f -print | sort
 find tree -type f -exec echo got {} \; | sort
