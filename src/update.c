@@ -30,6 +30,7 @@
 #define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/FreSH-Setup.exe"
 #define BINARY_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/fresh-%s-%s"
 #define USER_AGENT "FreSH-updater"
+#define FIRST_UNIX_VERSION "26.11.1-prerelease-2"
 
 #ifndef _WIN32
 
@@ -213,9 +214,24 @@ static int version_newer(const char *candidate, const char *current) {
     return 0;
 }
 
+static int platform_supports(const char *version) {
+#ifdef _WIN32
+    (void)version;
+    return 1;
+#else
+    return strcmp(version, FIRST_UNIX_VERSION) == 0 || version_newer(version, FIRST_UNIX_VERSION);
+#endif
+}
+
 #ifndef _WIN32
 
 static int install_update(const char *version) {
+    if (!platform_supports(version)) {
+        shell_error("update: %s predates macOS support, the first release you can install is %s",
+                    version, FIRST_UNIX_VERSION);
+        return 1;
+    }
+
     char url[512];
     snprintf(url, sizeof(url), BINARY_FORMAT, version, FRESH_OS, FRESH_ARCH);
 
@@ -407,6 +423,7 @@ static int read_releases(Early *out, int max, int keep_stable, int one_per_versi
 static void selector_line(const Early *release, int marked) {
     const char *note = "";
     if (strcmp(release->tag, FRESH_VERSION) == 0) note = "  installed";
+    else if (!platform_supports(release->tag)) note = "  no macOS build";
     else if (!version_newer(release->tag, FRESH_VERSION)) note = "  older than yours";
 
     const char *marker = marked ? "\xe2\x9d\xaf" : " ";
@@ -530,7 +547,7 @@ static int read_offered_version(char *out, size_t out_size) {
     if (count < 0) return 0;
 
     for (int i = 0; i < count; i++) {
-        if (is_experiment(&releases[i])) continue;
+        if (is_experiment(&releases[i]) || !platform_supports(releases[i].tag)) continue;
         snprintf(out, out_size, "%s", releases[i].tag);
         return 1;
     }

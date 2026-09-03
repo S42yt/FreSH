@@ -88,7 +88,9 @@ Windows, with `gh attestation verify fresh --repo S42yt/FreSH` or against
 
 `fresh update` works on macOS too: it downloads the new binary next to the
 running one and swaps it in, so the directory it lives in has to be writable
-by you, or the update tells you to fetch the file yourself.
+by you, or the update tells you to fetch the file yourself. Releases before
+26.11.1-prerelease-2 have no macOS binary, so the selector marks them
+`no macOS build` and refuses to install them there.
 
 An Intel Mac builds it from source in under a minute, see
 [building](building.md). Linux builds the same way, and is what the fuzzers

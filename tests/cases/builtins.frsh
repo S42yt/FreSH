@@ -54,7 +54,7 @@ check case_inside_substitution "$(case hello in h*) echo matched ;; esac)" match
 
 check time_reports "$( { time true ; } 2>&1 | grep -c real )" 1
 
-printf '%s' '[{"tag_name":"v99.2.0-prerelease-1","prerelease":true},{"tag_name":"v99.2.0-experiment-1","prerelease":true},{"tag_name":"v99.1.0-prerelease-2","prerelease":true},{"tag_name":"v99.0.0","prerelease":false}]' > .fresh-test-releases
+printf '%s' '[{"tag_name":"v99.2.0-prerelease-1","prerelease":true},{"tag_name":"v99.2.0-experiment-1","prerelease":true},{"tag_name":"v99.1.0-prerelease-2","prerelease":true},{"tag_name":"v99.0.0","prerelease":false},{"tag_name":"v1.0.0","prerelease":false}]' > .fresh-test-releases
 export FRESH_RELEASES_JSON=.fresh-test-releases
 listing=$(fresh update --selector --check)
 offer=$(fresh update --pre --check)
@@ -77,6 +77,12 @@ case "$offer" in *"99.2.0-prerelease-1"*) offered=yes ;; *) offered=no ;; esac
 check pre_offers_newest_prerelease "$offered" yes
 case "$offer" in *"99.2.0-experiment"*) leaked=yes ;; *) leaked=no ;; esac
 check pre_skips_experiments "$leaked" no
+if on_windows; then
+  check selector_installs_any_release "$(printf '%s' "$listing" | grep -c 'no macOS build')" 0
+else
+  check selector_marks_pre_unix_releases "$(printf '%s' "$listing" | grep -c 'no macOS build')" 1
+  check selector_keeps_unix_releases "$(printf '%s' "$listing" | grep -c '99.0.0 release')" 1
+fi
 
 if on_windows; then
   case "$PATH" in *[Ss]ystem32*) merged=yes ;; *) merged=no ;; esac
