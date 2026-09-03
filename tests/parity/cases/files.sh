@@ -53,10 +53,10 @@ echo hello > sized
 du -b sized
 du -b src
 du -sb src
-du -ab src
+du -ab src | sort
 du -cb sized f2 | tail -1
 du -b --max-depth=0 src
-du -bd 1 src
+du -bd 1 src | sort
 du missing; echo "status $?"
 echo "--- names"
 basename /a/b/c.txt

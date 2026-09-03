@@ -124,7 +124,7 @@ rejected with the same message and status GNU uses.
 | `rev [files]` | | |
 | `fold [files]` | `-w N` `-N` `-s` `-b` | |
 | `column [files]` | `-t` `-s SEP` `-o SEP` `-c WIDTH` `-x` | |
-| `paste files` | `-d LIST` `-s` | with no file and a terminal on stdin, `paste` is the clipboard builtin instead |
+| `paste files` | `-d LIST` `-s` | with no operand at all, `paste` is the clipboard builtin; `paste -` reads stdin |
 | `comm file1 file2` | `-1` `-2` `-3` `-i` `--output-delimiter` `--total` | both must be sorted |
 | `diff file1 file2` | `-q` `-s` `-i` `-w` `-b` `-B` `-u` `-U N` | normal and unified output, exit 1 when they differ |
 | `cmp file1 [file2]` | `-s` `-l` `-b` `-n N` | |

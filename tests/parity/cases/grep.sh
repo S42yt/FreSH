@@ -39,10 +39,10 @@ grep -E '^(ap|ch)' fruit.txt
 mkdir -p tree/sub
 printf 'needle\n' > tree/a.txt
 printf 'hay\nneedle\n' > tree/sub/b.txt
-grep -r needle tree
-grep -rn needle tree
-grep -rl needle tree
-grep -rh needle tree
+grep -r needle tree | sort
+grep -rn needle tree | sort
+grep -rl needle tree | sort
+grep -rh needle tree | sort
 grep needle tree; echo "status $?"
 grep -s needle tree; echo "status $?"
 grep needle missing.txt; echo "status $?"

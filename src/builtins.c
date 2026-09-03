@@ -1391,7 +1391,7 @@ static int builtin_copy(int argc, char **argv) {
 }
 
 static int builtin_paste(int argc, char **argv) {
-    if (argc > 1 || !_isatty(_fileno(stdin))) return coreutil_lookup("paste")(argc, argv);
+    if (argc > 1) return coreutil_lookup("paste")(argc, argv);
 
     StrBuf text;
     sb_init(&text);
