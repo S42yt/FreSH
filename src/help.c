@@ -525,28 +525,28 @@ int help_show(const char *name) {
     if (!entry) {
         printf("  %sno help for %s%s\n", style(S_DIM), name, style(S_RESET));
 
-        StrList near;
-        sl_init(&near);
+        StrList nearby;
+        sl_init(&nearby);
         size_t length = strlen(name);
 
-        for (size_t width = length; width > 0 && near.len == 0; width--) {
+        for (size_t width = length; width > 0 && nearby.len == 0; width--) {
             for (size_t i = 0; i < total_count(); i++) {
                 if (strncmp(entry_at(i)->name, name, width) == 0)
-                    sl_push_copy(&near, entry_at(i)->name);
+                    sl_push_copy(&nearby, entry_at(i)->name);
             }
         }
-        if (near.len == 0) {
+        if (nearby.len == 0) {
             for (size_t i = 0; i < total_count(); i++) {
-                if (strstr(entry_at(i)->name, name)) sl_push_copy(&near, entry_at(i)->name);
+                if (strstr(entry_at(i)->name, name)) sl_push_copy(&nearby, entry_at(i)->name);
             }
         }
-        sl_sort(&near);
-        if (near.len > 0) {
+        sl_sort(&nearby);
+        if (nearby.len > 0) {
             printf("  %sdid you mean%s", style(S_DIM), style(S_RESET));
-            for (size_t i = 0; i < near.len && i < 8; i++) printf(" %s", near.items[i]);
+            for (size_t i = 0; i < nearby.len && i < 8; i++) printf(" %s", nearby.items[i]);
             printf("\n");
         }
-        sl_free(&near);
+        sl_free(&nearby);
         return 1;
     }
 
