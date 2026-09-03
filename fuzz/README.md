@@ -16,10 +16,10 @@ behaviour sanitizers:
 
 ## Building and running
 
-Needs clang. The Windows-only pieces of `util.c` are satisfied by the small
-shims in `fuzz/windows.h` and `fuzz/direct.h`, so the parser, the regular
-expression engine and awk build on Linux untouched. Nothing here ships in
-`FreSH.exe`.
+Needs clang. The sources build on Linux through the same platform layer the
+macOS build uses, `src/platform.h` and `src/platform_posix.c`, so the parser,
+the regular expression engine and awk are fuzzed untouched. Nothing here ships
+in `FreSH.exe`.
 
 ```sh
 fuzz/build.sh

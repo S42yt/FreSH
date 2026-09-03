@@ -7,12 +7,15 @@
 #include "builtins.h"
 
 #include <ctype.h>
-#include <direct.h>
-#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+
+#include "platform.h"
+
+#ifdef _WIN32
+#include <shellapi.h>
+#endif
 
 #include "coreutils.h"
 #include "exec.h"
@@ -760,11 +763,15 @@ static int builtin_rehash(int argc, char **argv) {
     return 0;
 }
 
-static int is_executable_name(const char *name) {
-    const char *ext = path_ext(name);
+static int entry_executable(const WIN32_FIND_DATAA *data) {
+#ifdef _WIN32
+    const char *ext = path_ext(data->cFileName);
     return str_ieq(ext, ".exe") || str_ieq(ext, ".bat") || str_ieq(ext, ".cmd") ||
            str_ieq(ext, ".com") || str_ieq(ext, ".ps1") || str_ieq(ext, ".sh") ||
            str_ieq(ext, ".msi");
+#else
+    return (data->dwFileAttributes & FRESH_ATTRIBUTE_EXECUTABLE) != 0;
+#endif
 }
 
 static int extension_in(const char *ext, const char *list) {
@@ -779,7 +786,7 @@ static const char *entry_color(const WIN32_FIND_DATAA *data) {
     if (data->cFileName[0] == '.') return S_HIDDEN;
 
     const char *ext = path_ext(data->cFileName);
-    if (is_executable_name(data->cFileName)) return S_EXEC;
+    if (entry_executable(data)) return S_EXEC;
     if (extension_in(ext, ".zip;.7z;.rar;.tar;.gz;.xz;.zst;.bz2;.cab;")) return S_ARCHIVE;
     if (extension_in(ext, ".png;.jpg;.jpeg;.gif;.bmp;.ico;.svg;.webp;.tif;")) return S_IMAGE;
     if (extension_in(ext, ".mp3;.mp4;.mkv;.wav;.flac;.mov;.avi;.webm;.ogg;")) return S_MEDIA;
@@ -791,7 +798,7 @@ static const char *entry_color(const WIN32_FIND_DATAA *data) {
 
 static char entry_marker(const WIN32_FIND_DATAA *data) {
     if (data->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) return '/';
-    if (is_executable_name(data->cFileName)) return '*';
+    if (entry_executable(data)) return '*';
     return '\0';
 }
 
@@ -830,7 +837,7 @@ static void print_long_entry(const WIN32_FIND_DATAA *data) {
 
     printf("%s%c%c%c%s  %s%8s%s  %s%2d %s %02d:%02d%s  %s%s%s\n", style(S_DIM), is_dir ? 'd' : '-',
            (data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? '-' : 'w',
-           is_executable_name(data->cFileName) || is_dir ? 'x' : '-', style(S_RESET),
+           entry_executable(data) || is_dir ? 'x' : '-', style(S_RESET),
            style(S_VALUE), size_text, style(S_RESET), style(S_DIM), st.wDay,
            MONTHS[(st.wMonth - 1) % 12], st.wHour, st.wMinute, style(S_RESET), color, decorated,
            *color ? style(S_RESET) : "");
@@ -939,9 +946,15 @@ static int test_file_op(char op, const char *path) {
     case 'e': return attributes != INVALID_FILE_ATTRIBUTES;
     case 'f': return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
     case 'd': return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+#ifdef _WIN32
     case 'r': return attributes != INVALID_FILE_ATTRIBUTES;
     case 'w': return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_READONLY);
     case 'x': return attributes != INVALID_FILE_ATTRIBUTES;
+#else
+    case 'r': return attributes != INVALID_FILE_ATTRIBUTES && access(path, R_OK) == 0;
+    case 'w': return attributes != INVALID_FILE_ATTRIBUTES && access(path, W_OK) == 0;
+    case 'x': return attributes != INVALID_FILE_ATTRIBUTES && access(path, X_OK) == 0;
+#endif
     case 's': {
         WIN32_FILE_ATTRIBUTE_DATA info;
         if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) return 0;
@@ -1255,6 +1268,8 @@ static int builtin_jump(int argc, char **argv) {
     return 0;
 }
 
+#ifdef _WIN32
+
 typedef BOOL(WINAPI *ClipOpenFn)(HWND);
 typedef BOOL(WINAPI *ClipCloseFn)(void);
 typedef BOOL(WINAPI *ClipEmptyFn)(void);
@@ -1292,6 +1307,64 @@ static int clipboard_open(void) {
     return 0;
 }
 
+static int clipboard_write(const char *text, size_t length) {
+    int status = 1;
+    if (clipboard_open()) {
+        clip_empty();
+        HGLOBAL block = GlobalAlloc(GMEM_MOVEABLE, length + 1);
+        if (block) {
+            memcpy(GlobalLock(block), text, length + 1);
+            GlobalUnlock(block);
+            clip_set(CF_TEXT, block);
+            status = 0;
+        }
+        clip_close();
+    }
+    return status;
+}
+
+static int clipboard_read(StrBuf *out) {
+    if (!clipboard_open()) return 1;
+    HANDLE data = clip_get(CF_TEXT);
+    if (data) {
+        const char *text = GlobalLock(data);
+        if (text) {
+            sb_puts(out, text);
+            GlobalUnlock(data);
+        }
+    }
+    clip_close();
+    return 0;
+}
+
+#else
+
+#ifdef __APPLE__
+#define CLIPBOARD_WRITE "pbcopy"
+#define CLIPBOARD_READ "pbpaste"
+#else
+#define CLIPBOARD_WRITE "xclip -selection clipboard -i 2>/dev/null || wl-copy 2>/dev/null"
+#define CLIPBOARD_READ "xclip -selection clipboard -o 2>/dev/null || wl-paste 2>/dev/null"
+#endif
+
+static int clipboard_write(const char *text, size_t length) {
+    FILE *pipe = popen(CLIPBOARD_WRITE, "w");
+    if (!pipe) return 1;
+    fwrite(text, 1, length, pipe);
+    return pclose(pipe) == 0 ? 0 : 1;
+}
+
+static int clipboard_read(StrBuf *out) {
+    FILE *pipe = popen(CLIPBOARD_READ, "r");
+    if (!pipe) return 1;
+    char buffer[4096];
+    size_t read;
+    while ((read = fread(buffer, 1, sizeof(buffer), pipe)) > 0) sb_putn(out, buffer, read);
+    return pclose(pipe) == 0 ? 0 : 1;
+}
+
+#endif
+
 static int builtin_copy(int argc, char **argv) {
     StrBuf text;
     sb_init(&text);
@@ -1309,18 +1382,7 @@ static int builtin_copy(int argc, char **argv) {
             text.data[--text.len] = '\0';
     }
 
-    int status = 1;
-    if (clipboard_open()) {
-        clip_empty();
-        HGLOBAL block = GlobalAlloc(GMEM_MOVEABLE, text.len + 1);
-        if (block) {
-            memcpy(GlobalLock(block), text.data, text.len + 1);
-            GlobalUnlock(block);
-            clip_set(CF_TEXT, block);
-            status = 0;
-        }
-        clip_close();
-    }
+    int status = clipboard_write(text.data, text.len);
     if (status) shell_error("copy: the clipboard would not open");
     sb_free(&text);
     return status;
@@ -1330,19 +1392,17 @@ static int builtin_paste(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    if (!clipboard_open()) {
+    StrBuf text;
+    sb_init(&text);
+    if (clipboard_read(&text)) {
+        sb_free(&text);
         shell_error("paste: the clipboard would not open");
         return 1;
     }
-    HANDLE data = clip_get(CF_TEXT);
-    if (data) {
-        const char *text = GlobalLock(data);
-        if (text) {
-            printf("%s\n", text);
-            GlobalUnlock(data);
-        }
-    }
-    clip_close();
+    while (text.len > 0 && (text.data[text.len - 1] == '\n' || text.data[text.len - 1] == '\r'))
+        text.data[--text.len] = '\0';
+    printf("%s\n", text.data);
+    sb_free(&text);
     return 0;
 }
 
@@ -1379,10 +1439,14 @@ static int builtin_extract(int argc, char **argv) {
     StrBuf command;
     sb_init(&command);
     if (str_ieq(ext, ".zip")) {
+#ifdef _WIN32
         sb_printf(&command,
                   "powershell.exe -NoLogo -NoProfile -Command \"Expand-Archive -LiteralPath '%s' "
                   "-DestinationPath '%s' -Force\"",
                   archive, into);
+#else
+        sb_printf(&command, "unzip -o -q \"%s\" -d \"%s\"", archive, into);
+#endif
     } else if (str_ieq(ext, ".gz") || str_ieq(ext, ".tgz") || str_ieq(ext, ".bz2") ||
                str_ieq(ext, ".xz") || str_ieq(ext, ".tar")) {
         sb_printf(&command, "tar -x -f \"%s\" -C \"%s\"", archive, into);
@@ -1398,6 +1462,34 @@ static int builtin_extract(int argc, char **argv) {
     sb_free(&command);
     return status;
 }
+
+#ifndef _WIN32
+
+static int builtin_admin(int argc, char **argv) {
+    char exe[PATH_BUF];
+    GetModuleFileNameA(NULL, exe, sizeof(exe));
+
+    StrBuf command;
+    sb_init(&command);
+    sb_puts(&command, "sudo -E ");
+    sb_put_quoted(&command, exe);
+    if (argc > 1) {
+        StrBuf joined;
+        sb_init(&joined);
+        for (int i = 1; i < argc; i++) {
+            if (i > 1) sb_putc(&joined, ' ');
+            sb_puts(&joined, argv[i]);
+        }
+        sb_puts(&command, " -c ");
+        sb_put_quoted(&command, joined.data);
+        sb_free(&joined);
+    }
+    int status = exec_text(command.data);
+    sb_free(&command);
+    return status;
+}
+
+#else
 
 static int builtin_admin(int argc, char **argv) {
     char exe[PATH_BUF];
@@ -1436,6 +1528,8 @@ static int builtin_admin(int argc, char **argv) {
     sb_free(&parameters);
     return status;
 }
+
+#endif
 
 static int builtin_bind(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "-l") == 0) {

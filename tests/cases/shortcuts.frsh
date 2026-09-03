@@ -20,8 +20,10 @@ cd "$base"
 check autocd_off "$(FRESH_AUTOCD=0; $tree/beta 2>&1 | grep -c 'command not found')" 1
 cd "$base"
 
-check clipboard_roundtrip "$(copy fresh-clipboard-test; paste)" fresh-clipboard-test
-check clipboard_from_pipe "$(echo piped-in | copy; paste)" piped-in
+if on_windows || command -v pbcopy > /dev/null; then
+  check clipboard_roundtrip "$(copy fresh-clipboard-test; paste)" fresh-clipboard-test
+  check clipboard_from_pipe "$(echo piped-in | copy; paste)" piped-in
+fi
 
 echo packed > "$tree/file.txt"
 tar -c -f "$tree/bundle.tar" -C "$tree" file.txt 2> /dev/null

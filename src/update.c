@@ -6,13 +6,14 @@
 
 #include "update.h"
 
-#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "platform.h"
 
+#ifdef _WIN32
 #include <wininet.h>
+#endif
 
 #include "config.h"
 #include "keys.h"
@@ -27,7 +28,43 @@
 #define RELEASE_API_LIST "https://api.github.com/repos/S42yt/FreSH/releases?per_page=100"
 #define RELEASE_PAGE "https://github.com/S42yt/FreSH/releases"
 #define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/FreSH-Setup.exe"
+#define BINARY_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/fresh-%s-%s"
 #define USER_AGENT "FreSH-updater"
+
+#ifndef _WIN32
+
+#if defined(__APPLE__)
+#define FRESH_OS "macos"
+#else
+#define FRESH_OS "linux"
+#endif
+#if defined(__aarch64__) || defined(__arm64__)
+#define FRESH_ARCH "arm64"
+#else
+#define FRESH_ARCH "x86_64"
+#endif
+
+static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
+    StrBuf command;
+    sb_init(&command);
+    sb_printf(&command, "curl -fsSL --max-time 120 -A %s -o ", USER_AGENT);
+    sb_put_quoted(&command, save_to ? save_to : "-");
+    sb_puts(&command, " -- ");
+    sb_put_quoted(&command, url);
+
+    FILE *pipe = popen(command.data, "r");
+    sb_free(&command);
+    if (!pipe) return 0;
+
+    char buffer[8192];
+    size_t read;
+    while ((read = fread(buffer, 1, sizeof(buffer), pipe)) > 0) {
+        if (body) sb_putn(body, buffer, read);
+    }
+    return pclose(pipe) == 0;
+}
+
+#else
 
 typedef HINTERNET(WINAPI *OpenFn)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
 typedef HINTERNET(WINAPI *OpenUrlFn)(HINTERNET, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
@@ -107,6 +144,8 @@ static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
     return 1;
 }
 
+#endif
+
 int http_download(const char *url, const char *path) {
     return http_fetch(url, NULL, path);
 }
@@ -174,6 +213,38 @@ static int version_newer(const char *candidate, const char *current) {
     return 0;
 }
 
+#ifndef _WIN32
+
+static int install_update(const char *version) {
+    char url[512];
+    snprintf(url, sizeof(url), BINARY_FORMAT, version, FRESH_OS, FRESH_ARCH);
+
+    char exe[PATH_BUF];
+    if (!GetModuleFileNameA(NULL, exe, sizeof(exe))) return 1;
+    char staged[PATH_BUF + 16];
+    snprintf(staged, sizeof(staged), "%s.update", exe);
+
+    printf("  %sdownloading %s%s\n", style(S_DIM), url, style(S_RESET));
+    if (!http_fetch(url, NULL, staged)) {
+        unlink(staged);
+        shell_error("update: could not download %s", url);
+        return 1;
+    }
+    chmod(staged, 0755);
+    if (rename(staged, exe) != 0) {
+        unlink(staged);
+        shell_error("update: cannot replace %s, fetch the file from %s yourself", exe,
+                    RELEASE_PAGE);
+        return 1;
+    }
+
+    printf("  %s\xe2\x9c\x93%s %s installed, the next shell you open runs it\n", style(S_ACCENT),
+           style(S_RESET), version);
+    return 0;
+}
+
+#else
+
 static int install_update(const char *version) {
     char url[512];
     snprintf(url, sizeof(url), DOWNLOAD_FORMAT, version);
@@ -213,6 +284,8 @@ static int install_update(const char *version) {
     shell.running = 0;
     return 0;
 }
+
+#endif
 
 typedef struct {
     char tag[64];
@@ -407,6 +480,7 @@ static int command_selector(int check_only) {
     if (!check_only && shell.interactive && _isatty(_fileno(stdin)) && _isatty(_fileno(stdout))) {
         printf("\n");
         int picked = selector_interactive(releases, count);
+        term_cooked();
         printf("\n");
         if (picked < 0) return 0;
         return install_update(releases[picked].tag);

@@ -78,9 +78,15 @@ check pre_offers_newest_prerelease "$offered" yes
 case "$offer" in *"99.2.0-experiment"*) leaked=yes ;; *) leaked=no ;; esac
 check pre_skips_experiments "$leaked" no
 
-case "$PATH" in *[Ss]ystem32*) merged=yes ;; *) merged=no ;; esac
-check path_merge_on_first_read "$merged" yes
-check path_resolves_commands "$(command -v cmd > /dev/null && echo yes)" yes
+if on_windows; then
+  case "$PATH" in *[Ss]ystem32*) merged=yes ;; *) merged=no ;; esac
+  check path_merge_on_first_read "$merged" yes
+  check path_resolves_commands "$(command -v cmd > /dev/null && echo yes)" yes
+else
+  case "$PATH" in */bin*) merged=yes ;; *) merged=no ;; esac
+  check path_merge_on_first_read "$merged" yes
+  check path_resolves_commands "$(command -v sh > /dev/null && echo yes)" yes
+fi
 
 reader() {
   local first second

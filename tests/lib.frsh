@@ -36,6 +36,10 @@ ok() {
   check "$1" "$2" yes
 }
 
+on_windows() {
+  [ "${OS:-}" = Windows_NT ]
+}
+
 summary() {
   printf '\n'
   if [ "$failed" -eq 0 ]; then

@@ -7,15 +7,22 @@
 #include "exec.h"
 
 #include <ctype.h>
-#include <fcntl.h>
-#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <windows.h>
+#include "platform.h"
 
+#ifdef _WIN32
 #include <tlhelp32.h>
+#else
+#include <errno.h>
+#include <signal.h>
+#include <spawn.h>
+extern char **environ;
+#endif
+
+#include "term.h"
 
 #include "builtins.h"
 #include "coreutils.h"
@@ -143,6 +150,7 @@ int function_name_prefix(const char *prefix, size_t length) {
 }
 
 static void pathext_list(StrList *out) {
+#ifdef _WIN32
     const char *pathext = var_get("PATHEXT");
     if (!pathext || !*pathext) pathext = ".COM;.EXE;.BAT;.CMD";
     char *copy = xstrdup(pathext);
@@ -155,11 +163,22 @@ static void pathext_list(StrList *out) {
     sl_push_copy(out, ".frsh");
     sl_push_copy(out, ".ps1");
     sl_push_copy(out, ".sh");
+#else
+    (void)out;
+#endif
+}
+
+static int is_runnable(const char *path) {
+#ifdef _WIN32
+    return path_is_file(path);
+#else
+    return path_is_file(path) && access(path, X_OK) == 0;
+#endif
 }
 
 static int try_with_extensions(const char *base, char *out, size_t out_size,
                                const StrList *extensions) {
-    if (path_is_file(base)) {
+    if (is_runnable(base)) {
         snprintf(out, out_size, "%s", base);
         return 1;
     }
@@ -168,7 +187,7 @@ static int try_with_extensions(const char *base, char *out, size_t out_size,
     for (size_t i = 0; i < extensions->len; i++) {
         char candidate[PATH_BUF];
         snprintf(candidate, sizeof(candidate), "%s%s", base, extensions->items[i]);
-        if (path_is_file(candidate)) {
+        if (is_runnable(candidate)) {
             snprintf(out, out_size, "%s", candidate);
             return 1;
         }
@@ -229,7 +248,7 @@ int resolve_command(const char *name, char *out, size_t out_size) {
     char *cursor = copy;
     char *dir;
     int found = 0;
-    while (!found && (dir = str_next_field(&cursor, ';')) != NULL) {
+    while (!found && (dir = str_next_field(&cursor, PATH_LIST_SEP)) != NULL) {
         if (!*dir) continue;
         char *base = path_join(dir, name);
         found = try_with_extensions(base, out, out_size, &extensions);
@@ -246,6 +265,8 @@ void path_rehash(void) {
     command_cache_valid = 0;
     resolutions_forget();
 }
+
+#ifdef _WIN32
 
 typedef LSTATUS(WINAPI *RegOpenFn)(HKEY, LPCSTR, DWORD, REGSAM, PHKEY);
 typedef LSTATUS(WINAPI *RegQueryFn)(HKEY, LPCSTR, LPDWORD, LPDWORD, LPBYTE, LPDWORD);
@@ -302,6 +323,8 @@ static char *read_registry_path(HKEY root, const char *subkey) {
     return raw;
 }
 
+#endif
+
 static int path_environment_merged = 0;
 
 void path_ensure_environment(void) {
@@ -312,8 +335,13 @@ void path_ensure_environment(void) {
 void path_reload_environment(void) {
     path_environment_merged = 1;
 
+#ifdef _WIN32
     const char *home_bins[] = {"bin", ".local\\bin", "AppData\\Local\\bin", "scoop\\shims",
                                "AppData\\Roaming\\npm"};
+#else
+    const char *home_bins[] = {"bin", ".local/bin", ".cargo/bin", "/opt/homebrew/bin",
+                               "/usr/local/bin"};
+#endif
     size_t bin_count = sizeof(home_bins) / sizeof(home_bins[0]);
 
     char *found[sizeof(home_bins) / sizeof(home_bins[0])];
@@ -321,11 +349,12 @@ void path_reload_environment(void) {
     size_t part_count = 0;
 
     for (size_t i = 0; i < bin_count; i++) {
-        found[i] = path_join(home_dir(), home_bins[i]);
+        found[i] = path_is_absolute(home_bins[i]) ? xstrdup(home_bins[i])
+                                                  : path_join(home_dir(), home_bins[i]);
         if (path_is_dir(found[i])) parts[part_count++] = found[i];
     }
 
-#ifdef FRESH_NO_REGISTRY_PATH
+#if defined(FRESH_NO_REGISTRY_PATH) || !defined(_WIN32)
     char *machine = NULL;
     char *user = NULL;
 #else
@@ -344,7 +373,7 @@ void path_reload_environment(void) {
     for (size_t i = 0; i < part_count; i++) room += strlen(parts[i]) + 1;
 
     char *merged = xmalloc(room);
-    size_t length = core_path_merge(parts, part_count, merged, room);
+    size_t length = core_path_merge(parts, part_count, merged, room, PATH_LIST_SEP);
     if (length > 0) var_set_exported("PATH", merged);
 
     free(merged);
@@ -356,12 +385,14 @@ void path_reload_environment(void) {
     resolutions_forget();
 }
 
+#ifdef _WIN32
 static int is_command_extension(const StrList *extensions, const char *ext) {
     for (size_t i = 0; i < extensions->len; i++) {
         if (str_ieq(extensions->items[i], ext)) return 1;
     }
     return 0;
 }
+#endif
 
 static int compare_names_fold(const void *a, const void *b) {
     return _stricmp(*(const char *const *)a, *(const char *const *)b);
@@ -376,9 +407,15 @@ static void scan_directory(const char *dir, const StrList *extensions, StrList *
 
     do {
         if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+#ifdef _WIN32
         const char *ext = path_ext(data.cFileName);
         if (!*ext || !is_command_extension(extensions, ext)) continue;
         sl_push(out, xstrndup(data.cFileName, strlen(data.cFileName) - strlen(ext)));
+#else
+        (void)extensions;
+        if (!(data.dwFileAttributes & FRESH_ATTRIBUTE_EXECUTABLE)) continue;
+        sl_push_copy(out, data.cFileName);
+#endif
     } while (FindNextFileA(find, &data));
     FindClose(find);
 }
@@ -396,7 +433,7 @@ static void ensure_command_cache(void) {
         char *copy = xstrdup(path);
         char *cursor = copy;
         char *dir;
-        while ((dir = str_next_field(&cursor, ';')) != NULL) {
+        while ((dir = str_next_field(&cursor, PATH_LIST_SEP)) != NULL) {
             if (*dir) scan_directory(dir, &extensions, &command_cache);
         }
         free(copy);
@@ -473,10 +510,12 @@ static void release_tracked(int mark) {
     if (tracked_count > mark) tracked_count = mark;
 }
 
+#ifdef _WIN32
 static void set_inherit(HANDLE handle, int enabled) {
     if (handle && handle != INVALID_HANDLE_VALUE)
         SetHandleInformation(handle, HANDLE_FLAG_INHERIT, enabled ? HANDLE_FLAG_INHERIT : 0);
 }
+#endif
 
 static IoSet io_default(void) {
     IoSet io;
@@ -496,6 +535,7 @@ static int io_is_default(const IoSet *io) {
 static void discard_stdin_buffer(void) {
     fflush(stdin);
     setvbuf(stdin, NULL, _IOFBF, BUFSIZ);
+    clearerr(stdin);
 }
 
 static void fds_apply(const IoSet *io, FdSave *save) {
@@ -769,6 +809,8 @@ static int apply_redirs(Redir *redirs, IoSet *io) {
     return 1;
 }
 
+#ifdef _WIN32
+
 static void quote_argument(StrBuf *sb, const char *arg) {
     if (*arg && !strpbrk(arg, " \t\"")) {
         sb_puts(sb, arg);
@@ -804,6 +846,8 @@ static char *build_command_line(const char *program, char **argv, int argc, cons
     return sb_take(&sb);
 }
 
+#endif
+
 static int is_shell_script(const char *path) {
     const char *ext = path_ext(path);
     if (str_ieq(ext, ".frsh") || str_ieq(ext, ".sh") || str_ieq(ext, ".fresh")) return 1;
@@ -819,6 +863,47 @@ static int is_shell_script(const char *path) {
     if (newline) *newline = '\0';
     return strstr(head, "sh") != NULL;
 }
+
+#ifndef _WIN32
+
+static HANDLE spawn_process(char **argv, IoSet *io, int *status) {
+    posix_spawn_file_actions_t actions;
+    posix_spawnattr_t attributes;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawnattr_init(&attributes);
+
+    int fds[3] = {fresh_handle_fd(io->in), fresh_handle_fd(io->out), fresh_handle_fd(io->err)};
+    for (int i = 0; i < 3; i++) {
+        if (fds[i] >= 0 && fds[i] != i) posix_spawn_file_actions_adddup2(&actions, fds[i], i);
+    }
+
+    sigset_t all;
+    sigfillset(&all);
+    sigset_t none;
+    sigemptyset(&none);
+    posix_spawnattr_setsigdefault(&attributes, &all);
+    posix_spawnattr_setsigmask(&attributes, &none);
+    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK);
+
+    fflush(stdout);
+    fflush(stderr);
+    term_cooked();
+
+    pid_t pid = 0;
+    int error = posix_spawn(&pid, argv[0], &actions, &attributes, argv, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attributes);
+
+    if (error != 0) {
+        if (error == EACCES) shell_error("permission denied");
+        else shell_error("failed to start process (%s)", strerror(error));
+        *status = 126;
+        return NULL;
+    }
+    return fresh_process_handle(pid);
+}
+
+#else
 
 static HANDLE spawn_process(char *command_line, IoSet *io, int *status) {
     STARTUPINFOA si;
@@ -848,6 +933,8 @@ static HANDLE spawn_process(char *command_line, IoSet *io, int *status) {
     CloseHandle(pi.hThread);
     return pi.hProcess;
 }
+
+#endif
 
 static int is_assignment(const char *word) {
     if (!isalpha((unsigned char)*word) && *word != '_') return 0;
@@ -951,20 +1038,25 @@ static int call_function(Node *body, const StrList *args) {
 
 static int run_program(const char *path, char **argv, int argc, IoSet *io, int background,
                        HANDLE *async_out) {
+    int status = 0;
+#ifdef _WIN32
     const char *ext = path_ext(path);
     const char *prefix = NULL;
-    char *command_line;
 
     if (str_ieq(ext, ".ps1")) {
         prefix = "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ";
     } else if (str_ieq(ext, ".bat") || str_ieq(ext, ".cmd")) {
         prefix = "cmd.exe /c ";
     }
-    command_line = build_command_line(path, argv, argc, prefix);
-
-    int status = 0;
+    char *command_line = build_command_line(path, argv, argc, prefix);
     HANDLE process = spawn_process(command_line, io, &status);
     free(command_line);
+#else
+    char *saved = argv[0];
+    argv[0] = (char *)path;
+    HANDLE process = spawn_process(argv, io, &status);
+    argv[0] = saved;
+#endif
     if (!process) return status;
 
     if (async_out) {
@@ -1217,6 +1309,7 @@ static int exec_background_child(Node *node) {
     fclose(file);
     sb_free(&source);
 
+#ifdef _WIN32
     StrBuf command_line;
     sb_init(&command_line);
     sb_printf(&command_line, "\"%s\" --norc \"%s\"", exe, script);
@@ -1235,7 +1328,19 @@ static int exec_background_child(Node *node) {
     }
     sb_free(&command_line);
     CloseHandle(pi.hThread);
-    job_add(pi.hProcess, "background");
+    HANDLE process = pi.hProcess;
+#else
+    char *argv[] = {exe, "--norc", script, NULL};
+    IoSet io = io_default();
+    int status = 0;
+    HANDLE process = spawn_process(argv, &io, &status);
+    free(script);
+    if (!process) {
+        shell_error("could not start the background job");
+        return 1;
+    }
+#endif
+    job_add(process, "background");
     return 0;
 }
 
@@ -1667,6 +1772,14 @@ static int job_index(int id) {
     return -1;
 }
 
+#ifndef _WIN32
+
+static int walk_threads(DWORD pid, int suspend) {
+    return kill((pid_t)pid, suspend ? SIGSTOP : SIGCONT) == 0;
+}
+
+#else
+
 static int walk_threads(DWORD pid, int suspend) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return 0;
@@ -1689,6 +1802,8 @@ static int walk_threads(DWORD pid, int suspend) {
     CloseHandle(snapshot);
     return touched;
 }
+
+#endif
 
 int jobs_suspend(int id) {
     int index = job_index(id);
@@ -1787,9 +1902,15 @@ static int file_check(char flag, const char *path) {
     case 'e': return exists;
     case 'f': return exists && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
     case 'd': return exists && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+#ifdef _WIN32
     case 'r':
     case 'x': return exists;
     case 'w': return exists && !(attributes & FILE_ATTRIBUTE_READONLY);
+#else
+    case 'r': return exists && access(path, R_OK) == 0;
+    case 'x': return exists && access(path, X_OK) == 0;
+    case 'w': return exists && access(path, W_OK) == 0;
+#endif
     case 's': {
         WIN32_FILE_ATTRIBUTE_DATA info;
         if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) return 0;

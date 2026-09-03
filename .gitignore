@@ -77,3 +77,5 @@ cmake-build-debug
 
 # JetBrains IDEs
 .idea/
+# Rust build output
+rust/core/target/

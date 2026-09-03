@@ -9,17 +9,16 @@
 #include "rustcore.h"
 
 #include <ctype.h>
-#include <direct.h>
-#ifdef _WIN32
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+
+#include "platform.h"
+
+#ifndef _WIN32
+#include <pwd.h>
+#endif
 
 void *xmalloc(size_t size) {
     void *p = malloc(size ? size : 1);
@@ -172,6 +171,15 @@ void sb_printf(StrBuf *sb, const char *fmt, ...) {
     sb->len += (size_t)n;
 }
 
+void sb_put_quoted(StrBuf *sb, const char *text) {
+    sb_putc(sb, '\'');
+    for (const char *p = text; *p; p++) {
+        if (*p == '\'') sb_puts(sb, "'\\''");
+        else sb_putc(sb, *p);
+    }
+    sb_putc(sb, '\'');
+}
+
 char *sb_take(StrBuf *sb) {
     ASSERT_UNBORROWED(sb, "a buffer");
     char *p = sb->data;
@@ -209,10 +217,6 @@ int read_line(FILE *f, StrBuf *out) {
     }
     return any ? 2 : 0;
 }
-
-#ifndef _WIN32
-#define _read read
-#endif
 
 int read_line_fd(int fd, StrBuf *out) {
     sb_clear(out);
@@ -316,9 +320,13 @@ int win_user_name(char *out, unsigned long *size) {
 #else
 
 int win_user_name(char *out, unsigned long *size) {
-    (void)out;
-    (void)size;
-    return 0;
+    struct passwd *entry = getpwuid(getuid());
+    const char *name = entry && entry->pw_name ? entry->pw_name : getenv("USER");
+    if (!name || !*name) return 0;
+    int written = snprintf(out, *size, "%s", name);
+    if (written < 0 || (unsigned long)written >= *size) return 0;
+    *size = (unsigned long)written;
+    return 1;
 }
 
 #endif
@@ -393,8 +401,18 @@ void path_to_slashes(char *p) {
 }
 
 void path_to_backslashes(char *p) {
+#ifdef _WIN32
     for (; *p; p++)
         if (*p == '/') *p = '\\';
+#else
+    path_to_slashes(p);
+#endif
+}
+
+char *path_last_sep(const char *p) {
+    char *back = strrchr(p, '\\');
+    char *fwd = strrchr(p, '/');
+    return fwd > back ? fwd : back;
 }
 
 int path_is_dir(const char *p) {
@@ -426,7 +444,7 @@ char *path_join(const char *dir, const char *name) {
     int sep = dn > 0 && dir[dn - 1] != '\\' && dir[dn - 1] != '/';
     size_t total = dn + (sep ? 1 : 0) + strlen(name) + 1;
     char *out = xmalloc(total);
-    snprintf(out, total, "%s%s%s", dir, sep ? "\\" : "", name);
+    snprintf(out, total, "%s%s%s", dir, sep ? PATH_SEP_STR : "", name);
     return out;
 }
 
@@ -435,10 +453,10 @@ int path_mkdirs(const char *dir) {
     snprintf(tmp, sizeof(tmp), "%s", dir);
     path_to_backslashes(tmp);
     for (char *p = tmp + 1; *p; p++) {
-        if (*p == '\\') {
+        if (*p == PATH_SEP) {
             *p = '\0';
             if (!path_is_dir(tmp)) _mkdir(tmp);
-            *p = '\\';
+            *p = PATH_SEP;
         }
     }
     if (!path_is_dir(tmp) && _mkdir(tmp) != 0) return path_is_dir(tmp);
@@ -446,11 +464,18 @@ int path_mkdirs(const char *dir) {
 }
 
 char *home_dir(void) {
-    char *h = getenv("USERPROFILE");
+    char *h;
+#ifdef _WIN32
+    h = getenv("USERPROFILE");
     if (h && *h) return h;
+#endif
     h = getenv("HOME");
     if (h && *h) return h;
+#ifdef _WIN32
     return "C:\\";
+#else
+    return "/";
+#endif
 }
 
 char *config_path(const char *name) {

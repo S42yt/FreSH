@@ -11,12 +11,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <windows.h>
+#include "platform.h"
 
+#ifdef _WIN32
 #include <shellapi.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
 #include <wincrypt.h>
+#else
+#include <sys/statvfs.h>
+#endif
 
 #include "awk.h"
 #include "exec.h"
@@ -525,6 +529,42 @@ static int more_stat(int argc, char **argv) {
     return status;
 }
 
+#ifndef _WIN32
+
+static int more_df(int argc, char **argv) {
+    int start = first_operand(argc, argv);
+    const char *target = start < argc ? argv[start] : "/";
+    struct statvfs space;
+    if (statvfs(target, &space) != 0) {
+        shell_error("df: %s: cannot read", target);
+        return 1;
+    }
+    double gigabyte = 1024.0 * 1024.0 * 1024.0;
+    double total = (double)space.f_blocks * (double)space.f_frsize;
+    double free_bytes = (double)space.f_bavail * (double)space.f_frsize;
+    printf("  %s%-6s %10s %10s %10s%s\n", style(S_LABEL), "mount", "size", "used", "free",
+           style(S_RESET));
+    printf("  %-6s %9.1fG %9.1fG %9.1fG\n", target, total / gigabyte, (total - free_bytes) / gigabyte,
+           free_bytes / gigabyte);
+    return 0;
+}
+
+static int more_ps(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    shell_error("ps: not bundled on this platform, the system ps is used when it is on PATH");
+    return 1;
+}
+
+static int more_pkill(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    shell_error("pkill: not bundled on this platform, the system pkill is used when it is on PATH");
+    return 1;
+}
+
+#else
+
 static int more_df(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -590,6 +630,8 @@ static int more_pkill(int argc, char **argv) {
     CloseHandle(snapshot);
     return killed > 0 ? 0 : 1;
 }
+
+#endif
 
 static int more_id(int argc, char **argv) {
     (void)argc;
@@ -703,6 +745,61 @@ static int more_ln(int argc, char **argv) {
     return 0;
 }
 
+#ifndef _WIN32
+
+static int more_open(int argc, char **argv) {
+    const char *target = argc > 1 ? argv[1] : ".";
+    StrBuf command;
+    sb_init(&command);
+#ifdef __APPLE__
+    sb_puts(&command, "/usr/bin/open ");
+#else
+    sb_puts(&command, "xdg-open ");
+#endif
+    sb_put_quoted(&command, target);
+    int status = exec_text(command.data);
+    sb_free(&command);
+    return status;
+}
+
+typedef int ALG_ID;
+#define CALG_MD5 1
+#define CALG_SHA1 2
+#define CALG_SHA_256 3
+
+static int hash_file(const char *path, ALG_ID algorithm, char *out, size_t out_size) {
+    if (!path_is_file(path)) {
+        shell_error("%s: no such file", path);
+        return 0;
+    }
+#ifdef __APPLE__
+    const char *tool = algorithm == CALG_MD5 ? "md5 -q" : algorithm == CALG_SHA1 ? "shasum -a 1"
+                                                                                  : "shasum -a 256";
+#else
+    const char *tool = algorithm == CALG_MD5 ? "md5sum" : algorithm == CALG_SHA1 ? "sha1sum"
+                                                                                  : "sha256sum";
+#endif
+    StrBuf command;
+    sb_init(&command);
+    sb_puts(&command, tool);
+    sb_puts(&command, " -- ");
+    sb_put_quoted(&command, path);
+    sb_puts(&command, " 2>/dev/null");
+
+    FILE *pipe = popen(command.data, "r");
+    sb_free(&command);
+    if (!pipe) return 0;
+
+    char line[512] = "";
+    char *read = fgets(line, sizeof(line), pipe);
+    int ok = pclose(pipe) == 0 && read != NULL;
+    line[strcspn(line, " \t\r\n")] = '\0';
+    if (ok) snprintf(out, out_size, "%s", line);
+    return ok && out[0] != '\0';
+}
+
+#else
+
 static int more_open(int argc, char **argv) {
     const char *target = argc > 1 ? argv[1] : ".";
 
@@ -791,6 +888,8 @@ static int hash_file(const char *path, ALG_ID algorithm, char *out, size_t out_s
     crypt_release(provider, 0);
     return ok;
 }
+
+#endif
 
 static int hash_command(int argc, char **argv, ALG_ID algorithm) {
     int index = first_operand(argc, argv);

@@ -55,10 +55,10 @@ than rejected, so check this page when a script behaves oddly.
 | `readonly [name=value]` | `-p` | a variable that cannot be changed again |
 | `time pipeline` | | how long it took, on stderr |
 | `z [word ...]` | | jump to a directory you have used, see [shortcuts](shortcuts.md) |
-| `copy` / `paste` | | the Windows clipboard |
+| `copy` / `paste` | | the clipboard, `pbcopy` and `pbpaste` on macOS |
 | `copypath [file]` | | put the full path on the clipboard |
 | `extract archive [dir]` | | unpack zip, tar, gz, bz2, xz, 7z or rar |
-| `admin [command]` | | reopen FreSH elevated |
+| `admin [command]` | | reopen FreSH elevated, through `sudo` on macOS |
 | `history [n]` | `-c` | `-c` clears |
 | `which name...` | | path of a command |
 | `type name...` | | says whether it is an alias, function, builtin or file |
@@ -99,7 +99,7 @@ than rejected, so check this page when a script behaves oddly.
 | `dirname path` | | |
 | `realpath paths` | | absolute path |
 | `mktemp` | `-d` | prints the path it made |
-| `open [target]` | | opens with the default program, `.` opens Explorer |
+| `open [target]` | | opens with the default program, `.` opens Explorer or Finder |
 
 ## Text
 
@@ -152,9 +152,29 @@ than rejected, so check this page when a script behaves oddly.
 | `sha256sum files` | | |
 | `wget url` | `-O file` | downloads over https |
 
+## Platforms
+
+FreSH is one set of sources on Windows and macOS, and the builtins and the
+bundled commands above are the same on both. What differs:
+
+- the PowerShell and cmd routing below, `ps1` and `cmd` exist only on Windows
+- `copy` and `paste` use the Windows clipboard or the macOS pasteboard
+- `admin` reopens FreSH elevated on Windows and runs it through `sudo` on macOS
+- `extract` unpacks zip files with PowerShell on Windows and `unzip` on macOS
+- `ps`, `pkill` and `df` are Windows fallbacks; macOS always has the real ones
+- `md5sum`, `sha1sum` and `sha256sum` call `md5` and `shasum` on macOS
+- `uname` says `Windows` on Windows and, on macOS, what the system `uname` says
+- `PATH` is split on `;` on Windows and `:` on macOS, and only files with the
+  execute bit count as commands there, the way bash sees them
+
+Because a bundled command only runs when nothing on `PATH` has its name, a Mac
+uses its own `ls`, `sort`, `sed` and so on for everything but the shadowed
+list above, so scripts behave the way the rest of the machine does.
+
 ## PowerShell and cmd
 
-You never have to leave FreSH to run something written for the other shells.
+Windows only. You never have to leave FreSH to run something written for the
+other shells.
 
 A line whose first word is a PowerShell cmdlet (`Verb-Noun`, with a real
 PowerShell verb) or a known PowerShell alias is handed to PowerShell whole, so

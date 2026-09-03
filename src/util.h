@@ -57,6 +57,7 @@ void sb_putc(StrBuf *sb, char c);
 void sb_putn(StrBuf *sb, const char *s, size_t n);
 void sb_puts(StrBuf *sb, const char *s);
 void sb_printf(StrBuf *sb, const char *fmt, ...);
+void sb_put_quoted(StrBuf *sb, const char *text);
 char *sb_take(StrBuf *sb);
 
 int read_line(FILE *f, StrBuf *out);
@@ -83,6 +84,7 @@ int str_word_at(const char *p, const char *start, const char *word);
 
 void path_to_slashes(char *p);
 void path_to_backslashes(char *p);
+char *path_last_sep(const char *p);
 int path_is_dir(const char *p);
 int path_is_file(const char *p);
 int path_is_absolute(const char *p);

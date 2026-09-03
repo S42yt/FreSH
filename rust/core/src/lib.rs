@@ -173,6 +173,7 @@ pub extern "C" fn fresh_path_merge(
     count: usize,
     out: *mut u8,
     cap: usize,
+    separator: u8,
 ) -> usize {
     if parts.is_null() || out.is_null() || cap == 0 {
         return 0;
@@ -193,7 +194,7 @@ pub extern "C" fn fresh_path_merge(
         }
         let text = unsafe { slice::from_raw_parts(part, c_len(part)) };
 
-        for entry in text.split(|&byte| byte == b';') {
+        for entry in text.split(|&byte| byte == separator) {
             if entry.is_empty() {
                 continue;
             }
@@ -210,13 +211,13 @@ pub extern "C" fn fresh_path_merge(
                 continue;
             }
 
-            let separator = usize::from(written > 0);
-            if written + separator + entry.len() + 1 > cap {
+            let needs_separator = written > 0;
+            if written + usize::from(needs_separator) + entry.len() + 1 > cap {
                 buffer[written] = 0;
                 return written;
             }
-            if separator == 1 {
-                buffer[written] = b';';
+            if needs_separator {
+                buffer[written] = separator;
                 written += 1;
             }
 

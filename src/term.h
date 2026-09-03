@@ -58,6 +58,7 @@ enum {
 
 void term_init(void);
 void term_cleanup(void);
+void term_cooked(void);
 int term_width(void);
 int term_height(void);
 int term_read_key(void);
