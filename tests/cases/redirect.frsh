@@ -48,6 +48,8 @@ read -r raw <<< "kept"
 check read_dash_r "$raw" kept
 
 check process_substitution "$(cat <(echo substituted))" substituted
+check process_substitution_then_pipe "$(cat <(echo one) | tr o 0)" 0ne
+check process_substitution_after_capture "$(x=$(echo two); cat <(echo "$x"))" two
 
 set -o pipefail
 false | true

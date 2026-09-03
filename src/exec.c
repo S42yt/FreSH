@@ -532,6 +532,13 @@ static int io_is_default(const IoSet *io) {
            io->extra_count == 0;
 }
 
+static void io_refresh(IoSet *io, const IoSet *base) {
+    IoSet current = io_default();
+    if (io->in == base->in) io->in = current.in;
+    if (io->out == base->out) io->out = current.out;
+    if (io->err == base->err) io->err = current.err;
+}
+
 static void discard_stdin_buffer(void) {
     fflush(stdin);
     setvbuf(stdin, NULL, _IOFBF, BUFSIZ);
@@ -1134,7 +1141,7 @@ static int substitute_processes(StrList *words, Substitution *pending, int max) 
     return count;
 }
 
-static void finish_substitutions(Substitution *pending, int count) {
+static void finish_substitutions(Substitution *pending, int count, int still_running) {
     for (int i = 0; i < count; i++) {
         if (pending[i].command) {
             StrBuf script;
@@ -1144,7 +1151,8 @@ static void finish_substitutions(Substitution *pending, int count) {
             sb_free(&script);
             free(pending[i].command);
         }
-        DeleteFileA(pending[i].path);
+        if (still_running) sl_push_copy(&temp_created, pending[i].path);
+        else DeleteFileA(pending[i].path);
     }
 }
 
@@ -1345,6 +1353,7 @@ static int exec_background_child(Node *node) {
 }
 
 static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) {
+    IoSet base = io_default();
     StrList words;
     sl_init(&words);
     if (node->line > 0) shell.line = node->line;
@@ -1358,6 +1367,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         sl_free(&words);
         return 1;
     }
+    io_refresh(&io, &base);
 
     size_t first = 0;
     while (first < words.len && is_assignment(words.items[first])) first++;
@@ -1472,7 +1482,7 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     sl_free(&saved_names);
     sl_free(&saved_values);
     sl_free(&words);
-    finish_substitutions(pending, substitutions);
+    finish_substitutions(pending, substitutions, async_out && *async_out);
     return status;
 }
 
@@ -1481,7 +1491,9 @@ static int exec_switch(Node *node);
 static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out) {
     if (node->kind == N_SIMPLE) return exec_simple(node, io, background, async_out);
 
+    IoSet base = io_default();
     if (!apply_redirs(node->redirs, &io)) return 1;
+    io_refresh(&io, &base);
 
     FdSave save;
     int redirected = !io_is_default(&io);
