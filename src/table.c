@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "platform.h"
+
 #define TABLE_MIN_SIZE 16
 
 static size_t hash_name(const Table *table, const char *name) {

@@ -14,6 +14,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "platform.h"
+
 #include "exec.h"
 #include "regex.h"
 #include "shell.h"

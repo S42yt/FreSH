@@ -7,13 +7,17 @@
 #include "coreutils.h"
 
 #include <ctype.h>
-#include <direct.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <windows.h>
+
+#include "platform.h"
+
+#ifndef _WIN32
+#include <sys/utsname.h>
+#endif
 
 #include "exec.h"
 #include "moreutils.h"
@@ -487,6 +491,14 @@ static int core_tee(int argc, char **argv) {
     return 0;
 }
 
+#ifndef _WIN32
+
+static int delete_entry(const char *path, int directory) {
+    return (directory ? rmdir(path) : unlink(path)) == 0 ? 0 : 1;
+}
+
+#else
+
 typedef struct {
     DWORD Flags;
 } DispositionEx;
@@ -519,6 +531,8 @@ static int delete_entry(const char *path, int directory) {
     }
     return DeleteFileA(path) ? 0 : 1;
 }
+
+#endif
 
 static int remove_recursive(const char *path) {
     if (!path_is_dir(path)) return delete_entry(path, 0);
@@ -605,7 +619,7 @@ static void resolve_destination(const char *destination, const char *source, cha
     char native[PATH_BUF];
     snprintf(native, sizeof(native), "%s", source);
     path_to_backslashes(native);
-    const char *leaf = strrchr(native, '\\');
+    const char *leaf = path_last_sep(native);
     char *joined = path_join(destination, leaf ? leaf + 1 : native);
     snprintf(out, out_size, "%s", joined);
     free(joined);
@@ -858,6 +872,14 @@ static int core_hostname(int argc, char **argv) {
 
 static int core_uname(int argc, char **argv) {
     int all = flag_set(argc, argv, 'a');
+#ifndef _WIN32
+    struct utsname info;
+    if (uname(&info) != 0) return 1;
+    if (all) printf("%s %s %s %s %s\n", info.sysname, info.nodename, info.release, info.version,
+                    info.machine);
+    else printf("%s\n", info.sysname);
+    return 0;
+#else
     if (!all) {
         printf("Windows\n");
         return 0;
@@ -874,6 +896,7 @@ static int core_uname(int argc, char **argv) {
                                                                         : "x86";
     printf("Windows %s %s\n", host, architecture);
     return 0;
+#endif
 }
 
 static ULONGLONG directory_size(const char *path) {

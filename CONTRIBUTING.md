@@ -85,6 +85,25 @@ add trailers naming the tools you used.
   FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
   ```
 
+### The platform layer
+
+FreSH runs on Windows and macOS from one set of sources. No file includes
+`<windows.h>`; they include `"platform.h"`, which is the Win32 API on Windows
+and, on POSIX, the subset of it FreSH uses, implemented in
+`src/platform_posix.c` over `open`, `opendir`, `posix_spawn` and `termios`.
+That keeps the shell logic in one copy: a `FindFirstFileA` loop in
+`coreutils.c` is the same loop on a Mac.
+
+The rule for new code is to call the Win32 name and let the layer carry it.
+When a call has no sensible POSIX meaning, PowerShell routing, the registry,
+the clipboard, it gets an `#ifdef _WIN32` fork at the smallest point that
+works, with the POSIX side doing the equivalent thing (`pbcopy`, `sudo`,
+`unzip`) or saying plainly that it is not available. Paths use `PATH_SEP` and
+`PATH_LIST_SEP`, never a literal backslash or semicolon, and `path_last_sep`
+finds the leaf on both. The macOS job in CI builds, runs the suite and runs
+the bash differential on every push, so a change that only compiles on one
+side does not merge.
+
 ### The Rust core
 
 `rust/core` is a `no_std` static library holding the compute kernels the shell

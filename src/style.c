@@ -6,9 +6,10 @@
 
 #include "style.h"
 
-#include <io.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "platform.h"
 
 #include "util.h"
 #include "vars.h"

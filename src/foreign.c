@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "platform.h"
 
 #include "exec.h"
 #include "shell.h"
@@ -18,6 +18,8 @@
 #include "table.h"
 #include "util.h"
 #include "vars.h"
+
+#ifdef _WIN32
 
 static const char *POWERSHELL_VERBS[] = {
     "Add",       "Approve",  "Clear",     "Compare", "Complete", "Compress", "Connect",
@@ -318,3 +320,64 @@ int builtin_cmd(int argc, char **argv) {
     sb_free(&command);
     return status;
 }
+
+#else
+
+static int not_here(const char *what) {
+    shell_error("%s is not available on this platform", what);
+    return 127;
+}
+
+int foreign_run_powershell(const char *command) {
+    (void)command;
+    return not_here("PowerShell");
+}
+
+int foreign_run_cmd(const char *command) {
+    (void)command;
+    return not_here("cmd.exe");
+}
+
+int foreign_route(const char *line, int *status) {
+    (void)line;
+    (void)status;
+    return 0;
+}
+
+void foreign_forget(void) {
+}
+
+int foreign_known(const char *name) {
+    (void)name;
+    return 0;
+}
+
+void foreign_names(StrList *out) {
+    (void)out;
+}
+
+void foreign_complete(const char *prefix, size_t length, StrList *out) {
+    (void)prefix;
+    (void)length;
+    (void)out;
+}
+
+int foreign_name_prefix(const char *prefix, size_t length) {
+    (void)prefix;
+    (void)length;
+    return 0;
+}
+
+int builtin_ps1(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    return not_here("PowerShell");
+}
+
+int builtin_cmd(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    return not_here("cmd.exe");
+}
+
+#endif

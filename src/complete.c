@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "platform.h"
 
 #include "builtins.h"
 #include "coreutils.h"
@@ -131,7 +131,7 @@ static void complete_paths(const char *token, StrList *out, int directories_only
 
     char directory[PATH_BUF] = "";
     const char *leaf = native;
-    char *slash = strrchr(native, '\\');
+    char *slash = path_last_sep(native);
     if (slash) {
         size_t length = (size_t)(slash - native) + 1;
         memcpy(directory, native, length);

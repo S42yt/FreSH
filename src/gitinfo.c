@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "platform.h"
 
 #include "util.h"
 
@@ -43,12 +43,12 @@ static int find_root(const char *start, char *out, size_t out_size) {
 
     while (1) {
         char marker[PATH_BUF];
-        snprintf(marker, sizeof(marker), "%s\\.git", dir);
+        snprintf(marker, sizeof(marker), "%s" PATH_SEP_STR ".git", dir);
         if (GetFileAttributesA(marker) != INVALID_FILE_ATTRIBUTES) {
             snprintf(out, out_size, "%s", dir);
             return 1;
         }
-        char *slash = strrchr(dir, '\\');
+        char *slash = path_last_sep(dir);
         if (!slash || slash == dir) return 0;
         *slash = '\0';
     }
@@ -68,6 +68,40 @@ int git_repo_root(char *out, size_t out_size) {
     snprintf(out, out_size, "%s", cached_root);
     return 1;
 }
+
+#ifndef _WIN32
+
+static int run_git(const char *arguments, const char *working_dir, char *out, size_t out_size) {
+    StrBuf command;
+    sb_init(&command);
+    sb_puts(&command, "git ");
+    if (working_dir) {
+        sb_puts(&command, "-C ");
+        sb_put_quoted(&command, working_dir);
+        sb_putc(&command, ' ');
+    }
+    sb_puts(&command, arguments);
+    sb_puts(&command, " 2>/dev/null");
+
+    FILE *pipe = popen(command.data, "r");
+    sb_free(&command);
+    if (!pipe) return 0;
+
+    size_t total = 0;
+    while (total + 1 < out_size) {
+        size_t n = fread(out + total, 1, out_size - total - 1, pipe);
+        if (n == 0) break;
+        total += n;
+    }
+    out[total] = '\0';
+    int status = pclose(pipe);
+
+    char *end = out + strlen(out);
+    while (end > out && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ')) *--end = '\0';
+    return status == 0;
+}
+
+#else
 
 static int run_git(const char *arguments, const char *working_dir, char *out, size_t out_size) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
@@ -116,9 +150,11 @@ static int run_git(const char *arguments, const char *working_dir, char *out, si
     return exit_code == 0;
 }
 
+#endif
+
 static int read_head_file(const char *root, char *out, size_t out_size) {
     char head_path[PATH_BUF];
-    snprintf(head_path, sizeof(head_path), "%s\\.git", root);
+    snprintf(head_path, sizeof(head_path), "%s" PATH_SEP_STR ".git", root);
 
     if (path_is_file(head_path)) {
         FILE *f = fopen(head_path, "r");
@@ -129,9 +165,9 @@ static int read_head_file(const char *root, char *out, size_t out_size) {
         if (!read) return 0;
         char *gitdir = strstr(line, "gitdir:");
         if (!gitdir) return 0;
-        snprintf(head_path, sizeof(head_path), "%s\\HEAD", str_trim(gitdir + 7));
+        snprintf(head_path, sizeof(head_path), "%s" PATH_SEP_STR "HEAD", str_trim(gitdir + 7));
     } else {
-        snprintf(head_path, sizeof(head_path), "%s\\.git\\HEAD", root);
+        snprintf(head_path, sizeof(head_path), "%s" PATH_SEP_STR ".git" PATH_SEP_STR "HEAD", root);
     }
 
     FILE *f = fopen(head_path, "r");
@@ -163,7 +199,7 @@ const char *git_repo_name(void) {
     char root[PATH_BUF];
     if (!git_repo_root(root, sizeof(root))) return NULL;
     if (!cached_repo[0]) {
-        char *slash = strrchr(root, '\\');
+        char *slash = path_last_sep(root);
         snprintf(cached_repo, sizeof(cached_repo), "%s", slash ? slash + 1 : root);
     }
     return cached_repo;

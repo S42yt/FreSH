@@ -5,13 +5,16 @@
  */
 
 #include <ctype.h>
-#include <fcntl.h>
-#include <io.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+
+#include "platform.h"
+
+#ifndef _WIN32
+#include <signal.h>
+#endif
 
 #include "config.h"
 #include "exec.h"
@@ -154,6 +157,7 @@ static void timing_init(void) {
     QueryPerformanceFrequency(&timing_frequency);
     QueryPerformanceCounter(&timing_start);
 
+#ifdef _WIN32
     FILETIME created, exited, kernel, user, now;
     if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
         GetSystemTimePreciseAsFileTime(&now);
@@ -165,6 +169,7 @@ static void timing_init(void) {
         fprintf(stderr, "  %8llu us  before main\n",
                 (unsigned long long)((to.QuadPart - from.QuadPart) / 10));
     }
+#endif
 }
 
 static void timing_mark(const char *label) {
@@ -200,6 +205,7 @@ static void load_rc(void) {
 }
 
 static void binary_when_not_a_console(void) {
+#ifdef _WIN32
     static const DWORD STREAMS[3] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
     FILE *files[3] = {stdin, stdout, stderr};
 
@@ -208,6 +214,7 @@ static void binary_when_not_a_console(void) {
         if (GetConsoleMode(GetStdHandle(STREAMS[i]), &mode)) continue;
         _setmode(_fileno(files[i]), _O_BINARY);
     }
+#endif
     setvbuf(stdout, NULL, _IOFBF, 8192);
     setvbuf(stderr, NULL, _IONBF, 0);
 }
@@ -400,6 +407,16 @@ static void interactive_loop(void) {
     }
 }
 
+static const char *crash_logo(void) {
+    return "      __\n"
+           "     /\\ \\\n"
+           "    /  \\ \\    \xce\xbb  FreSH\n"
+           "   / /\\ \\ \\\n"
+           "  /_/  \\_\\_\\\n";
+}
+
+#ifdef _WIN32
+
 static const char *exception_name(DWORD code) {
     switch (code) {
     case EXCEPTION_ACCESS_VIOLATION: return "segmentation fault, a bad or null memory access";
@@ -426,11 +443,7 @@ static LONG WINAPI crash_report(EXCEPTION_POINTERS *info) {
     const char *red = colored ? "\x1b[31m" : "";
     const char *dim = colored ? "\x1b[90m" : "";
     const char *reset = colored ? "\x1b[0m" : "";
-    const char *logo = "      __\n"
-                       "     /\\ \\\n"
-                       "    /  \\ \\    \xce\xbb  FreSH\n"
-                       "   / /\\ \\ \\\n"
-                       "  /_/  \\_\\_\\\n";
+    const char *logo = crash_logo();
     const char *reason = name ? name : "an unexpected fault";
 
     int length = snprintf(message, sizeof(message),
@@ -450,15 +463,70 @@ static LONG WINAPI crash_report(EXCEPTION_POINTERS *info) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-int main(int argc, char *argv[]) {
-    if (getenv("FRESH_PROBE")) return 0;
-    timing_init();
-    timing_mark("entry");
-
+static void install_crash_reporter(void) {
     ULONG stack_reserve = 65536;
     SetThreadStackGuarantee(&stack_reserve);
     SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
     SetUnhandledExceptionFilter(crash_report);
+}
+
+#else
+
+static const char *signal_name(int number) {
+    switch (number) {
+    case SIGSEGV: return "segmentation fault, a bad or null memory access";
+    case SIGBUS: return "bus error, a misaligned or unmapped memory access";
+    case SIGFPE: return "arithmetic fault, most likely a divide by zero";
+    case SIGILL: return "illegal instruction";
+    case SIGABRT: return "abort, an assertion or a borrow violation";
+    default: return NULL;
+    }
+}
+
+static void crash_report(int number) {
+    static char message[512];
+    const char *name = signal_name(number);
+    int colored = isatty(2);
+
+    const char *red = colored ? "\x1b[31m" : "";
+    const char *dim = colored ? "\x1b[90m" : "";
+    const char *reset = colored ? "\x1b[0m" : "";
+    const char *reason = name ? name : "an unexpected fault";
+
+    int length = snprintf(message, sizeof(message),
+                          "\n%s%s%s\n"
+                          "%s  crashed: %s%s\n"
+                          "%s  signal %d, FreSH %s%s\n"
+                          "%s  if this is a bug, report it at "
+                          "https://github.com/S42yt/FreSH/issues%s\n",
+                          red, crash_logo(), reset, red, reason, reset, dim, number,
+                          FRESH_VERSION, reset, dim, reset);
+    if (length > 0) {
+        ssize_t ignored = write(2, message, (size_t)length);
+        (void)ignored;
+    }
+    signal(number, SIG_DFL);
+    raise(number);
+}
+
+static void install_crash_reporter(void) {
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = crash_report;
+    action.sa_flags = SA_RESETHAND;
+    sigaction(SIGSEGV, &action, NULL);
+    sigaction(SIGBUS, &action, NULL);
+    sigaction(SIGFPE, &action, NULL);
+    sigaction(SIGILL, &action, NULL);
+}
+
+#endif
+
+int main(int argc, char *argv[]) {
+    if (getenv("FRESH_PROBE")) return 0;
+    timing_init();
+    timing_mark("entry");
+    install_crash_reporter();
 
     int interactive = 1;
     int read_rc = 1;

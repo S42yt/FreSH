@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "platform.h"
 
 #include "exec.h"
 #include "shell.h"
@@ -1293,10 +1293,10 @@ static void glob_one_level(const char *pattern, StrList *matches) {
     path_to_backslashes(normalized);
 
     size_t length = strlen(normalized);
-    int directories_only = length > 1 && normalized[length - 1] == '\\';
+    int directories_only = length > 1 && normalized[length - 1] == PATH_SEP;
     if (directories_only) normalized[length - 1] = '\0';
 
-    char *slash = strrchr(normalized, '\\');
+    char *slash = path_last_sep(normalized);
     char dir[PATH_BUF] = "";
     const char *leaf = normalized;
     if (slash) {

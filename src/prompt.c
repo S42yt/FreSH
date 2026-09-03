@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <windows.h>
+#include "platform.h"
 
 #include "gitinfo.h"
 #include "shell.h"

@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "platform.h"
+
 #include "shell.h"
 #include "style.h"
 #include "term.h"

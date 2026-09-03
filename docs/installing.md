@@ -67,6 +67,40 @@ FreSH-Setup.exe /silent /user /default
 Uninstall from *Settings > Apps > FreSH*, or run `Uninstall-FreSH.exe` from the
 install folder.
 
+### macOS
+
+Every release ships `fresh-macos-arm64`, the same shell built for Apple
+silicon. There is no installer yet, and nothing to register:
+
+```sh
+curl -fsSL -o fresh https://github.com/S42yt/FreSH/releases/latest/download/fresh-macos-arm64
+chmod +x fresh
+xattr -d com.apple.quarantine fresh 2> /dev/null
+sudo mv fresh /usr/local/bin/fresh
+fresh
+```
+
+The `xattr` line removes the quarantine flag Gatekeeper puts on a download, the
+macOS equivalent of the SmartScreen prompt. The binary is not notarized, so
+without it macOS refuses to start it. Verify the file the same way as on
+Windows, with `gh attestation verify fresh --repo S42yt/FreSH` or against
+`SHA256SUMS.txt`.
+
+`fresh update` works on macOS too: it downloads the new binary next to the
+running one and swaps it in, so the directory it lives in has to be writable
+by you, or the update tells you to fetch the file yourself.
+
+An Intel Mac builds it from source in under a minute, see
+[building](building.md). Linux builds the same way, and is what the fuzzers
+run on, but is not a supported target: nothing is tested there beyond what CI
+happens to exercise.
+
+What differs from Windows is small and written down in
+[commands](commands.md#platforms): the PowerShell and cmd routing does not
+exist, `copy` and `paste` use the system pasteboard, `admin` runs through
+`sudo`, and the bundled unix commands step aside for the real ones on `PATH`
+exactly as they do on Windows.
+
 ### Checking what you downloaded
 
 FreSH is not code signed yet, so Windows shows a SmartScreen prompt the first
