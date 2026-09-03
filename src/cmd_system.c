@@ -37,6 +37,7 @@
 
 static int parse_or_exit(int argc, char **argv, const OptSpec *specs, const char *tool, Args *args,
                          int failure) {
+    memset(args, 0, sizeof(*args));
     int parsed = args_parse(argc, argv, specs, tool, args);
     if (parsed == ARGS_OK) return -1;
     return parsed == ARGS_DONE ? 0 : failure;
