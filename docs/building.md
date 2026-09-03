@@ -9,22 +9,36 @@ On Windows that means GCC from MinGW-w64 or MSYS2. No other dependencies.
 ./build.sh
 ```
 
-## macOS
+## macOS and Linux
 
-The same script, the same sources. Xcode's command line tools give you `cc`,
-and `rustup` or `brew install rust` gives you `cargo`:
+The same script, the same sources. On a Mac, Xcode's command line tools give
+you `cc`; on Linux, `gcc` or `clang` from your distribution. `rustup` gives
+you `cargo` on both:
 
 ```sh
-xcode-select --install
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ./build.sh
 ./build/fresh
 ```
 
-It produces `build/fresh`, one binary with nothing to install. There is no
-installer and no icon step on macOS, so the build finishes after the link.
-Linux builds with the same script and is what the fuzzers use, but only macOS
-and Windows are tested as shells.
+It produces `build/fresh`, the shell, and `build/fresh-setup`, the installer
+with the shell embedded the same way `FreSH-Setup.exe` embeds `FreSH.exe`.
+There is no icon step, so the build finishes after those two links.
+
+`FRESH_STATIC=1 ./build.sh` links the Linux binary statically, which is how
+the release binaries are built so they run on any libc. On a Mac,
+`FRESH_TARGET_ARCH=x86_64 ./build.sh` cross compiles the Intel binary on an
+Apple silicon machine, given `rustup target add x86_64-apple-darwin`.
+
+## Windows on ARM
+
+MSYS2's `CLANGARM64` environment builds it natively:
+
+```sh
+pacman -S mingw-w64-clang-aarch64-clang
+rustup target add aarch64-pc-windows-gnullvm
+CC=clang WINDRES=llvm-windres FRESH_RUST_TARGET=aarch64-pc-windows-gnullvm ./build.sh
+```
 
 Everything Windows specific sits behind `src/platform.h`: on Windows it is
 `<windows.h>`, on POSIX it is the small subset of that API FreSH uses,
@@ -65,8 +79,9 @@ fuzz/build.sh && fuzz/build/fuzz_parser -runs=0 fuzz/corpus/parser
 
 CI runs all three on every push: the suite, the bash differential, and the fuzz
 corpus under the address and undefined sanitizers. The suite and the
-differential run twice, once through `FreSH.exe` on Windows and once through
-`fresh` on macOS, and the macOS binary is attached to every release.
+differential run on every platform a release ships for: Windows x64 and ARM64,
+macOS on Apple silicon, Linux x86_64 and arm64. Every one of those binaries,
+plus the Intel macOS build, is attached to every release.
 
 ## License
 

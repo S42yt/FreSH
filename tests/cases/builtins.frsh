@@ -78,9 +78,9 @@ check pre_offers_newest_prerelease "$offered" yes
 case "$offer" in *"99.2.0-experiment"*) leaked=yes ;; *) leaked=no ;; esac
 check pre_skips_experiments "$leaked" no
 if on_windows; then
-  check selector_installs_any_release "$(printf '%s' "$listing" | grep -c 'no macOS build')" 0
+  check selector_installs_any_release "$(printf '%s' "$listing" | grep -c 'not for this platform')" 0
 else
-  check selector_marks_pre_unix_releases "$(printf '%s' "$listing" | grep -c 'no macOS build')" 1
+  check selector_marks_pre_unix_releases "$(printf '%s' "$listing" | grep -c 'not for this platform')" 1
   check selector_keeps_unix_releases "$(printf '%s' "$listing" | grep -c '99.0.0 release')" 1
 fi
 

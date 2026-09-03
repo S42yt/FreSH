@@ -27,10 +27,15 @@
 #define RELEASE_API "https://api.github.com/repos/S42yt/FreSH/releases/latest"
 #define RELEASE_API_LIST "https://api.github.com/repos/S42yt/FreSH/releases?per_page=100"
 #define RELEASE_PAGE "https://github.com/S42yt/FreSH/releases"
-#define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/FreSH-Setup.exe"
+#define DOWNLOAD_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/%s"
 #define BINARY_FORMAT "https://github.com/S42yt/FreSH/releases/download/v%s/fresh-%s-%s"
 #define USER_AGENT "FreSH-updater"
-#define FIRST_UNIX_VERSION "26.11.1-prerelease-2"
+
+#if defined(__APPLE__)
+#define FIRST_SUPPORTED_VERSION "26.11.1-prerelease-2"
+#else
+#define FIRST_SUPPORTED_VERSION "26.11.1-prerelease-3"
+#endif
 
 #ifndef _WIN32
 
@@ -214,12 +219,16 @@ static int version_newer(const char *candidate, const char *current) {
     return 0;
 }
 
+static int at_least(const char *version, const char *floor) {
+    return strcmp(version, floor) == 0 || version_newer(version, floor);
+}
+
 static int platform_supports(const char *version) {
 #ifdef _WIN32
     (void)version;
     return 1;
 #else
-    return strcmp(version, FIRST_UNIX_VERSION) == 0 || version_newer(version, FIRST_UNIX_VERSION);
+    return at_least(version, FIRST_SUPPORTED_VERSION);
 #endif
 }
 
@@ -227,8 +236,9 @@ static int platform_supports(const char *version) {
 
 static int install_update(const char *version) {
     if (!platform_supports(version)) {
-        shell_error("update: %s predates macOS support, the first release you can install is %s",
-                    version, FIRST_UNIX_VERSION);
+        shell_error("update: %s predates support for this platform, the first release you can "
+                    "install is %s",
+                    version, FIRST_SUPPORTED_VERSION);
         return 1;
     }
 
@@ -261,9 +271,18 @@ static int install_update(const char *version) {
 
 #else
 
+static const char *installer_name(const char *version) {
+#if defined(_M_ARM64) || defined(__aarch64__)
+    if (at_least(version, FIRST_SUPPORTED_VERSION)) return "FreSH-Setup-arm64.exe";
+#else
+    (void)version;
+#endif
+    return "FreSH-Setup.exe";
+}
+
 static int install_update(const char *version) {
     char url[512];
-    snprintf(url, sizeof(url), DOWNLOAD_FORMAT, version);
+    snprintf(url, sizeof(url), DOWNLOAD_FORMAT, version, installer_name(version));
 
     char directory[PATH_BUF];
     if (!GetTempPathA(sizeof(directory), directory)) return 1;
@@ -423,7 +442,7 @@ static int read_releases(Early *out, int max, int keep_stable, int one_per_versi
 static void selector_line(const Early *release, int marked) {
     const char *note = "";
     if (strcmp(release->tag, FRESH_VERSION) == 0) note = "  installed";
-    else if (!platform_supports(release->tag)) note = "  no macOS build";
+    else if (!platform_supports(release->tag)) note = "  not for this platform";
     else if (!version_newer(release->tag, FRESH_VERSION)) note = "  older than yours";
 
     const char *marker = marked ? "\xe2\x9d\xaf" : " ";

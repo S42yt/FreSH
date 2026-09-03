@@ -67,39 +67,79 @@ FreSH-Setup.exe /silent /user /default
 Uninstall from *Settings > Apps > FreSH*, or run `Uninstall-FreSH.exe` from the
 install folder.
 
-### macOS
+### Windows on ARM
 
-Every release ships `fresh-macos-arm64`, the same shell built for Apple
-silicon. There is no installer yet, and nothing to register:
+Every release ships `FreSH-Setup-arm64.exe` and `FreSH-arm64.exe`, native
+ARM64 builds of the installer and the portable executable. They register and
+behave exactly like the x64 ones. Scoop and the winget manifests pick the
+right one for the machine; when downloading by hand, take the `arm64` files on
+a Snapdragon or other ARM device and the plain ones everywhere else. The x64
+build also runs on ARM under emulation, so nothing breaks if you take the
+wrong one, it is only slower to start.
+
+### macOS and Linux
+
+One line, on either:
 
 ```sh
-curl -fsSL -o fresh https://github.com/S42yt/FreSH/releases/latest/download/fresh-macos-arm64
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/S42yt/FreSH/master/install.sh)"
+```
+
+That downloads `fresh-setup` for your system and runs it. It is the same
+wizard as the Windows installer, in text:
+
+1. pick **Just for me** (`~/.local/bin`, no sudo) or **For all users**
+   (`/usr/local/bin`)
+2. say whether FreSH should become your login shell, which lists it in
+   `/etc/shells` and runs `chsh`
+3. open a new terminal and type `fresh`
+
+Silent, the way the Windows installer takes `/silent /user /default`:
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/S42yt/FreSH/master/install.sh)" -- --silent --user
+fresh-setup --silent --system --default
+fresh-setup --uninstall
+```
+
+Piped into `sh` with no terminal, `install.sh` installs for the current user
+silently. `FRESH_VERSION=26.11.1-prerelease-3` pins a release.
+
+Every release also ships the pieces by hand: `fresh-setup-macos-arm64`,
+`fresh-setup-macos-x86_64`, `fresh-setup-linux-x86_64` and
+`fresh-setup-linux-arm64` are the installers, and `fresh-macos-*` /
+`fresh-linux-*` are the bare binaries for people who prefer to place them
+themselves:
+
+```sh
+curl -fsSL -o fresh https://github.com/S42yt/FreSH/releases/latest/download/fresh-macos-$(uname -m)
 chmod +x fresh
 xattr -d com.apple.quarantine fresh 2> /dev/null
 sudo mv fresh /usr/local/bin/fresh
-fresh
 ```
 
 The `xattr` line removes the quarantine flag Gatekeeper puts on a download, the
-macOS equivalent of the SmartScreen prompt. The binary is not notarized, so
-without it macOS refuses to start it. Verify the file the same way as on
-Windows, with `gh attestation verify fresh --repo S42yt/FreSH` or against
-`SHA256SUMS.txt`.
+macOS equivalent of the SmartScreen prompt. The binaries are not notarized, so
+without it macOS refuses to start them; the setup binary needs the same. Verify
+a file the same way as on Windows, with
+`gh attestation verify fresh --repo S42yt/FreSH` or against `SHA256SUMS.txt`.
 
 `fresh update` works on macOS too: it downloads the new binary next to the
 running one and swaps it in, so the directory it lives in has to be writable
 by you, or the update tells you to fetch the file yourself. Releases before
 26.11.1-prerelease-2 have no macOS binary, so the selector marks them
-`no macOS build` and refuses to install them there.
+`not for this platform` and refuses to install them there.
 
-An Intel Mac builds it from source in under a minute, see
-[building](building.md). Linux builds the same way, and is what the fuzzers
-run on, but is not a supported target: nothing is tested there beyond what CI
-happens to exercise.
+The Linux binaries are linked statically, so they run on any distribution
+without caring which libc it has. `fresh update` swaps the binary in place on
+both systems, and the first release it can install is 26.11.1-prerelease-2 on
+macOS and 26.11.1-prerelease-3 on Linux. On Linux the clipboard builtins use
+`xclip` or `wl-copy` when one is installed, and `open` goes through
+`xdg-open`.
 
-What differs from Windows is small and written down in
+What differs from Windows on both is small and written down in
 [commands](commands.md#platforms): the PowerShell and cmd routing does not
-exist, `copy` and `paste` use the system pasteboard, `admin` runs through
+exist, `copy` and `paste` use the system clipboard tools, `admin` runs through
 `sudo`, and the bundled unix commands step aside for the real ones on `PATH`
 exactly as they do on Windows.
 

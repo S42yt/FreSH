@@ -24,6 +24,9 @@ permissions:
   attestations: write
   id-token: write
 
+env:
+  INPUT_VERSION: ${{ github.event.inputs.version }}
+
 jobs:
   expectations:
     runs-on: ubuntu-latest
@@ -43,9 +46,29 @@ jobs:
           path: tests/diff/expected
           retention-days: 7
 
-  build:
-    runs-on: windows-latest
+  windows:
     needs: expectations
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            msystem: MINGW64
+            packages: mingw-w64-x86_64-gcc
+            rust_target: x86_64-pc-windows-gnu
+            cc: gcc
+            windres: windres
+            suffix: ''
+          - arch: arm64
+            runner: windows-11-arm
+            msystem: CLANGARM64
+            packages: mingw-w64-clang-aarch64-clang
+            rust_target: aarch64-pc-windows-gnullvm
+            cc: clang
+            windres: llvm-windres
+            suffix: '-arm64'
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,16 +77,13 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
-          install: mingw-w64-x86_64-gcc
+          msystem: ${{ matrix.msystem }}
+          install: ${{ matrix.packages }}
           update: true
 
-      - name: Add the Rust target the C linker can use
-        shell: bash
-        run: |
-          rustup target add x86_64-pc-windows-gnu
-          rustc --version
-          cargo --version
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
 
       - name: Resolve version
         shell: bash
@@ -71,18 +91,9 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="${{ github.event.inputs.version }}"
-            VERSION="${VERSION:-0.0.0-dev}"
+            VERSION="${INPUT_VERSION:-0.0.0-dev}"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-          if [[ "$VERSION" == *-* ]]; then
-            echo "PRERELEASE=true" >> $GITHUB_ENV
-            echo "this is a prerelease: $VERSION"
-          else
-            echo "PRERELEASE=false" >> $GITHUB_ENV
-            echo "this is a release: $VERSION"
-          fi
 
       - name: Stamp version
         shell: bash
@@ -94,12 +105,17 @@ jobs:
       - name: Build the Rust core
         shell: bash
         run: |
+          rustc --version
           cd rust/core
-          cargo build --release --target x86_64-pc-windows-gnu
+          cargo build --release --target ${{ matrix.rust_target }}
 
       - name: Build with borrow checking and run the suite under it
         timeout-minutes: 10
         shell: msys2 {0}
+        env:
+          CC: ${{ matrix.cc }}
+          WINDRES: ${{ matrix.windres }}
+          FRESH_RUST_TARGET: ${{ matrix.rust_target }}
         run: |
           chmod +x build.sh
           FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
@@ -107,6 +123,10 @@ jobs:
 
       - name: Build
         shell: msys2 {0}
+        env:
+          CC: ${{ matrix.cc }}
+          WINDRES: ${{ matrix.windres }}
+          FRESH_RUST_TARGET: ${{ matrix.rust_target }}
         run: |
           ./build.sh
           test -f build/FreSH.exe
@@ -118,6 +138,7 @@ jobs:
           ./build/FreSH.exe --version
           ./build/FreSH.exe -c 'echo hello from $(pwd)'
           ./build/FreSH.exe -c 'for i in 1 2 3; do echo $i; done'
+          ./build/FreSH.exe -c 'uname -a'
 
       - name: Test suite
         timeout-minutes: 10
@@ -136,45 +157,19 @@ jobs:
           tests/diff/record.sh "$PWD/build/FreSH.exe" tests/diff/actual
           tests/diff/compare.sh tests/diff/expected tests/diff/actual
 
-      - name: Checksums
+      - name: Name the binaries
         shell: bash
         run: |
-          cd build
-          sha256sum FreSH.exe FreSH-Setup.exe > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Update the package manifests
-        if: startsWith(github.ref, 'refs/tags/v') && env.PRERELEASE == 'false'
-        shell: bash
-        run: |
-          cat build/SHA256SUMS.txt
-          setup_hash=$(grep -E '[ *]FreSH-Setup\.exe$' build/SHA256SUMS.txt | cut -d' ' -f1)
-          plain_hash=$(grep -E '[ *]FreSH\.exe$' build/SHA256SUMS.txt | cut -d' ' -f1)
-          echo "setup $setup_hash"
-          echo "exe   $plain_hash"
-          bash tools/manifests.sh "$VERSION" "$setup_hash" "$plain_hash"
-          git diff --stat
-
-      - name: Submit the winget packages
-        if: startsWith(github.ref, 'refs/tags/v') && env.PRERELEASE == 'false'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "WINGET_TOKEN is not set, so the winget pull requests are not opened"
-            echo "see manifests/README.md for opening them by hand"
-            exit 0
-          fi
-          bash tools/winget-submit.sh "$VERSION"
+          mkdir -p dist
+          cp build/FreSH.exe "dist/FreSH${{ matrix.suffix }}.exe"
+          cp build/FreSH-Setup.exe "dist/FreSH-Setup${{ matrix.suffix }}.exe"
+          ls -la dist
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: FreSH-${{ env.VERSION }}
-          path: |
-            build/FreSH.exe
-            build/FreSH-Setup.exe
+          name: windows-${{ matrix.arch }}
+          path: dist/*
           retention-days: 90
 
   macos:
@@ -189,8 +184,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="${{ github.event.inputs.version }}"
-            VERSION="${VERSION:-0.0.0-dev}"
+            VERSION="${INPUT_VERSION:-0.0.0-dev}"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           sed -i '' "s/#define FRESH_VERSION \".*\"/#define FRESH_VERSION \"$VERSION\"/" src/shell.h
@@ -199,8 +193,10 @@ jobs:
         shell: bash
         run: |
           rustc --version
+          rustup target add x86_64-apple-darwin
           cd rust/core
-          cargo build --release --target "$(rustc -vV | sed -n 's/^host: //p')"
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
 
       - name: Build with borrow checking and run the suite under it
         timeout-minutes: 10
@@ -216,7 +212,6 @@ jobs:
           ./build.sh
           test -f build/fresh
           file build/fresh
-          ls -la build/fresh
 
       - name: Smoke test
         shell: bash
@@ -225,6 +220,11 @@ jobs:
           ./build/fresh -c 'echo hello from $(pwd)'
           ./build/fresh -c 'for i in 1 2 3; do echo $i; done | tr 1 x'
           ./build/fresh -c 'uname -s; command -v ls'
+          ./build/fresh-setup --silent --user
+          test -x "$HOME/.local/bin/fresh"
+          "$HOME/.local/bin/fresh" --version
+          ./build/fresh-setup --silent --uninstall
+          test ! -e "$HOME/.local/bin/fresh"
 
       - name: Test suite
         timeout-minutes: 10
@@ -251,30 +251,135 @@ jobs:
           tests/diff/record.sh /bin/bash tests/diff/expected-macos
           tests/diff/compare.sh tests/diff/expected-macos tests/diff/actual
 
-      - name: Name the binary
+      - name: Build the Intel binary
         shell: bash
-        run: cp build/fresh build/fresh-macos-arm64
+        run: |
+          mkdir -p dist
+          cp build/fresh dist/fresh-macos-arm64
+          cp build/fresh-setup dist/fresh-setup-macos-arm64
+          FRESH_TARGET_ARCH=x86_64 ./build.sh
+          file build/fresh build/fresh-setup
+          cp build/fresh dist/fresh-macos-x86_64
+          cp build/fresh-setup dist/fresh-setup-macos-x86_64
+          arch -x86_64 ./dist/fresh-macos-x86_64 -c 'echo intel says $(uname -m)' || echo "no rosetta on this runner"
+          ls -la dist
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: fresh-macos-arm64
-          path: build/fresh-macos-arm64
+          name: macos
+          path: dist/*
           retention-days: 90
 
-  release:
-    runs-on: ubuntu-latest
-    needs: [build, macos]
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+  linux:
+    needs: expectations
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Resolve version
         shell: bash
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="${{ github.event.inputs.version }}"
-            VERSION="${VERSION:-0.0.0-dev}"
+            VERSION="${INPUT_VERSION:-0.0.0-dev}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          sed -i "s/#define FRESH_VERSION \".*\"/#define FRESH_VERSION \"$VERSION\"/" src/shell.h
+
+      - name: Build the Rust core
+        shell: bash
+        run: |
+          rustc --version
+          cd rust/core
+          cargo build --release --target "$(rustc -vV | sed -n 's/^host: //p')"
+
+      - name: Build with borrow checking and run the suite under it
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          chmod +x build.sh
+          FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
+          ./build/fresh tests/run.frsh
+
+      - name: Build
+        shell: bash
+        run: |
+          FRESH_STATIC=1 ./build.sh
+          test -f build/fresh
+          file build/fresh build/fresh-setup
+          ldd build/fresh || true
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./build/fresh --version
+          ./build/fresh -c 'echo hello from $(pwd)'
+          ./build/fresh -c 'for i in 1 2 3; do echo $i; done | tr 1 x'
+          ./build/fresh -c 'uname -sm; whoami; command -v ls'
+          ./build/fresh-setup --silent --user
+          test -x "$HOME/.local/bin/fresh"
+          "$HOME/.local/bin/fresh" --version
+          grep -c 'FreSH setup' "$HOME/.profile" "$HOME/.bashrc" || true
+          ./build/fresh-setup --silent --uninstall
+          test ! -e "$HOME/.local/bin/fresh"
+
+      - name: Test suite
+        timeout-minutes: 10
+        shell: bash
+        run: ./build/fresh tests/run.frsh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bash-expectations
+          path: tests/diff/expected
+
+      - name: Differential test against bash
+        shell: bash
+        run: |
+          chmod +x tests/diff/*.sh
+          tests/diff/record.sh "$PWD/build/fresh" tests/diff/actual
+          tests/diff/compare.sh tests/diff/expected tests/diff/actual
+
+      - name: Name the binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/fresh dist/fresh-linux-${{ matrix.arch }}
+          cp build/fresh-setup dist/fresh-setup-linux-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 90
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="${INPUT_VERSION:-0.0.0-dev}"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           if [[ "$VERSION" == *-* ]]; then echo "PRERELEASE=true" >> $GITHUB_ENV
@@ -282,20 +387,19 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: FreSH-${{ env.VERSION }}
+          pattern: '{windows-*,macos,linux-*}'
           path: dist
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: fresh-macos-arm64
-          path: dist
+          merge-multiple: true
 
       - name: Checksums
         shell: bash
         run: |
           cd dist
-          chmod +x fresh-macos-arm64
-          sha256sum FreSH.exe FreSH-Setup.exe fresh-macos-arm64 > SHA256SUMS.txt
+          chmod +x fresh-*
+          sha256sum FreSH.exe FreSH-Setup.exe FreSH-arm64.exe FreSH-Setup-arm64.exe \
+                    fresh-macos-arm64 fresh-macos-x86_64 fresh-linux-x86_64 fresh-linux-arm64 \
+                    fresh-setup-macos-arm64 fresh-setup-macos-x86_64 \
+                    fresh-setup-linux-x86_64 fresh-setup-linux-arm64 > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - uses: actions/attest-build-provenance@v2
@@ -304,7 +408,38 @@ jobs:
           subject-path: |
             dist/FreSH.exe
             dist/FreSH-Setup.exe
+            dist/FreSH-arm64.exe
+            dist/FreSH-Setup-arm64.exe
             dist/fresh-macos-arm64
+            dist/fresh-macos-x86_64
+            dist/fresh-linux-x86_64
+            dist/fresh-linux-arm64
+            dist/fresh-setup-macos-arm64
+            dist/fresh-setup-macos-x86_64
+            dist/fresh-setup-linux-x86_64
+            dist/fresh-setup-linux-arm64
+
+      - name: Update the package manifests
+        if: startsWith(github.ref, 'refs/tags/v') && env.PRERELEASE == 'false'
+        shell: bash
+        run: |
+          hash() { grep -E "[ *]$1\$" dist/SHA256SUMS.txt | cut -d' ' -f1; }
+          bash tools/manifests.sh "$VERSION" "$(hash FreSH-Setup.exe)" "$(hash FreSH.exe)" \
+                                  "$(hash FreSH-Setup-arm64.exe)" "$(hash FreSH-arm64.exe)"
+          git diff --stat
+
+      - name: Submit the winget packages
+        if: startsWith(github.ref, 'refs/tags/v') && env.PRERELEASE == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "WINGET_TOKEN is not set, so the winget pull requests are not opened"
+            echo "see manifests/README.md for opening them by hand"
+            exit 0
+          fi
+          bash tools/winget-submit.sh "$VERSION"
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -317,6 +452,15 @@ jobs:
           files: |
             dist/FreSH-Setup.exe
             dist/FreSH.exe
+            dist/FreSH-Setup-arm64.exe
+            dist/FreSH-arm64.exe
             dist/fresh-macos-arm64
+            dist/fresh-macos-x86_64
+            dist/fresh-linux-x86_64
+            dist/fresh-linux-arm64
+            dist/fresh-setup-macos-arm64
+            dist/fresh-setup-macos-x86_64
+            dist/fresh-setup-linux-x86_64
+            dist/fresh-setup-linux-arm64
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
