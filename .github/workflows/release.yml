@@ -119,7 +119,9 @@ jobs:
         run: |
           chmod +x build.sh
           FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
-          ./build/FreSH.exe --norc -c 'echo "TEMP=$TEMP"; f=$(mktemp); echo "tmp=$f"; echo data > "$f"; cat "$f"; cat <(echo substituted); echo "procsub status $?"; ( echo bg ) > bg.out & wait $!; echo "bg status $?"; cat bg.out' || echo "diagnostic exit $?"
+          ./build/FreSH.exe --norc -c 'set -x; cat <(echo substituted) 2>&1; echo "procsub status $?"; ls "$TEMP" | head -5; { echo grouped; } > grp.out; cat grp.out' 2>&1 || echo "diagnostic exit $?"
+          ./build/FreSH.exe --norc -c 'source tests/lib.frsh; BG=hidden; bg_out=.bgp; g() { printf "%s" "$BG"; }; ( g ) > "$bg_out" & wait $! 2> /dev/null; echo "bg status $?"; ls -la .bgp; cat .bgp; echo' 2>&1 || echo "diagnostic exit $?"
+          ./build/FreSH.exe --norc -c 'g() { printf hidden; }; ( g ) > .bgq & wait $!; echo "plain bg status $?"; cat .bgq; echo' 2>&1 || echo "diagnostic exit $?"
           ./build/FreSH.exe tests/run.frsh
 
       - name: Build
