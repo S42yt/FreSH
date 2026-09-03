@@ -36,6 +36,16 @@ static HANDLE fd_handle(int fd) {
     return (HANDLE)(TAG_FD | (intptr_t)fd);
 }
 
+#define PRIVATE_FD_FLOOR 10
+
+static int lift_fd(int fd, int inheritable) {
+    if (fd < 0 || fd >= PRIVATE_FD_FLOOR) return fd;
+    int lifted = fcntl(fd, inheritable ? F_DUPFD : F_DUPFD_CLOEXEC, PRIVATE_FD_FLOOR);
+    if (lifted < 0) return fd;
+    close(fd);
+    return lifted;
+}
+
 int fresh_handle_fd(HANDLE handle) {
     intptr_t value = (intptr_t)handle;
     if ((value & TAG_MASK) != TAG_FD) return -1;
@@ -260,6 +270,7 @@ HANDLE CreateFileA(const char *path, DWORD access, DWORD share, SECURITY_ATTRIBU
 
     int fd = open(native, mode, 0666);
     if (fd < 0) return INVALID_HANDLE_VALUE;
+    fd = lift_fd(fd, sa && sa->bInheritHandle);
     if (flags & FILE_FLAG_DELETE_ON_CLOSE) unlink(native);
     return fd_handle(fd);
 }
@@ -690,7 +701,7 @@ BOOL DuplicateHandle(HANDLE source_process, HANDLE source, HANDLE target_process
     (void)options;
     int fd = fresh_handle_fd(source);
     if (fd < 0) return FALSE;
-    int copy = fcntl(fd, inherit ? F_DUPFD : F_DUPFD_CLOEXEC, 3);
+    int copy = fcntl(fd, inherit ? F_DUPFD : F_DUPFD_CLOEXEC, PRIVATE_FD_FLOOR);
     if (copy < 0) return FALSE;
     *out = fd_handle(copy);
     return TRUE;
@@ -712,6 +723,8 @@ BOOL CreatePipe(HANDLE *read_end, HANDLE *write_end, SECURITY_ATTRIBUTES *sa, DW
     if (pipe(fds) != 0) return FALSE;
     fcntl(fds[0], F_SETFD, FD_CLOEXEC);
     fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+    fds[0] = lift_fd(fds[0], 0);
+    fds[1] = lift_fd(fds[1], 0);
     *read_end = fd_handle(fds[0]);
     *write_end = fd_handle(fds[1]);
     return TRUE;

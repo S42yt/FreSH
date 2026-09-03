@@ -105,6 +105,18 @@ finds the leaf on both. CI builds, runs the suite and runs the bash
 differential on Windows x64, Windows ARM64, macOS and Linux on every push, so
 a change that only compiles on one side does not merge.
 
+### The bundled commands
+
+`src/commands.h` is the one header: the `Command` table type, the option
+parser (`args_parse`, GNU semantics: clustered short options, `--long=value`,
+`--` and permuted operands) and the shared I/O helpers. The commands live in
+three files by subject, `cmd_text.c` (grep, sed, sort and the other filters),
+`cmd_files.c` (everything that touches the file system) and `cmd_system.c`
+(env, date, xargs, hashes, signals); `commands.c` is the registry the shell
+looks names up in. A new command goes in the file its subject belongs to, gets
+a row in its table with a usage line, a row in [docs/commands.md](docs/commands.md),
+and a script in `tests/parity/cases` that runs it against the GNU original.
+
 ### The Rust core
 
 `rust/core` is a `no_std` static library holding the compute kernels the shell
@@ -132,6 +144,11 @@ Every behavioural change gets a test, in the same pull request.
   instead or as well. Those scripts run through real bash on Linux and through
   FreSH on Windows on every push, and any difference fails the build. That is
   what keeps "a bash script runs in FreSH unchanged" honest.
+- A change to a bundled unix command gets a case in `tests/parity/cases`. Those
+  run through the GNU originals on the Linux runner and through FreSH with
+  `FRESH_PREFER_BUNDLED=1` everywhere, and any difference in stdout or exit
+  status fails the build. The bundled version has to match; the reference is
+  never edited to match FreSH.
 - A crash found by the fuzzer goes in `fuzz/crashes/` and into the corpus, so
   it is tried again for ever.
 - New limitations get written down in [docs/bash.md](docs/bash.md) under "Does

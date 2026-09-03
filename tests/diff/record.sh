@@ -5,10 +5,11 @@ shell=$1
 outdir=$2
 
 here=$(cd "$(dirname "$0")" && pwd)
+cases=${CASES:-$here/cases}
 mkdir -p "$outdir"
 rm -f "$outdir"/*.out "$outdir"/*.status "$outdir"/*.stderr 2> /dev/null
 
-for script in "$here"/cases/*.sh; do
+for script in "$cases"/*.sh; do
     name=$(basename "$script" .sh)
     work="$outdir/work-$name"
     rm -rf "$work"
@@ -17,8 +18,12 @@ for script in "$here"/cases/*.sh; do
     target=$script
     if command -v cygpath > /dev/null 2>&1; then target=$(cygpath -w "$script"); fi
 
-    (cd "$work" && LC_ALL=C "$shell" "$target") > "$outdir/$name.raw" 2> "$outdir/$name.err"
+    limit=""
+    if command -v timeout > /dev/null 2>&1; then limit="timeout ${CASE_TIMEOUT:-120}"; fi
+    (cd "$work" && LC_ALL=C TZ=UTC $limit "$shell" "$target" < /dev/null) > "$outdir/$name.raw" 2> "$outdir/$name.err"
     status=$?
+    if [ "$status" -eq 124 ] && [ -n "$limit" ]; then printf '  TIMEOUT %s did not finish in %ss
+' "$name" "${CASE_TIMEOUT:-120}"; fi
 
     tr -d '\r' < "$outdir/$name.raw" > "$outdir/$name.out"
     rm -f "$outdir/$name.raw"

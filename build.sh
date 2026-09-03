@@ -6,7 +6,7 @@ WINDRES=${WINDRES:-windres}
 CFLAGS="-std=c11 -Wall -Wextra -Wno-unused-parameter"
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables $FRESH_EXTRA_CFLAGS"
 BUILD=build
-HOT_FILES="exec expand vars util parser coreutils regex"
+HOT_FILES="exec expand vars util parser cmd_text commands regex"
 
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
 info() { printf '\033[36m%s\033[0m\n' "$1"; }

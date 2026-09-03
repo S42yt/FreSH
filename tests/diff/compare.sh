@@ -5,7 +5,7 @@ expected=$1
 actual=$2
 
 here=$(cd "$(dirname "$0")" && pwd)
-known="$here/known-differences.txt"
+known=${KNOWN:-$here/known-differences.txt}
 failed=0
 skipped=0
 passed=0
@@ -43,11 +43,11 @@ for reference in "$expected"/*.out; do
         continue
     fi
 
-    printf '  FAIL  %-14s differs from bash in %s\n' "$name" "$trouble"
-    printf '        bash exited %s, FreSH exited %s, bash stderr %s, FreSH stderr %s\n' \
+    printf '  FAIL  %-14s differs from the reference in %s\n' "$name" "$trouble"
+    printf '        reference exited %s, FreSH exited %s, reference stderr %s, FreSH stderr %s\n' \
         "$(cat "$expected/$name.status")" "$(cat "$actual/$name.status")" \
         "$(cat "$expected/$name.stderr")" "$(cat "$actual/$name.stderr")"
-    sed 's/^/        /' "$actual/$name.diff" | head -n 40
+    sed 's/^/        /' "$actual/$name.diff" | head -n ${DIFF_LINES:-40}
     if [ -s "$actual/$name.err" ]; then
         printf '        FreSH said:\n'
         sed 's/^/          /' "$actual/$name.err" | head -n 10
@@ -55,5 +55,5 @@ for reference in "$expected"/*.out; do
     failed=$((failed + 1))
 done
 
-printf '\n  %d matched bash, %d differed, %d known differences\n' "$passed" "$failed" "$skipped"
+printf '\n  %d matched, %d differed, %d known differences\n' "$passed" "$failed" "$skipped"
 [ "$failed" -eq 0 ]

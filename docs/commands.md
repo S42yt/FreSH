@@ -12,8 +12,9 @@ instead, so installing GNU coreutils or busybox transparently upgrades them.
 exceptions: Windows or other shells ship unrelated tools with those names, and
 `kill` must speak FreSH's own job table, so FreSH always uses its own.
 
-Only the flags listed here are implemented. Anything else is ignored rather
-than rejected, so check this page when a script behaves oddly.
+Only the flags listed here are implemented, and every listed flag behaves like
+the GNU original, checked against it on every push. An unknown flag is
+rejected with the same message and status GNU uses.
 
 ## Builtins
 
@@ -62,7 +63,7 @@ than rejected, so check this page when a script behaves oddly.
 | `history [n]` | `-c` | `-c` clears |
 | `which name...` | | path of a command |
 | `type name...` | | says whether it is an alias, function, builtin or file |
-| `ls [path]` | `-a` `-l` `-1` | colours by kind, `/` for directories, `*` for executables |
+| `ls [path]` | `-a` `-l` `-1` | colours by kind, `/` for directories, `*` for executables; one plain name per line when piped |
 | `clear` | | erases the screen and the scrollback, the way `cls` does |
 | `rehash` | | rescan `PATH`, reload the theme and plugins after editing them |
 | `help [command...]` | | a page per command, arguments in `<required> [optional] ...` form |
@@ -81,76 +82,98 @@ than rejected, so check this page when a script behaves oddly.
 
 | Command | Flags | Notes |
 | --- | --- | --- |
-| `cat [files]` | `-n` | reads stdin with no arguments, `-` means stdin |
-| `cp src... dst` | `-r` | `-r` copies directories |
-| `mv src... dst` | | overwrites, moves across drives |
-| `rm paths` | `-r` `-f` | |
-| `mkdir dirs` | `-p` | |
-| `rmdir dirs` | | |
-| `touch files` | | creates, or updates the timestamp |
-| `ln target link` | `-s` | hard link by default, `-s` needs developer mode or admin |
-| `chmod mode files` | | only `+w` and `-w`, Windows has no execute bit |
-| `stat files` | | size, type, modified time |
-| `file files` | | guesses from the first bytes |
-| `du [path]` | `-h` | recursive total, kilobytes or `-h` |
-| `df` | | drives, size, used, free |
-| `find [path]` | `-name pat` `-type f\|d` | `pat` accepts `*` and `?` |
-| `basename path [suffix]` | | |
-| `dirname path` | | |
-| `realpath paths` | | absolute path |
-| `mktemp` | `-d` | prints the path it made |
+| `cat [files]` | `-n` `-b` `-s` `-E` `-T` `-v` `-A` `-e` `-t` | `-` means stdin |
+| `cp src... dst` | `-r` `-R` `-a` `-f` `-n` `-p` `-u` `-v` `-t DIR` `-T` | |
+| `mv src... dst` | `-f` `-n` `-u` `-v` `-t DIR` `-T` | moves across drives |
+| `rm paths` | `-r` `-R` `-f` `-d` `-v` | refuses `.`, `..` and `/` |
+| `mkdir dirs` | `-p` `-v` `-m MODE` | |
+| `rmdir dirs` | `-p` `-v` `--ignore-fail-on-non-empty` | |
+| `touch files` | `-c` `-a` `-m` `-d DATE` `-r FILE` | `-d` takes `@epoch` or `YYYY-MM-DD [HH:MM:SS]` |
+| `ln target link` | `-s` `-f` `-n` `-v` `-t DIR` `-T` | on Windows `-s` needs developer mode or admin |
+| `chmod mode files` | `-R` `-v` `-c` `-f` `--reference` | octal and symbolic modes; Windows only has the write bit, so `u-w` maps to read-only |
+| `stat files` | `-c FORMAT` `--printf` `-t` `-L` | GNU layout and format letters; inode, links and owners are real on unix, placeholders on Windows |
+| `du [paths]` | `-a` `-b` `-c` `-d N` `-h` `-k` `-m` `-s` `--si` `--apparent-size` `-B SIZE` | |
+| `df [paths]` | `-h` `-H` `-k` `-m` `-T` `-B SIZE` | |
+| `find [path...] [expr]` | `-name` `-iname` `-path` `-ipath` `-regex` `-type f\|d\|l` `-size` `-empty` `-mtime` `-mmin` `-newer` `-perm` `-maxdepth` `-mindepth` `-print` `-print0` `-delete` `-exec ... ;` `-exec ... +` `-prune` `-quit` `!` `-not` `-a` `-o` `( )` | |
+| `basename path [suffix]` | `-a` `-s SUFFIX` `-z` | |
+| `dirname paths` | `-z` | |
+| `realpath paths` | `-e` `-m` `-q` `-z` `--relative-to=DIR` | |
+| `readlink files` | `-f` `-e` `-m` `-n` `-q` `-v` `-z` | |
+| `mktemp [template]` | `-d` `-u` `-q` `-p DIR` `-t` `--suffix=S` | |
+| `truncate files` | `-s SIZE` `-c` `-r FILE` | `SIZE` takes `+` `-` `<` `>` `/` `%` prefixes and K/M/G suffixes |
+| `file files` | `-b` | guesses from the first bytes |
 | `open [target]` | | opens with the default program, `.` opens Explorer or Finder |
 
 ## Text
 
 | Command | Flags | Notes |
 | --- | --- | --- |
-| `grep pattern [files]` | `-i` `-v` `-n` `-c` `-l` `-E` `-F` | basic expressions by default, `-E` extended, `-F` fixed |
-| `head [files]` | `-n N` `-N` | default 10 lines |
-| `tail [files]` | `-n N` `-N` | default 10 lines |
-| `wc [files]` | `-l` `-w` `-c` | all three when no flag |
-| `sort [files]` | `-r` `-n` `-u` | |
-| `uniq [files]` | `-c` | collapses adjacent duplicates, sort first |
-| `cut [files]` | `-d C` `-f N` | one field |
-| `tr SET1 [SET2]` | `-d` | reads stdin |
-| `sed script [files]` | `-n` `-E` | `s/pattern/replacement/[g]` and `d`, with `&` and `\1` |
-| `nl [files]` | | numbers lines |
-| `tac [files]` | | reverses line order |
-| `rev [files]` | | reverses each line |
-| `fold [files]` | `-w N` | default 80 |
-| `column [files]` | | |
-| `paste files` | | joins side by side with tabs |
-| `comm file1 file2` | | both must be sorted |
-| `diff file1 file2` | | line by line, exit 1 when they differ |
-| `cmp file1 file2` | | first differing byte |
-| `shuf [files]` | | |
+| `grep pattern [files]` | `-i` `-v` `-n` `-c` `-l` `-L` `-q` `-s` `-E` `-F` `-G` `-w` `-x` `-o` `-h` `-H` `-r` `-R` `-b` `-m N` `-A N` `-B N` `-C N` `-e PAT` `-f FILE` | basic expressions by default, `[[:class:]]`, `\b`, `\<`, `\>`; exit 0 match, 1 none, 2 error |
+| `head [files]` | `-n [-]N` `-c [-]N` `-N` `-q` `-v` | |
+| `tail [files]` | `-n [+]N` `-c [+]N` `-N` `-q` `-v` | `-f` is not supported |
+| `wc [files]` | `-l` `-w` `-c` `-m` `-L` | GNU column widths and the `total` line |
+| `sort [files]` | `-r` `-n` `-g` `-h` `-V` `-f` `-b` `-d` `-i` `-u` `-s` `-c` `-C` `-k KEYDEF` `-t SEP` `-o FILE` | keys take the same `F[.C][opts][,F[.C][opts]]` form as GNU |
+| `uniq [in [out]]` | `-c` `-d` `-D` `-u` `-i` `-f N` `-s N` `-w N` | |
+| `cut [files]` | `-b LIST` `-c LIST` `-f LIST` `-d C` `-s` `--complement` `--output-delimiter` | lists take `N`, `N-M`, `N-`, `-M`, comma separated |
+| `tr SET1 [SET2]` | `-d` `-s` `-c` `-C` `-t` | ranges, `[:class:]`, `[x*n]`, `\ooo` escapes |
+| `sed script [files]` | `-n` `-e` `-f` `-E` `-r` `-i[SUFFIX]` `-s` | see below |
+| `awk program [files]` | `-F sep` `-v n=v` `-f file` | see [awk](awk.md) |
+| `printf format [args]` | `-v var` | every conversion, `*` widths, `%b`, `%q`, `\ooo` and `\xHH`; matches bash's builtin |
+| `nl [files]` | `-b STYLE` `-n FORMAT` `-s SEP` `-w N` `-v N` `-i N` `-l N` | |
+| `tac [files]` | | |
+| `rev [files]` | | |
+| `fold [files]` | `-w N` `-N` `-s` `-b` | |
+| `column [files]` | `-t` `-s SEP` `-o SEP` `-c WIDTH` `-x` | |
+| `paste files` | `-d LIST` `-s` | with no operand at all, `paste` is the clipboard builtin; `paste -` reads stdin |
+| `comm file1 file2` | `-1` `-2` `-3` `-i` `--output-delimiter` `--total` | both must be sorted |
+| `diff file1 file2` | `-q` `-s` `-i` `-w` `-b` `-B` `-u` `-U N` | normal and unified output, exit 1 when they differ |
+| `cmp file1 [file2]` | `-s` `-l` `-b` `-n N` | |
+| `shuf [file]` | `-n N` `-e ARGS` `-i LO-HI` `-r` `-o FILE` | |
 | `tee files` | `-a` | |
-| `printf format [args]` | | `%s %d %i %c %%`, `\n \t \r \\` |
-| `awk program [files]` | `-F sep` `-v n=v` | see below |
-| `yes [text]` | | bounded, safe in a pipe |
+| `base64 [file]` | `-d` `-w N` `-i` | |
+| `expand` / `unexpand` | `-t N` `-i` `-a` | |
+| `yes [text]` | | stops after a million lines, so a pipeline stage that never ends cannot hang the shell |
+
+### sed
+
+A real stream editor, not a wrapper around `s///`. Addresses: `N`, `$`,
+`/re/` with `I`, `first~step`, `addr1,addr2`, `addr,+N`, `addr,~N`, and `!`.
+Commands: `s` with `g`, `p`, `i`/`I`, a number and `w file`; `y`; `d`, `D`;
+`p`, `P`; `n`, `N`; `h`, `H`, `g`, `G`, `x`; `a`, `i`, `c` in both the
+one-line and the `\` forms; `=`, `l`, `z`, `q`, `Q`, `r`, `w`; `{ }`; and
+`:label`, `b`, `t`, `T`, so the classic `:a;N;$!ba;s/\n/ /g` works. `-i`
+edits in place with an optional backup suffix. `\L`, `\U` and `M` are not
+implemented.
 
 ## System
 
 | Command | Flags | Notes |
 | --- | --- | --- |
-| `env [NAME=value command]` | | no arguments prints the environment |
-| `date [+format]` | | strftime format |
-| `sleep seconds` | | fractions allowed |
+| `env [NAME=value] [command]` | `-i` `-u NAME` `-0` `-C DIR` | no arguments prints the environment |
+| `printenv [names]` | `-0` | |
+| `date [+format]` | `-u` `-d STRING` `-r FILE` `-R` `-I[FMT]` `--rfc-3339` | every GNU format letter with `-`, `_`, `^`, `0` flags; `-d` takes `@epoch`, ISO dates and times, `now`, `yesterday`, `tomorrow`, `N days ago`, `next week`, `last year` |
+| `sleep durations` | | `s` `m` `h` `d` suffixes, several arguments add up |
 | `whoami` | | |
-| `hostname` | | |
-| `uname` | `-a` | |
-| `id` | | user, host, whether elevated |
+| `hostname` | `-s` `-f` `-d` | |
+| `uname` | `-a` `-s` `-n` `-r` `-v` `-m` `-p` `-i` `-o` | |
+| `arch` | | |
+| `nproc` | `--all` `--ignore=N` | |
+| `id` | `-u` `-g` `-G` `-n` `-r` `-z` | real ids on unix, placeholders on Windows |
 | `groups` | | |
-| `ps` | | pid, threads, name |
-| `kill pids` | | |
-| `pkill name` | | accepts `*` and `?` |
-| `xargs [command]` | | one argument per input line, `echo` by default |
-| `seq [first [incr]] last` | | |
-| `expr expression` | | integer arithmetic and comparisons |
-| `md5sum files` | | |
-| `sha1sum files` | | |
-| `sha256sum files` | | |
-| `wget url` | `-O file` | downloads over https |
+| `ps` | | Windows only; unix has the real one |
+| `kill pids` | `-s SIG` `-SIG` `-l [SIG]` `%job` | real signals on unix; on Windows `STOP` and `CONT` suspend and resume, anything else terminates |
+| `pkill pattern` | `-x` `-i` `-e` `-c` | Windows only |
+| `xargs [command]` | `-0` `-d DELIM` `-n N` `-L N` `-I REPL` `-i` `-r` `-t` `-a FILE` `-E EOF` | splits on whitespace with quotes like GNU; exit 123 when a command fails, 124 on 255 |
+| `seq [first [incr]] last` | `-s SEP` `-w` `-f FORMAT` | decimals follow the arguments, `seq 1 0.5 2` prints `1.0 1.5 2.0` |
+| `expr expression` | | `+ - * / %`, comparisons, `\|`, `\&`, `:`, `match`, `substr`, `index`, `length`; exit 1 when the result is 0 or empty |
+| `md5sum` `sha1sum` `sha256sum` `sha512sum` | `-c` `-b` `-z` `--tag` `--quiet` `--status` | |
+| `wget urls` | `-O file` `-q` `-P DIR` | downloads over https |
+
+Every flag in these tables is checked by [tests/parity](../tests/parity), which
+runs the same scripts through the GNU originals on Linux and through the
+bundled versions on every platform. A flag that is not listed is not there:
+the command says `invalid option` and exits, the way GNU does, instead of
+guessing.
 
 ## Platforms
 

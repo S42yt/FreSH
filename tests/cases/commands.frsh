@@ -100,3 +100,6 @@ check which_finds_builtin "$(which echo > /dev/null; echo $?)" 0
 check type_builtin "$(type echo | grep -c builtin)" 1
 check have_builtin "$(have echo && echo present)" present
 check have_missing "$(have nosuchcommandhere || echo absent)" absent
+
+check assignment_prefix_in_pipeline "$(FRESH_PROBE_VALUE=bar env | grep -c '^FRESH_PROBE_VALUE=bar$')" 1
+check assignment_prefix_long_pipeline "$(X=1 seq 1 3000 | tail -1)" 3000
