@@ -119,7 +119,7 @@ jobs:
           chmod +x build.sh
           FRESH_EXTRA_CFLAGS=-DFRESH_BORROWS ./build.sh
           echo "msys TEMP=$TEMP"
-          ./build/FreSH.exe --norc -c 'set -x; PATH=""; d="C:\_temp\msys64	mp"; echo hi > "$d\probe.tmp"; echo "write status $?"; test -f "$d\probe.tmp" && echo probe-exists; ls -la "$d\probe.tmp"; cat "$d\probe.tmp"; echo "cat status $?"; cat "C:/a/_temp/msys64/tmp/probe.tmp"; echo "slash cat status $?"; cat probe-missing.txt; echo "missing status $?"; cat <(echo bundled-cat); echo "procsub status $?"' 2>&1 || echo "diagnostic exit $?"
+          ./build/FreSH.exe --norc -c 'set -x; PATH=""; d="C:\a\_temp\msys64\tmp"; echo hi > "$d\probe.tmp"; echo "write status $?"; test -f "$d\probe.tmp" && echo probe-exists; ls -la "$d\probe.tmp"; cat "$d\probe.tmp"; echo "cat status $?"; cat "C:/a/_temp/msys64/tmp/probe.tmp"; echo "slash cat status $?"; cat probe-missing.txt; echo "missing status $?"; cat <(echo bundled-cat); echo "procsub status $?"' 2>&1 || echo "diagnostic exit $?"
 
       - name: Run the suite under borrow checking
         timeout-minutes: 10
