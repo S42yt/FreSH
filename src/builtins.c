@@ -10,7 +10,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "platform.h"
+
+#ifdef _WIN32
+#include <shellapi.h>
+#endif
 
 #include "coreutils.h"
 #include "exec.h"

@@ -466,7 +466,7 @@ static void skip_newlines(Lexer *lx) {
     while (is_token(lx, "\n")) lex_next(lx);
 }
 
-static int accept(Lexer *lx, const char *text) {
+static int accept_text(Lexer *lx, const char *text) {
     if (!is_token(lx, text)) return 0;
     lex_next(lx);
     return 1;
@@ -500,7 +500,7 @@ static void parse_arguments(Lexer *lx, Expr *e, const char *closer) {
     if (is_token(lx, closer)) return;
     do {
         expr_add_arg(e, parse_expression(lx));
-    } while (accept(lx, ","));
+    } while (accept_text(lx, ","));
 }
 
 static Expr *parse_unary(Lexer *lx);
@@ -547,8 +547,8 @@ static Expr *parse_primary(Lexer *lx) {
             Expr *group = expr_new(E_SUBSCRIPT);
             group->text = NULL;
             expr_add_arg(group, e);
-            while (accept(lx, ",")) expr_add_arg(group, parse_expression(lx));
-            accept(lx, ")");
+            while (accept_text(lx, ",")) expr_add_arg(group, parse_expression(lx));
+            accept_text(lx, ")");
             if (lx->type == T_NAME && strcmp(lx->token, "in") == 0) {
                 lex_next(lx);
                 Expr *in = expr_new(E_IN);
@@ -559,7 +559,7 @@ static Expr *parse_primary(Lexer *lx) {
             }
             return group;
         }
-        accept(lx, ")");
+        accept_text(lx, ")");
         return e;
     }
     if (lx->type == T_NAME && strcmp(lx->token, "getline") == 0) {
@@ -586,7 +586,7 @@ static Expr *parse_primary(Lexer *lx) {
             Expr *e = expr_new(E_SUBSCRIPT);
             e->text = xstrdup(name);
             parse_arguments(lx, e, "]");
-            accept(lx, "]");
+            accept_text(lx, "]");
 
             if (is_token(lx, "++") || is_token(lx, "--")) {
                 Expr *inc = expr_new(E_INCREMENT);
@@ -603,7 +603,7 @@ static Expr *parse_primary(Lexer *lx) {
             Expr *e = expr_new(E_CALL);
             e->text = xstrdup(name);
             parse_arguments(lx, e, ")");
-            accept(lx, ")");
+            accept_text(lx, ")");
             return e;
         }
 
@@ -779,7 +779,7 @@ static Expr *parse_ternary(Lexer *lx) {
     Expr *e = expr_new(E_TERNARY);
     e->left = condition;
     e->right = parse_ternary(lx);
-    accept(lx, ":");
+    accept_text(lx, ":");
     e->third = parse_ternary(lx);
     return e;
 }
@@ -849,7 +849,7 @@ static void parse_output_list(Lexer *lx, Stmt *s) {
            !is_token(lx, ">") && !is_token(lx, ">>") && !is_token(lx, "|")) {
         s->list = xrealloc(s->list, (size_t)(s->count + 1) * sizeof(Expr *));
         s->list[s->count++] = parse_expression(lx);
-        if (!accept(lx, ",")) break;
+        if (!accept_text(lx, ",")) break;
     }
     lx->no_redirect_compare = 0;
 
@@ -864,7 +864,7 @@ static Stmt *parse_statement(Lexer *lx) {
     if (is_token(lx, "{")) {
         lex_next(lx);
         Stmt *block = parse_block(lx);
-        accept(lx, "}");
+        accept_text(lx, "}");
         return block;
     }
 
@@ -882,10 +882,10 @@ static Stmt *parse_statement(Lexer *lx) {
 
     if (lx->type == T_NAME && strcmp(lx->token, "if") == 0) {
         lex_next(lx);
-        accept(lx, "(");
+        accept_text(lx, "(");
         Stmt *s = stmt_new(S_IF);
         s->expr = parse_expression(lx);
-        accept(lx, ")");
+        accept_text(lx, ")");
         skip_separators(lx);
         s->body = parse_statement(lx);
 
@@ -902,10 +902,10 @@ static Stmt *parse_statement(Lexer *lx) {
 
     if (lx->type == T_NAME && strcmp(lx->token, "while") == 0) {
         lex_next(lx);
-        accept(lx, "(");
+        accept_text(lx, "(");
         Stmt *s = stmt_new(S_WHILE);
         s->expr = parse_expression(lx);
-        accept(lx, ")");
+        accept_text(lx, ")");
         skip_separators(lx);
         if (is_token(lx, ";")) lex_next(lx);
         else s->body = parse_statement(lx);
@@ -919,9 +919,9 @@ static Stmt *parse_statement(Lexer *lx) {
         s->body = parse_statement(lx);
         skip_separators(lx);
         if (lx->type == T_NAME && strcmp(lx->token, "while") == 0) lex_next(lx);
-        accept(lx, "(");
+        accept_text(lx, "(");
         s->expr = parse_expression(lx);
-        accept(lx, ")");
+        accept_text(lx, ")");
         return s;
     }
 
@@ -944,7 +944,7 @@ static Stmt *parse_statement(Lexer *lx) {
             lex_next(lx);
             Expr *key = expr_new(E_SUBSCRIPT);
             parse_arguments(lx, key, "]");
-            accept(lx, "]");
+            accept_text(lx, "]");
             s->expr = key;
         }
         return s;
@@ -973,7 +973,7 @@ static Stmt *parse_statement(Lexer *lx) {
                     s->name = xstrdup(candidate);
                     s->name2 = xstrdup(probe.token);
                     lex_next(&probe);
-                    accept(&probe, ")");
+                    accept_text(&probe, ")");
                     *lx = probe;
                     skip_separators(lx);
                     s->body = parse_statement(lx);
@@ -983,14 +983,14 @@ static Stmt *parse_statement(Lexer *lx) {
         }
 
         lex_next(lx);
-        accept(lx, "(");
+        accept_text(lx, "(");
         Stmt *s = stmt_new(S_FOR);
         if (!is_token(lx, ";")) s->expr = parse_expression(lx);
-        accept(lx, ";");
+        accept_text(lx, ";");
         if (!is_token(lx, ";")) s->second = parse_expression(lx);
-        accept(lx, ";");
+        accept_text(lx, ";");
         if (!is_token(lx, ")")) s->third = parse_expression(lx);
-        accept(lx, ")");
+        accept_text(lx, ")");
         skip_separators(lx);
         if (is_token(lx, ";")) lex_next(lx);
         else s->body = parse_statement(lx);
@@ -2081,18 +2081,18 @@ static int parse_program(Awk *awk, const char *program) {
             sl_init(&f->params);
             lex_next(&lx);
 
-            accept(&lx, "(");
+            accept_text(&lx, "(");
             while (lx.type == T_NAME) {
                 sl_push_copy(&f->params, lx.token);
                 lex_next(&lx);
-                if (!accept(&lx, ",")) break;
+                if (!accept_text(&lx, ",")) break;
             }
-            accept(&lx, ")");
+            accept_text(&lx, ")");
             skip_separators(&lx);
 
-            accept(&lx, "{");
+            accept_text(&lx, "{");
             f->body = parse_block(&lx);
-            accept(&lx, "}");
+            accept_text(&lx, "}");
             continue;
         }
 
@@ -2108,13 +2108,13 @@ static int parse_program(Awk *awk, const char *program) {
             lex_next(&lx);
         } else if (!is_token(&lx, "{")) {
             rule->pattern = parse_expression(&lx);
-            if (accept(&lx, ",")) rule->pattern_end = parse_expression(&lx);
+            if (accept_text(&lx, ",")) rule->pattern_end = parse_expression(&lx);
         }
 
         if (is_token(&lx, "{")) {
             lex_next(&lx);
             rule->action = parse_block(&lx);
-            accept(&lx, "}");
+            accept_text(&lx, "}");
         }
     }
 
