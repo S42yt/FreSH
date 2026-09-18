@@ -95,6 +95,43 @@ The dirty marker costs one `git status` per prompt, run on a background
 thread with a short cache, so it never blocks typing. Turn it off on very
 large repositories if you notice the marker lagging behind.
 
+### Network
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FRESH_PROXY` | empty | proxy for `fresh update` and `wget`, as `[scheme://][user:password@]host[:port]`, or `none` |
+| `FRESH_PROXY_USER` | empty | user name for the proxy, for when you would rather keep it out of the URL |
+| `FRESH_PROXY_PASSWORD` | empty | password for the proxy |
+
+Everything FreSH fetches goes through the proxy named here: the release list
+and the binary `fresh update` installs, and whatever `wget` downloads. A local
+proxy needs nothing but its address. One that asks for a login takes the
+credentials in the URL, percent encoded where they need it, or in the two
+extra variables, which win over the URL when both are set:
+
+```sh
+export FRESH_PROXY=http://127.0.0.1:8080
+export FRESH_PROXY=http://alice:s3%40cret@proxy.example.com:3128
+export FRESH_PROXY=socks5://localhost:1080
+export FRESH_PROXY_USER=alice FRESH_PROXY_PASSWORD='s3@cret'
+```
+
+When `FRESH_PROXY` is not set, `HTTPS_PROXY`, `ALL_PROXY` and `HTTP_PROXY`
+are read in that order, lowercase spellings included, so a proxy the rest of
+your tools already use is picked up without more setup. `FRESH_PROXY=none`
+goes direct even when those are set. With nothing set at all, Windows follows
+the system proxy settings and macOS and Linux connect directly.
+
+On Windows the proxy is spoken to through WinINet, which understands `http`
+and `socks` proxies; an `https://` address is used as a plain http proxy. On
+macOS and Linux the fetch is handed to `curl`, so any scheme curl accepts
+works.
+
+`fresh` shows the proxy in use with its password left out, and `fresh update`
+names it as it starts, so a wrong address is a glance away rather than a
+timeout. A value with no host, such as `http://`, is refused with a message
+instead of being tried.
+
 ## Checking it
 
 ```sh

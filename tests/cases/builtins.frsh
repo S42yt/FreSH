@@ -77,6 +77,22 @@ case "$offer" in *"99.2.0-prerelease-1"*) offered=yes ;; *) offered=no ;; esac
 check pre_offers_newest_prerelease "$offered" yes
 case "$offer" in *"99.2.0-experiment"*) leaked=yes ;; *) leaked=no ;; esac
 check pre_skips_experiments "$leaked" no
+
+export FRESH_PROXY='http://alice:s3cret@proxy.example:3128'
+info=$(fresh)
+check fresh_shows_proxy "$(printf '%s' "$info" | grep -c 'proxy    http://proxy.example:3128 as alice')" 1
+check fresh_hides_proxy_password "$(printf '%s' "$info" | grep -c s3cret)" 0
+export HTTPS_PROXY=http://other.example:9
+check fresh_proxy_beats_https_proxy "$(fresh | grep -c 'proxy.example:3128')" 1
+export FRESH_PROXY=none
+check fresh_proxy_none_goes_direct "$(fresh | grep -c 'proxy    none')" 1
+unset FRESH_PROXY
+check fresh_proxy_falls_back "$(fresh | grep -c 'proxy    http://other.example:9')" 1
+unset HTTPS_PROXY
+export FRESH_PROXY='socks5://'
+fresh update --check > /dev/null 2>&1
+check proxy_without_host_is_refused "$?" 1
+unset FRESH_PROXY
 if on_windows; then
   check selector_installs_any_release "$(printf '%s' "$listing" | grep -c 'not for this platform')" 0
 else

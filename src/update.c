@@ -37,6 +37,151 @@
 #define FIRST_SUPPORTED_VERSION "26.11.1-prerelease-3"
 #endif
 
+typedef struct {
+    int direct;
+    char *scheme;
+    char *address;
+    char *user;
+    char *password;
+} Proxy;
+
+static const char *PROXY_SETTINGS[] = {"FRESH_PROXY", "HTTPS_PROXY", "https_proxy", "ALL_PROXY",
+                                       "all_proxy",   "HTTP_PROXY",  "http_proxy",  NULL};
+
+static const char *proxy_setting(const char **name) {
+    for (int i = 0; PROXY_SETTINGS[i]; i++) {
+        const char *value = var_get(PROXY_SETTINGS[i]);
+        if (value && *value) {
+            *name = PROXY_SETTINGS[i];
+            return value;
+        }
+    }
+    return NULL;
+}
+
+static int proxy_means_direct(const char *value) {
+    return str_ieq(value, "none") || str_ieq(value, "off") || str_ieq(value, "no") ||
+           str_ieq(value, "false") || strcmp(value, "0") == 0;
+}
+
+static int hex_digit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static char *url_unescape(const char *text, size_t length) {
+    char *out = xmalloc(length + 1);
+    size_t written = 0;
+    for (size_t i = 0; i < length; i++) {
+        int high = i + 2 < length ? hex_digit(text[i + 1]) : -1;
+        int low = i + 2 < length ? hex_digit(text[i + 2]) : -1;
+        if (text[i] == '%' && high >= 0 && low >= 0) {
+            out[written++] = (char)(high * 16 + low);
+            i += 2;
+        } else {
+            out[written++] = text[i];
+        }
+    }
+    out[written] = '\0';
+    return out;
+}
+
+static void proxy_free(Proxy *proxy) {
+    free(proxy->scheme);
+    free(proxy->address);
+    free(proxy->user);
+    free(proxy->password);
+    memset(proxy, 0, sizeof(*proxy));
+}
+
+static void proxy_override_credentials(Proxy *proxy) {
+    const char *user = var_get("FRESH_PROXY_USER");
+    if (user && *user) {
+        free(proxy->user);
+        proxy->user = xstrdup(user);
+    }
+    const char *password = var_get("FRESH_PROXY_PASSWORD");
+    if (password && *password) {
+        free(proxy->password);
+        proxy->password = xstrdup(password);
+    }
+    if (proxy->user && !proxy->password) proxy->password = xstrdup("");
+}
+
+static int proxy_read(Proxy *proxy, const char **name) {
+    memset(proxy, 0, sizeof(*proxy));
+    const char *value = proxy_setting(name);
+    if (!value) return 0;
+    if (proxy_means_direct(value)) {
+        proxy->direct = 1;
+        return 1;
+    }
+
+    const char *rest = value;
+    const char *mark = strstr(rest, "://");
+    if (mark) {
+        proxy->scheme = xstrndup(rest, (size_t)(mark - rest));
+        rest = mark + 3;
+    }
+
+    const char *end = rest + strlen(rest);
+    const char *slash = memchr(rest, '/', (size_t)(end - rest));
+    if (slash) end = slash;
+
+    const char *at = NULL;
+    for (const char *p = rest; p < end; p++) {
+        if (*p == '@') at = p;
+    }
+    if (at) {
+        const char *colon = memchr(rest, ':', (size_t)(at - rest));
+        proxy->user = url_unescape(rest, (size_t)((colon ? colon : at) - rest));
+        if (colon) proxy->password = url_unescape(colon + 1, (size_t)(at - colon - 1));
+        rest = at + 1;
+    }
+    proxy->address = xstrndup(rest, (size_t)(end - rest));
+    proxy_override_credentials(proxy);
+
+    if (!proxy->address[0]) {
+        proxy_free(proxy);
+        return -1;
+    }
+    return 1;
+}
+
+static int proxy_from_env(Proxy *proxy) {
+    const char *name = NULL;
+    int found = proxy_read(proxy, &name);
+    if (found < 0) {
+        shell_error("%s names no proxy host, expected [scheme://][user:password@]host[:port]",
+                    name);
+    }
+    return found;
+}
+
+static void proxy_describe(const Proxy *proxy, StrBuf *out) {
+    if (proxy->direct) {
+        sb_puts(out, "none");
+        return;
+    }
+    if (proxy->scheme) sb_printf(out, "%s://", proxy->scheme);
+    sb_puts(out, proxy->address);
+    if (proxy->user) sb_printf(out, " as %s", proxy->user);
+}
+
+static void announce_proxy(void) {
+    Proxy proxy;
+    const char *name = NULL;
+    if (proxy_read(&proxy, &name) <= 0 || proxy.direct) return;
+    StrBuf where;
+    sb_init(&where);
+    proxy_describe(&proxy, &where);
+    printf("  %sthrough the proxy at %s%s\n", style(S_DIM), where.data, style(S_RESET));
+    sb_free(&where);
+    proxy_free(&proxy);
+}
+
 #ifndef _WIN32
 
 #if defined(__APPLE__)
@@ -50,10 +195,40 @@
 #define FRESH_ARCH "x86_64"
 #endif
 
+static void curl_proxy_options(const Proxy *proxy, StrBuf *command) {
+    if (proxy->direct) {
+        sb_puts(command, " --noproxy ");
+        sb_put_quoted(command, "*");
+        return;
+    }
+
+    StrBuf value;
+    sb_init(&value);
+    if (proxy->scheme) sb_printf(&value, "%s://", proxy->scheme);
+    sb_puts(&value, proxy->address);
+    sb_puts(command, " --proxy ");
+    sb_put_quoted(command, value.data);
+
+    if (proxy->user) {
+        sb_clear(&value);
+        sb_printf(&value, "%s:%s", proxy->user, proxy->password);
+        sb_puts(command, " --proxy-user ");
+        sb_put_quoted(command, value.data);
+    }
+    sb_free(&value);
+}
+
 static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
+    Proxy proxy;
+    int configured = proxy_from_env(&proxy);
+    if (configured < 0) return 0;
+
     StrBuf command;
     sb_init(&command);
-    sb_printf(&command, "curl -fsSL --max-time 120 -A %s -o ", USER_AGENT);
+    sb_printf(&command, "curl -fsSL --max-time 120 -A %s", USER_AGENT);
+    if (configured) curl_proxy_options(&proxy, &command);
+    proxy_free(&proxy);
+    sb_puts(&command, " -o ");
     sb_put_quoted(&command, save_to ? save_to : "-");
     sb_puts(&command, " -- ");
     sb_put_quoted(&command, url);
@@ -73,13 +248,23 @@ static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
 #else
 
 typedef HINTERNET(WINAPI *OpenFn)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
-typedef HINTERNET(WINAPI *OpenUrlFn)(HINTERNET, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
+typedef BOOL(WINAPI *CrackFn)(LPCSTR, DWORD, DWORD, LPURL_COMPONENTSA);
+typedef HINTERNET(WINAPI *ConnectFn)(HINTERNET, LPCSTR, INTERNET_PORT, LPCSTR, LPCSTR, DWORD, DWORD,
+                                     DWORD_PTR);
+typedef HINTERNET(WINAPI *RequestFn)(HINTERNET, LPCSTR, LPCSTR, LPCSTR, LPCSTR, LPCSTR *, DWORD,
+                                     DWORD_PTR);
+typedef BOOL(WINAPI *SetOptionFn)(HINTERNET, DWORD, LPVOID, DWORD);
+typedef BOOL(WINAPI *SendFn)(HINTERNET, LPCSTR, DWORD, LPVOID, DWORD);
 typedef BOOL(WINAPI *QueryFn)(HINTERNET, DWORD, LPVOID, LPDWORD, LPDWORD);
 typedef BOOL(WINAPI *ReadFn)(HINTERNET, LPVOID, DWORD, LPDWORD);
 typedef BOOL(WINAPI *CloseFn)(HINTERNET);
 
 static OpenFn internet_open;
-static OpenUrlFn internet_open_url;
+static CrackFn internet_crack_url;
+static ConnectFn internet_connect;
+static RequestFn http_open_request;
+static SetOptionFn internet_set_option;
+static SendFn http_send_request;
 static QueryFn internet_query;
 static ReadFn internet_read;
 static CloseFn internet_close;
@@ -92,12 +277,97 @@ static int wininet_ready(void) {
     if (!library) return 0;
 
     internet_open = (OpenFn)(void *)GetProcAddress(library, "InternetOpenA");
-    internet_open_url = (OpenUrlFn)(void *)GetProcAddress(library, "InternetOpenUrlA");
+    internet_crack_url = (CrackFn)(void *)GetProcAddress(library, "InternetCrackUrlA");
+    internet_connect = (ConnectFn)(void *)GetProcAddress(library, "InternetConnectA");
+    http_open_request = (RequestFn)(void *)GetProcAddress(library, "HttpOpenRequestA");
+    internet_set_option = (SetOptionFn)(void *)GetProcAddress(library, "InternetSetOptionA");
+    http_send_request = (SendFn)(void *)GetProcAddress(library, "HttpSendRequestA");
     internet_query = (QueryFn)(void *)GetProcAddress(library, "HttpQueryInfoA");
     internet_read = (ReadFn)(void *)GetProcAddress(library, "InternetReadFile");
     internet_close = (CloseFn)(void *)GetProcAddress(library, "InternetCloseHandle");
 
-    return internet_open && internet_open_url && internet_query && internet_read && internet_close;
+    return internet_open && internet_crack_url && internet_connect && http_open_request &&
+           internet_set_option && http_send_request && internet_query && internet_read &&
+           internet_close;
+}
+
+static HINTERNET open_session(const Proxy *proxy, int configured) {
+    if (!configured) return internet_open(USER_AGENT, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (proxy->direct) return internet_open(USER_AGENT, INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+
+    StrBuf server;
+    sb_init(&server);
+    if (proxy->scheme && str_has_prefix(proxy->scheme, "socks")) sb_puts(&server, "socks=");
+    sb_puts(&server, proxy->address);
+    HINTERNET session = internet_open(USER_AGENT, INTERNET_OPEN_TYPE_PROXY, server.data, NULL, 0);
+    sb_free(&server);
+    return session;
+}
+
+static void apply_proxy_credentials(HINTERNET request, const Proxy *proxy) {
+    if (!proxy->user) return;
+    internet_set_option(request, INTERNET_OPTION_PROXY_USERNAME, proxy->user,
+                        (DWORD)strlen(proxy->user));
+    if (proxy->password[0]) {
+        internet_set_option(request, INTERNET_OPTION_PROXY_PASSWORD, proxy->password,
+                            (DWORD)strlen(proxy->password));
+    }
+}
+
+static DWORD response_status(HINTERNET request) {
+    DWORD status = 0;
+    DWORD status_size = sizeof(status);
+    if (!internet_query(request, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &status,
+                        &status_size, NULL)) {
+        return 0;
+    }
+    return status;
+}
+
+static HINTERNET send_request(HINTERNET session, const char *url, const Proxy *proxy,
+                              HINTERNET *connection) {
+    URL_COMPONENTSA parts;
+    memset(&parts, 0, sizeof(parts));
+    parts.dwStructSize = sizeof(parts);
+    parts.dwHostNameLength = 1;
+    parts.dwUrlPathLength = 1;
+    parts.dwExtraInfoLength = 1;
+    if (!internet_crack_url(url, 0, 0, &parts) || !parts.dwHostNameLength) return NULL;
+
+    char *host = xstrndup(parts.lpszHostName, parts.dwHostNameLength);
+    StrBuf object;
+    sb_init(&object);
+    if (parts.dwUrlPathLength) sb_putn(&object, parts.lpszUrlPath, parts.dwUrlPathLength);
+    else sb_putc(&object, '/');
+    if (parts.dwExtraInfoLength) sb_putn(&object, parts.lpszExtraInfo, parts.dwExtraInfoLength);
+
+    *connection = internet_connect(session, host, parts.nPort, NULL, NULL, INTERNET_SERVICE_HTTP,
+                                   0, 0);
+    free(host);
+    if (!*connection) {
+        sb_free(&object);
+        return NULL;
+    }
+
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI;
+    if (parts.nScheme == INTERNET_SCHEME_HTTPS) flags |= INTERNET_FLAG_SECURE;
+    HINTERNET request = http_open_request(*connection, "GET", object.data, NULL, NULL, NULL,
+                                          flags, 0);
+    sb_free(&object);
+    if (!request) return NULL;
+
+    apply_proxy_credentials(request, proxy);
+    if (!http_send_request(request, NULL, 0, NULL, 0)) {
+        internet_close(request);
+        return NULL;
+    }
+    if (response_status(request) == 407 && proxy->user) {
+        if (!http_send_request(request, NULL, 0, NULL, 0)) {
+            internet_close(request);
+            return NULL;
+        }
+    }
+    return request;
 }
 
 static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
@@ -106,48 +376,53 @@ static int http_fetch(const char *url, StrBuf *body, const char *save_to) {
         return 0;
     }
 
-    HINTERNET session = internet_open(USER_AGENT, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-    if (!session) return 0;
+    Proxy proxy;
+    int configured = proxy_from_env(&proxy);
+    if (configured < 0) return 0;
 
-    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
-                  INTERNET_FLAG_NO_UI | INTERNET_FLAG_SECURE;
-    HINTERNET request = internet_open_url(session, url, NULL, 0, flags, 0);
-    if (!request) {
-        internet_close(session);
+    HINTERNET session = open_session(&proxy, configured);
+    if (!session) {
+        proxy_free(&proxy);
         return 0;
     }
 
-    DWORD status = 0;
-    DWORD status_size = sizeof(status);
-    if (internet_query(request, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &status,
-                       &status_size, NULL) &&
-        status >= 400) {
-        internet_close(request);
-        internet_close(session);
-        return 0;
-    }
+    HINTERNET connection = NULL;
+    HINTERNET request = send_request(session, url, &proxy, &connection);
+    int ok = request != NULL;
 
-    FILE *file = NULL;
-    if (save_to) {
-        file = fopen(save_to, "wb");
-        if (!file) {
-            internet_close(request);
-            internet_close(session);
-            return 0;
+    if (ok) {
+        DWORD status = response_status(request);
+        if (status == 407) {
+            shell_error("the proxy at %s wants credentials, set FRESH_PROXY_USER and "
+                        "FRESH_PROXY_PASSWORD",
+                        proxy.address);
+            ok = 0;
+        } else if (status >= 400) {
+            ok = 0;
         }
     }
 
-    char buffer[8192];
-    DWORD read = 0;
-    while (internet_read(request, buffer, sizeof(buffer), &read) && read > 0) {
-        if (file) fwrite(buffer, 1, read, file);
-        else sb_putn(body, buffer, read);
+    FILE *file = NULL;
+    if (ok && save_to) {
+        file = fopen(save_to, "wb");
+        if (!file) ok = 0;
+    }
+
+    if (ok) {
+        char buffer[8192];
+        DWORD read = 0;
+        while (internet_read(request, buffer, sizeof(buffer), &read) && read > 0) {
+            if (file) fwrite(buffer, 1, read, file);
+            else sb_putn(body, buffer, read);
+        }
     }
 
     if (file) fclose(file);
-    internet_close(request);
+    if (request) internet_close(request);
+    if (connection) internet_close(connection);
     internet_close(session);
-    return 1;
+    proxy_free(&proxy);
+    return ok;
 }
 
 #endif
@@ -501,6 +776,7 @@ static int selector_interactive(const Early *releases, int count) {
 static int command_selector(int check_only) {
     Early releases[SELECTOR_MAX];
     printf("  %sasking github for the releases%s\n", style(S_DIM), style(S_RESET));
+    announce_proxy();
 
     int count = read_releases(releases, SELECTOR_MAX, 1, 0);
     if (count < 0) {
@@ -589,6 +865,7 @@ static int command_update(int argc, char **argv) {
     printf("  %schecking for %s%s\n", style(S_DIM), allow_early ? "any release, including prereleases"
                                                                 : "updates",
            style(S_RESET));
+    announce_proxy();
 
     char latest[64];
     int found = allow_early ? read_offered_version(latest, sizeof(latest))
@@ -651,6 +928,8 @@ int builtin_fresh(int argc, char **argv) {
         " /_/  \\_\\_\\",
     };
 
+    const char *lines[6];
+    int rows = 5;
     char info[5][PATH_BUF + 64];
     snprintf(info[0], sizeof(info[0]), "%sFreSH%s %s%s, %s core%s", style(S_HEADING), style(S_RESET),
              style(S_DIM), FRESH_VERSION, FRESH_CORE, style(S_RESET));
@@ -660,10 +939,23 @@ int builtin_fresh(int argc, char **argv) {
              var_get("FRESH_THEME") ? var_get("FRESH_THEME") : "fresh");
     snprintf(info[4], sizeof(info[4]), "%s%-8s%s %s", style(S_LABEL), "plugins", style(S_RESET),
              var_get("FRESH_PLUGINS") ? var_get("FRESH_PLUGINS") : "none");
+    for (int i = 0; i < 5; i++) lines[i] = info[i];
+
+    StrBuf proxy_line;
+    sb_init(&proxy_line);
+    Proxy proxy;
+    if (proxy_from_env(&proxy) > 0) {
+        sb_printf(&proxy_line, "%s%-8s%s ", style(S_LABEL), "proxy", style(S_RESET));
+        proxy_describe(&proxy, &proxy_line);
+        proxy_free(&proxy);
+        lines[rows++] = proxy_line.data;
+    }
 
     printf("\n");
-    for (int i = 0; i < 5; i++)
-        printf("  %s%-12s%s   %s\n", style(S_ACCENT), art[i], style(S_RESET), info[i]);
+    for (int i = 0; i < rows; i++)
+        printf("  %s%-12s%s   %s\n", style(S_ACCENT), i < 5 ? art[i] : "", style(S_RESET),
+               lines[i]);
+    sb_free(&proxy_line);
     printf("\n  %sfresh update%s checks github and installs the newest release\n", style(S_DIM),
            style(S_RESET));
     printf("  %sfresh update --pre%s takes prereleases too\n", style(S_DIM), style(S_RESET));

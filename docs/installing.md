@@ -159,6 +159,19 @@ and the [signing policy](code-signing.md).
 
 ## Updating
 
+```sh
+fresh update             # install the newest release
+fresh update --check     # only say whether there is one
+fresh update --pre       # take prereleases too
+fresh update --selector  # browse every release, arrows move, enter installs
+```
+
+On a machine that reaches the internet through a proxy, set `FRESH_PROXY`
+to its address, `http://user:password@host:port` when it asks for a login,
+and the update goes through it. When it is not set, an `HTTPS_PROXY` already
+in your environment is used. [Configuration](configuration.md#network) has
+the details.
+
 ## Running it
 
 ```sh
