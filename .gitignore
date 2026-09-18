@@ -60,6 +60,7 @@ installation/payload.h
 
 # Generated icon
 src/fresh.ico
+src/script.ico
 installation/fresh.ico
 
 # CMake

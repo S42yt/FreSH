@@ -52,10 +52,11 @@ fi
 mkdir -p "$BUILD"
 
 if [ "$windows" = 1 ]; then
-    info "Generating the application icon..."
+    info "Generating the icons..."
     $CC -O2 -o "$BUILD/makeicon.exe" tools/makeicon.c -lm
-    "./$BUILD/makeicon.exe" "$BUILD/fresh.ico"
+    "./$BUILD/makeicon.exe" "$BUILD/fresh.ico" "$BUILD/script.ico"
     cp "$BUILD/fresh.ico" src/fresh.ico
+    cp "$BUILD/script.ico" src/script.ico
     cp "$BUILD/fresh.ico" installation/fresh.ico
 fi
 

@@ -1,6 +1,7 @@
 #include <windows.h>
 
 1 ICON "fresh.ico"
+2 ICON "script.ico"
 
 1 RT_MANIFEST "fresh.manifest"
 
