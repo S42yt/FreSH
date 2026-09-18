@@ -73,12 +73,17 @@ static Pixel blend(Pixel under, Pixel over, double amount) {
     return result;
 }
 
-static double chevron_distance(double x, double y, double left, double top, double tip,
-                               double bottom) {
+static double lambda_distance(double x, double y, double left, double top, double tip,
+                              double bottom, double tail) {
     double middle = (top + bottom) / 2;
-    double a = segment_distance(x, y, left, top, tip, middle);
-    double b = segment_distance(x, y, tip, middle, left, bottom);
-    return a < b ? a : b;
+    double dx = tip - left;
+    double dy = middle - bottom;
+    double length = sqrt(dx * dx + dy * dy);
+    double end_x = tip + dx / length * tail;
+    double end_y = middle + dy / length * tail;
+    double leg = segment_distance(x, y, left, top, tip, middle);
+    double spine = segment_distance(x, y, left, bottom, end_x, end_y);
+    return leg < spine ? leg : spine;
 }
 
 static Pixel paint_app(double x, double y, double u) {
@@ -89,10 +94,10 @@ static Pixel paint_app(double x, double y, double u) {
     pixel = blend(pixel, PLATE, edge(plate + rim));
 
     double stroke = 11 * u;
-    double prompt = chevron_distance(x, y, 22 * u, 27 * u, 50 * u, 73 * u) - stroke / 2;
+    double prompt = lambda_distance(x, y, 18 * u, 27 * u, 56 * u, 73 * u, 16 * u) - stroke / 2;
     pixel = blend(pixel, GREEN, edge(prompt));
 
-    double cursor = round_rect_distance(x, y, 60 * u, 67.5 * u, 84 * u, 78.5 * u, 3 * u);
+    double cursor = round_rect_distance(x, y, 64 * u, 69 * u, 88 * u, 80 * u, 3 * u);
     pixel = blend(pixel, GREEN, edge(cursor));
     return pixel;
 }
@@ -114,10 +119,10 @@ static Pixel paint_script(double x, double y, double u) {
     pixel = blend(pixel, FOLD, edge(fold + ink));
 
     double stroke = 9 * u;
-    double prompt = chevron_distance(x, y, 32 * u, 44 * u, 51 * u, 76 * u) - stroke / 2;
+    double prompt = lambda_distance(x, y, 33 * u, 44 * u, 52 * u, 76 * u, 12 * u) - stroke / 2;
     pixel = blend(pixel, SCRIPT_GREEN, edge(prompt));
 
-    double cursor = round_rect_distance(x, y, 57 * u, 71 * u, 75 * u, 80 * u, 2.5 * u);
+    double cursor = round_rect_distance(x, y, 58 * u, 71 * u, 76 * u, 80 * u, 2.5 * u);
     pixel = blend(pixel, SCRIPT_GREEN, edge(cursor));
     return pixel;
 }
