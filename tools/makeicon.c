@@ -17,6 +17,7 @@ typedef Pixel (*Painter)(double x, double y, double unit);
 
 static const int SIZES[] = {16, 24, 32, 48};
 static const int SIZE_COUNT = 4;
+static const double PI = 3.14159265358979323846;
 
 static const Pixel CLEAR = {0, 0, 0, 0};
 static const Pixel PLATE = {40, 33, 27, 255};
@@ -73,6 +74,21 @@ static Pixel blend(Pixel under, Pixel over, double amount) {
     return result;
 }
 
+static double arc_distance(double x, double y, double cx, double cy, double radius, double from,
+                           double to) {
+    double dx = x - cx;
+    double dy = y - cy;
+    double angle = atan2(dy, dx);
+    if (angle >= from && angle <= to) return fabs(sqrt(dx * dx + dy * dy) - radius);
+    double ax = cx + radius * cos(from) - x;
+    double ay = cy + radius * sin(from) - y;
+    double bx = cx + radius * cos(to) - x;
+    double by = cy + radius * sin(to) - y;
+    double a = sqrt(ax * ax + ay * ay);
+    double b = sqrt(bx * bx + by * by);
+    return a < b ? a : b;
+}
+
 static double lambda_distance(double x, double y, double spine[4], double leg[4]) {
     double a = segment_distance(x, y, spine[0], spine[1], spine[2], spine[3]);
     double b = segment_distance(x, y, leg[0], leg[1], leg[2], leg[3]);
@@ -86,14 +102,19 @@ static Pixel paint_app(double x, double y, double u) {
     Pixel pixel = blend(CLEAR, RIM, edge(plate));
     pixel = blend(pixel, PLATE, edge(plate + rim));
 
-    double spine[4] = {30 * u, 14 * u, 65 * u, 86 * u};
-    double leg[4] = {47 * u, 49 * u, 24 * u, 86 * u};
-    double stroke = 11.5 * u;
-    double glyph = lambda_distance(x, y, spine, leg) - stroke / 2;
-    pixel = blend(pixel, GREEN, edge(glyph));
+    double left_eye = round_rect_distance(x, y, 27 * u, 25 * u, 40 * u, 39 * u, 3 * u);
+    double right_eye = round_rect_distance(x, y, 60 * u, 25 * u, 73 * u, 39 * u, 3 * u);
+    pixel = blend(pixel, GREEN, edge(left_eye < right_eye ? left_eye : right_eye));
 
-    double cursor = round_rect_distance(x, y, 71 * u, 79 * u, 87 * u, 86.5 * u, 2.5 * u);
-    pixel = blend(pixel, GREEN, edge(cursor));
+    double spine[4] = {44 * u, 43 * u, 59 * u, 71 * u};
+    double leg[4] = {52 * u, 57 * u, 42 * u, 71 * u};
+    double stroke = 9 * u;
+    double nose = lambda_distance(x, y, spine, leg) - stroke / 2;
+    pixel = blend(pixel, GREEN, edge(nose));
+
+    double smile = arc_distance(x, y, 50 * u, 64 * u, 25 * u, 35 * PI / 180, 145 * PI / 180) -
+                   3.5 * u;
+    pixel = blend(pixel, GREEN, edge(smile));
     return pixel;
 }
 

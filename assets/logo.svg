@@ -1,9 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="128" height="128" role="img" aria-label="FreSH">
   <rect x="2" y="2" width="96" height="96" rx="23" fill="#2d3845"/>
   <rect x="5.2" y="5.2" width="89.6" height="89.6" rx="19.8" fill="#1b2128"/>
-  <g stroke="#78eb78" stroke-width="11.5" stroke-linecap="round" fill="none">
-    <line x1="30" y1="14" x2="65" y2="86"/>
-    <line x1="47" y1="49" x2="24" y2="86"/>
+  <rect x="27" y="25" width="13" height="14" rx="3" fill="#78eb78"/>
+  <rect x="60" y="25" width="13" height="14" rx="3" fill="#78eb78"/>
+  <g stroke="#78eb78" stroke-linecap="round" fill="none">
+    <line x1="44" y1="43" x2="59" y2="71" stroke-width="9"/>
+    <line x1="52" y1="57" x2="42" y2="71" stroke-width="9"/>
+    <path d="M29.52 78.34A25 25 0 0 0 70.48 78.34" stroke-width="7"/>
   </g>
-  <rect x="71" y="79" width="16" height="7.5" rx="2.5" fill="#78eb78"/>
 </svg>
