@@ -87,6 +87,9 @@ fresh update --pre       # take prereleases too
 fresh update --selector  # browse every release, arrows move, enter installs
 ```
 
+Behind a proxy, set `FRESH_PROXY` to its address, with the login in it if the
+proxy wants one; [configuration](docs/configuration.md#network) has the shape.
+
 ## License
 
 GNU General Public License v3.0, see [LICENSE](LICENSE).

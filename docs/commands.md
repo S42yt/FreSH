@@ -167,7 +167,7 @@ implemented.
 | `seq [first [incr]] last` | `-s SEP` `-w` `-f FORMAT` | decimals follow the arguments, `seq 1 0.5 2` prints `1.0 1.5 2.0` |
 | `expr expression` | | `+ - * / %`, comparisons, `\|`, `\&`, `:`, `match`, `substr`, `index`, `length`; exit 1 when the result is 0 or empty |
 | `md5sum` `sha1sum` `sha256sum` `sha512sum` | `-c` `-b` `-z` `--tag` `--quiet` `--status` | |
-| `wget urls` | `-O file` `-q` `-P DIR` | downloads over https |
+| `wget urls` | `-O file` `-q` `-P DIR` | downloads over https, through `FRESH_PROXY` when it is set |
 
 Every flag in these tables is checked by [tests/parity](../tests/parity), which
 runs the same scripts through the GNU originals on Linux and through the
