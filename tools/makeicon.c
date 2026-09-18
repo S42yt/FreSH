@@ -21,11 +21,11 @@ static const int SIZE_COUNT = 4;
 static const Pixel CLEAR = {0, 0, 0, 0};
 static const Pixel PLATE = {40, 33, 27, 255};
 static const Pixel RIM = {69, 56, 45, 255};
-static const Pixel GREEN = {120, 235, 120, 255};
+static const Pixel GREEN = {196, 245, 141, 255};
 static const Pixel PAGE = {249, 246, 243, 255};
 static const Pixel FOLD = {220, 210, 201, 255};
 static const Pixel INK = {139, 125, 111, 255};
-static const Pixel SCRIPT_GREEN = {77, 169, 34, 255};
+static const Pixel SCRIPT_GREEN = {132, 179, 33, 255};
 
 static double clamp(double value, double low, double high) {
     if (value < low) return low;
