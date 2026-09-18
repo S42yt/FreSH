@@ -52,7 +52,8 @@ registered:
 - registers under **App Paths**, so `FreSH` works from the Run dialog
 - adds it to **PATH**
 - adds **Open FreSH here** to the Explorer folder context menu
-- registers FreSH as a handler for `.frsh` and `.sh` scripts
+- registers FreSH as a handler for `.frsh` and `.sh` scripts, and gives
+  `.frsh` files their own script icon so they do not look like the shell itself
 - creates Start Menu and Desktop shortcuts
 - adds an entry to **Apps & Features** with a working uninstaller
 

@@ -13,72 +13,143 @@ typedef struct {
     unsigned char b, g, r, a;
 } Pixel;
 
+typedef Pixel (*Painter)(double x, double y, double unit);
+
 static const int SIZES[] = {16, 24, 32, 48};
 static const int SIZE_COUNT = 4;
 
-static const Pixel BACKGROUND = {40, 33, 27, 255};
-static const Pixel GLYPH = {120, 235, 120, 255};
+static const Pixel CLEAR = {0, 0, 0, 0};
+static const Pixel PLATE = {40, 33, 27, 255};
+static const Pixel RIM = {69, 56, 45, 255};
+static const Pixel GREEN = {196, 245, 141, 255};
+static const Pixel PAGE = {249, 246, 243, 255};
+static const Pixel FOLD = {220, 210, 201, 255};
+static const Pixel INK = {139, 125, 111, 255};
+static const Pixel SCRIPT_GREEN = {132, 179, 33, 255};
 
-static double distance_to_segment(double x, double y, double x1, double y1, double x2, double y2) {
+static double clamp(double value, double low, double high) {
+    if (value < low) return low;
+    if (value > high) return high;
+    return value;
+}
+
+static double segment_distance(double x, double y, double x1, double y1, double x2, double y2) {
     double dx = x2 - x1;
     double dy = y2 - y1;
     double length = dx * dx + dy * dy;
     double t = length > 0 ? ((x - x1) * dx + (y - y1) * dy) / length : 0;
-    if (t < 0) t = 0;
-    if (t > 1) t = 1;
+    t = clamp(t, 0, 1);
     double px = x1 + t * dx - x;
     double py = y1 + t * dy - y;
     return sqrt(px * px + py * py);
 }
 
-static double coverage(double x, double y, int size) {
+static double round_rect_distance(double x, double y, double left, double top, double right,
+                                  double bottom, double radius) {
+    double cx = (left + right) / 2;
+    double cy = (top + bottom) / 2;
+    double qx = fabs(x - cx) - ((right - left) / 2 - radius);
+    double qy = fabs(y - cy) - ((bottom - top) / 2 - radius);
+    double ox = qx > 0 ? qx : 0;
+    double oy = qy > 0 ? qy : 0;
+    double inner = qx > qy ? qx : qy;
+    return sqrt(ox * ox + oy * oy) + (inner < 0 ? inner : 0) - radius;
+}
+
+static double edge(double distance) {
+    return clamp(0.5 - distance, 0, 1);
+}
+
+static Pixel blend(Pixel under, Pixel over, double amount) {
+    double a = over.a / 255.0 * clamp(amount, 0, 1);
+    double base = under.a / 255.0;
+    double out = a + base * (1 - a);
+    Pixel result = CLEAR;
+    if (out <= 0) return result;
+    result.r = (unsigned char)((over.r * a + under.r * base * (1 - a)) / out + 0.5);
+    result.g = (unsigned char)((over.g * a + under.g * base * (1 - a)) / out + 0.5);
+    result.b = (unsigned char)((over.b * a + under.b * base * (1 - a)) / out + 0.5);
+    result.a = (unsigned char)(out * 255 + 0.5);
+    return result;
+}
+
+static double lambda_distance(double x, double y, double left, double top, double tip,
+                              double bottom, double tail) {
+    double middle = (top + bottom) / 2;
+    double dx = tip - left;
+    double dy = middle - bottom;
+    double length = sqrt(dx * dx + dy * dy);
+    double end_x = tip + dx / length * tail;
+    double end_y = middle + dy / length * tail;
+    double leg = segment_distance(x, y, left, top, tip, middle);
+    double spine = segment_distance(x, y, left, bottom, end_x, end_y);
+    return leg < spine ? leg : spine;
+}
+
+static Pixel paint_app(double x, double y, double u) {
+    double rim = 3.2 * u > 1.0 ? 3.2 * u : 1.0;
+    double plate = round_rect_distance(x, y, 2 * u, 2 * u, 98 * u, 98 * u, 23 * u);
+
+    Pixel pixel = blend(CLEAR, RIM, edge(plate));
+    pixel = blend(pixel, PLATE, edge(plate + rim));
+
+    double stroke = 11 * u;
+    double prompt = lambda_distance(x, y, 18 * u, 27 * u, 56 * u, 73 * u, 16 * u) - stroke / 2;
+    pixel = blend(pixel, GREEN, edge(prompt));
+
+    double cursor = round_rect_distance(x, y, 64 * u, 69 * u, 88 * u, 80 * u, 3 * u);
+    pixel = blend(pixel, GREEN, edge(cursor));
+    return pixel;
+}
+
+static Pixel paint_script(double x, double y, double u) {
+    double ink = 3 * u > 1.0 ? 3 * u : 1.0;
+    double body = round_rect_distance(x, y, 17 * u, 5 * u, 83 * u, 95 * u, 7 * u);
+    double crease = ((x - 60 * u) - (y - 5 * u)) / sqrt(2.0);
+    double page = body > crease ? body : crease;
+
+    Pixel pixel = blend(CLEAR, INK, edge(page));
+    pixel = blend(pixel, PAGE, edge(page + ink));
+
+    double fold_x = 60 * u - x;
+    double fold_y = y - 27 * u;
+    double fold = fold_x > fold_y ? fold_x : fold_y;
+    if (fold < page) fold = page;
+    pixel = blend(pixel, INK, edge(fold));
+    pixel = blend(pixel, FOLD, edge(fold + ink));
+
+    double stroke = 9 * u;
+    double prompt = lambda_distance(x, y, 33 * u, 44 * u, 52 * u, 76 * u, 12 * u) - stroke / 2;
+    pixel = blend(pixel, SCRIPT_GREEN, edge(prompt));
+
+    double cursor = round_rect_distance(x, y, 58 * u, 71 * u, 76 * u, 80 * u, 2.5 * u);
+    pixel = blend(pixel, SCRIPT_GREEN, edge(cursor));
+    return pixel;
+}
+
+static void render(Pixel *pixels, int size, Painter paint) {
     double unit = size / 100.0;
-    double thickness = size * 0.118;
-
-    double spine = distance_to_segment(x, y, 33 * unit, 13 * unit, 71 * unit, 87 * unit);
-    double leg = distance_to_segment(x, y, 51 * unit, 49 * unit, 27 * unit, 87 * unit);
-    double nearest = spine < leg ? spine : leg;
-
-    double edge = thickness / 2;
-    double fade = size * 0.02;
-    if (nearest <= edge) return 1.0;
-    if (nearest >= edge + fade) return 0.0;
-    return 1.0 - (nearest - edge) / fade;
-}
-
-static double plate_alpha(double cx, double cy, int size) {
-    double inset = size * 0.02;
-    double radius = size * 0.22;
-    double left = inset, top = inset, right = size - inset, bottom = size - inset;
-
-    double dx = 0, dy = 0;
-    if (cx < left + radius) dx = left + radius - cx;
-    else if (cx > right - radius) dx = cx - (right - radius);
-    if (cy < top + radius) dy = top + radius - cy;
-    else if (cy > bottom - radius) dy = cy - (bottom - radius);
-
-    double outside = sqrt(dx * dx + dy * dy) - radius;
-    if (outside <= 0) return 1.0;
-    if (outside >= 1.0) return 0.0;
-    return 1.0 - outside;
-}
-
-static void render(Pixel *pixels, int size) {
     for (int y = 0; y < size; y++) {
         for (int x = 0; x < size; x++) {
-            double cx = x + 0.5;
-            double cy = y + 0.5;
-
-            double inside = plate_alpha(cx, cy, size);
-            double glyph = coverage(cx, cy, size);
-
-            Pixel result;
-            result.b = (unsigned char)(BACKGROUND.b + (GLYPH.b - BACKGROUND.b) * glyph);
-            result.g = (unsigned char)(BACKGROUND.g + (GLYPH.g - BACKGROUND.g) * glyph);
-            result.r = (unsigned char)(BACKGROUND.r + (GLYPH.r - BACKGROUND.r) * glyph);
-            result.a = (unsigned char)(255 * inside);
-
-            pixels[(size - 1 - y) * size + x] = result;
+            Pixel sum = CLEAR;
+            double r = 0, g = 0, b = 0, a = 0;
+            for (int sy = 0; sy < 3; sy++) {
+                for (int sx = 0; sx < 3; sx++) {
+                    Pixel p = paint(x + (sx + 0.5) / 3, y + (sy + 0.5) / 3, unit);
+                    double weight = p.a / 255.0;
+                    r += p.r * weight;
+                    g += p.g * weight;
+                    b += p.b * weight;
+                    a += weight;
+                }
+            }
+            if (a > 0) {
+                sum.r = (unsigned char)(r / a + 0.5);
+                sum.g = (unsigned char)(g / a + 0.5);
+                sum.b = (unsigned char)(b / a + 0.5);
+                sum.a = (unsigned char)(a / 9 * 255 + 0.5);
+            }
+            pixels[(size - 1 - y) * size + x] = sum;
         }
     }
 }
@@ -95,15 +166,11 @@ static void write_u32(FILE *f, unsigned long value) {
     fputc((value >> 24) & 0xff, f);
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "usage: makeicon <output.ico>\n");
-        return 1;
-    }
-    FILE *f = fopen(argv[1], "wb");
+static int write_icon(const char *path, Painter paint) {
+    FILE *f = fopen(path, "wb");
     if (!f) {
-        fprintf(stderr, "makeicon: cannot write %s\n", argv[1]);
-        return 1;
+        fprintf(stderr, "makeicon: cannot write %s\n", path);
+        return 0;
     }
 
     write_u16(f, 0);
@@ -132,9 +199,9 @@ int main(int argc, char *argv[]) {
         Pixel *pixels = malloc((size_t)size * size * sizeof(Pixel));
         if (!pixels) {
             fclose(f);
-            return 1;
+            return 0;
         }
-        render(pixels, size);
+        render(pixels, size, paint);
 
         write_u32(f, 40);
         write_u32(f, (unsigned long)size);
@@ -162,6 +229,15 @@ int main(int argc, char *argv[]) {
         free(pixels);
     }
 
-    fclose(f);
+    return fclose(f) == 0;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "usage: makeicon <app.ico> <script.ico>\n");
+        return 1;
+    }
+    if (!write_icon(argv[1], paint_app)) return 1;
+    if (!write_icon(argv[2], paint_script)) return 1;
     return 0;
 }

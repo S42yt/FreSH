@@ -8,11 +8,12 @@ $build = 'build'
 
 New-Item -ItemType Directory -Force -Path $build | Out-Null
 
-Write-Host 'Generating the application icon...' -ForegroundColor Cyan
+Write-Host 'Generating the icons...' -ForegroundColor Cyan
 & $cc -O2 -o "$build\makeicon.exe" tools\makeicon.c -lm
 if ($LASTEXITCODE -ne 0) { throw 'makeicon build failed' }
-& "$build\makeicon.exe" "$build\fresh.ico"
+& "$build\makeicon.exe" "$build\fresh.ico" "$build\script.ico"
 Copy-Item "$build\fresh.ico" 'src\fresh.ico' -Force
+Copy-Item "$build\script.ico" 'src\script.ico' -Force
 Copy-Item "$build\fresh.ico" 'installation\fresh.ico' -Force
 
 Write-Host 'Building FreSH...' -ForegroundColor Cyan

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="128" height="128" role="img" aria-label="FreSH script">
+  <path d="M24 5h36l23 23v60a7 7 0 0 1-7 7H24a7 7 0 0 1-7-7V12a7 7 0 0 1 7-7z" fill="#f3f6f9" stroke="#6f7d8b" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M60 5v22h23" fill="#c9d2dc" stroke="#6f7d8b" stroke-width="3" stroke-linejoin="round"/>
+  <g stroke="#21b384" stroke-width="9" stroke-linecap="round" fill="none">
+    <line x1="33" y1="76" x2="61.18" y2="52.27"/>
+    <line x1="33" y1="44" x2="52" y2="60"/>
+  </g>
+  <rect x="58" y="71" width="18" height="9" rx="2.5" fill="#21b384"/>
+</svg>

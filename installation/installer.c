@@ -201,8 +201,10 @@ static int register_script_association(const InstallOptions *options) {
 
     int ok = write_string_value(root, PROGID_KEY, NULL, "FreSH Shell Script");
 
+    char icon[MAX_PATH_LEN];
+    snprintf(icon, sizeof(icon), "\"%s\",1", options->exe_path);
     snprintf(subkey, sizeof(subkey), "%s\\DefaultIcon", PROGID_KEY);
-    ok &= write_string_value(root, subkey, NULL, options->exe_path);
+    ok &= write_string_value(root, subkey, NULL, icon);
 
     snprintf(command, sizeof(command), "\"%s\" \"%%1\" %%*", options->exe_path);
     snprintf(subkey, sizeof(subkey), "%s\\shell\\open\\command", PROGID_KEY);
