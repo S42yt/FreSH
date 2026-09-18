@@ -4,3 +4,5 @@
 *.ico binary
 *.png binary
 *.res binary
+
+*.frsh linguist-language=Shell
