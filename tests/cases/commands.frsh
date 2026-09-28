@@ -105,4 +105,5 @@ check assignment_prefix_in_pipeline "$(FRESH_PROBE_VALUE=bar env | grep -c '^FRE
 check assignment_prefix_long_pipeline "$(X=1 seq 1 3000 | tail -1)" 3000
 
 check whoami_names_someone "$(test -n "$(whoami)" && echo yes)" yes
-check id_agrees_with_whoami "$(id -un)" "$(whoami)"
+whoami_name=$(whoami)
+check id_agrees_with_whoami "$(id -un)" "${whoami_name##*\\}"
