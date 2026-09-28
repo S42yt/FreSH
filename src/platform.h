@@ -238,6 +238,8 @@ LONG CompareFileTime(const FILETIME *a, const FILETIME *b);
 
 HANDLE fresh_process_handle(pid_t pid);
 int fresh_handle_fd(HANDLE handle);
+int account_name(unsigned long id, char *out, size_t size);
+int group_name(unsigned long id, char *out, size_t size);
 
 #endif
 

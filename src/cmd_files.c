@@ -17,8 +17,6 @@
 
 #ifndef _WIN32
 #include <dirent.h>
-#include <grp.h>
-#include <pwd.h>
 #include <sys/statvfs.h>
 #endif
 
@@ -863,10 +861,10 @@ static int stat_collect(const char *path, int follow, StatInfo *st) {
         st->uid = native.st_uid;
         st->gid = native.st_gid;
         st->size = (unsigned long long)native.st_size;
-        struct passwd *pw = getpwuid(native.st_uid);
-        struct group *gr = getgrgid(native.st_gid);
-        snprintf(st->user, sizeof(st->user), "%s", pw ? pw->pw_name : "UNKNOWN");
-        snprintf(st->group, sizeof(st->group), "%s", gr ? gr->gr_name : "UNKNOWN");
+        if (!account_name((unsigned long)native.st_uid, st->user, sizeof(st->user)))
+            snprintf(st->user, sizeof(st->user), "%s", "UNKNOWN");
+        if (!group_name((unsigned long)native.st_gid, st->group, sizeof(st->group)))
+            snprintf(st->group, sizeof(st->group), "%s", "UNKNOWN");
     }
 #else
     (void)follow;

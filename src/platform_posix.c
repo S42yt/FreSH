@@ -46,6 +46,38 @@ static int lift_fd(int fd, int inheritable) {
     return lifted;
 }
 
+static int name_for_id(const char *file, unsigned long id, char *out, size_t size) {
+    FILE *f = fopen(file, "r");
+    if (!f) return 0;
+
+    char line[1024];
+    int found = 0;
+    while (!found && fgets(line, sizeof(line), f)) {
+        char *name = line;
+        char *colon = strchr(name, ':');
+        if (!colon) continue;
+        *colon = '\0';
+        char *id_field = strchr(colon + 1, ':');
+        if (!id_field) continue;
+        id_field++;
+        char *end = NULL;
+        unsigned long value = strtoul(id_field, &end, 10);
+        if (end == id_field || *end != ':' || value != id) continue;
+        int written = snprintf(out, size, "%s", name);
+        found = written > 0 && (size_t)written < size;
+    }
+    fclose(f);
+    return found;
+}
+
+int account_name(unsigned long id, char *out, size_t size) {
+    return name_for_id("/etc/passwd", id, out, size);
+}
+
+int group_name(unsigned long id, char *out, size_t size) {
+    return name_for_id("/etc/group", id, out, size);
+}
+
 int fresh_handle_fd(HANDLE handle) {
     intptr_t value = (intptr_t)handle;
     if ((value & TAG_MASK) != TAG_FD) return -1;
