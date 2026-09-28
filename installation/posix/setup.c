@@ -5,7 +5,6 @@
  */
 
 #include <errno.h>
-#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,11 +34,36 @@ static int silent_mode = 0;
 static int step_index = 0;
 static int step_total = 1;
 
+static const char *passwd_field(int index, char *out, size_t size) {
+    FILE *f = fopen("/etc/passwd", "r");
+    if (!f) return NULL;
+
+    char line[1024];
+    const char *found = NULL;
+    while (!found && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        char *fields[7] = {0};
+        char *cursor = line;
+        int count = 0;
+        while (count < 7 && cursor) {
+            fields[count++] = cursor;
+            char *colon = strchr(cursor, ':');
+            if (colon) *colon = '\0';
+            cursor = colon ? colon + 1 : NULL;
+        }
+        if (count < 7 || strtoul(fields[2], NULL, 10) != (unsigned long)getuid()) continue;
+        int written = snprintf(out, size, "%s", fields[index]);
+        if (written > 0 && (size_t)written < size) found = out;
+    }
+    fclose(f);
+    return found;
+}
+
 static const char *home_dir(void) {
     const char *home = getenv("HOME");
     if (home && *home) return home;
-    struct passwd *entry = getpwuid(getuid());
-    return entry && entry->pw_dir ? entry->pw_dir : "/";
+    static char found[PATH_MAX_LEN];
+    return passwd_field(5, found, sizeof(found)) ? found : "/";
 }
 
 static void screen(const char *title) {
@@ -241,8 +265,8 @@ static int unregister_shell(const char *binary) {
 }
 
 static const char *login_shell(void) {
-    struct passwd *entry = getpwuid(getuid());
-    return entry && entry->pw_shell ? entry->pw_shell : "";
+    static char found[PATH_MAX_LEN];
+    return passwd_field(6, found, sizeof(found)) ? found : "";
 }
 
 static int change_login_shell(const char *binary) {

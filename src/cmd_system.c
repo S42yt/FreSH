@@ -19,8 +19,6 @@
 #include <tlhelp32.h>
 #include <wincrypt.h>
 #else
-#include <grp.h>
-#include <pwd.h>
 #include <signal.h>
 #include <sys/utsname.h>
 #endif
@@ -779,21 +777,21 @@ static int cmd_id(int argc, char **argv) {
         sl_push_copy(&group_names, "administrators");
         group_ids[group_count++] = 544;
     }
-    const char *group_name = user;
+    const char *primary_group = user;
 #else
     uid = (unsigned long)getuid();
     gid = (unsigned long)getgid();
-    struct passwd *pw = getpwuid(getuid());
-    struct group *primary = getgrgid(getgid());
-    const char *group_name = primary ? primary->gr_name : "?";
+    char primary[256];
+    const char *primary_group = group_name(gid, primary, sizeof(primary)) ? primary : "?";
     gid_t groups[64];
     int ngroups = getgroups(64, groups);
     for (int i = 0; i < ngroups && group_count < 64; i++) {
-        struct group *gr = getgrgid(groups[i]);
-        sl_push_copy(&group_names, gr ? gr->gr_name : "?");
+        char member[256];
+        sl_push_copy(&group_names,
+                     group_name((unsigned long)groups[i], member, sizeof(member)) ? member : "?");
         group_ids[group_count++] = (unsigned long)groups[i];
     }
-    if (pw) snprintf(user, sizeof(user), "%s", pw->pw_name);
+    account_name(uid, user, sizeof(user));
 #endif
     int names = args_has(&args, 'n');
     char terminator = args_has(&args, 'z') ? '\0' : '\n';
@@ -801,7 +799,7 @@ static int cmd_id(int argc, char **argv) {
         if (names) printf("%s%c", user, terminator);
         else printf("%lu%c", uid, terminator);
     } else if (args_has(&args, 'g')) {
-        if (names) printf("%s%c", group_name, terminator);
+        if (names) printf("%s%c", primary_group, terminator);
         else printf("%lu%c", gid, terminator);
     } else if (args_has(&args, 'G')) {
         for (size_t i = 0; i < group_count; i++) {
@@ -811,7 +809,7 @@ static int cmd_id(int argc, char **argv) {
         }
         putchar(terminator);
     } else {
-        printf("uid=%lu(%s) gid=%lu(%s) groups=", uid, user, gid, group_name);
+        printf("uid=%lu(%s) gid=%lu(%s) groups=", uid, user, gid, primary_group);
         for (size_t i = 0; i < group_count; i++) printf("%s%lu(%s)", i ? "," : "", group_ids[i], group_names.items[i]);
         putchar('\n');
     }

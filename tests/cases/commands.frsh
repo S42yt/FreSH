@@ -103,3 +103,7 @@ check have_missing "$(have nosuchcommandhere || echo absent)" absent
 
 check assignment_prefix_in_pipeline "$(FRESH_PROBE_VALUE=bar env | grep -c '^FRESH_PROBE_VALUE=bar$')" 1
 check assignment_prefix_long_pipeline "$(X=1 seq 1 3000 | tail -1)" 3000
+
+check whoami_names_someone "$(test -n "$(whoami)" && echo yes)" yes
+whoami_name=$(whoami)
+check id_agrees_with_whoami "$(id -un)" "${whoami_name##*\\}"

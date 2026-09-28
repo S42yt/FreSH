@@ -17,7 +17,6 @@
 #include "platform.h"
 
 #ifndef _WIN32
-#include <pwd.h>
 #endif
 
 void *xmalloc(size_t size) {
@@ -320,8 +319,9 @@ int win_user_name(char *out, unsigned long *size) {
 #else
 
 int win_user_name(char *out, unsigned long *size) {
-    struct passwd *entry = getpwuid(getuid());
-    const char *name = entry && entry->pw_name ? entry->pw_name : getenv("USER");
+    char found[256];
+    const char *name = account_name((unsigned long)getuid(), found, sizeof(found)) ? found
+                                                                                  : getenv("USER");
     if (!name || !*name) return 0;
     int written = snprintf(out, *size, "%s", name);
     if (written < 0 || (unsigned long)written >= *size) return 0;
