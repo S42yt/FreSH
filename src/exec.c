@@ -1094,6 +1094,23 @@ static int run_program(const char *path, char **argv, int argc, IoSet *io, HANDL
     return (int)exit_code;
 }
 
+static int run_script(const char *path, char **argv, int argc, IoSet *io, HANDLE *async_out) {
+    char exe[PATH_BUF];
+    if (!GetModuleFileNameA(NULL, exe, sizeof(exe))) {
+        shell_error("%s: cannot find FreSH to run the script with", path);
+        return 1;
+    }
+    char **child = xmalloc((size_t)(argc + 3) * sizeof(char *));
+    child[0] = exe;
+    child[1] = "--norc";
+    child[2] = (char *)path;
+    for (int i = 1; i < argc; i++) child[i + 2] = argv[i];
+    child[argc + 2] = NULL;
+    int status = run_program(exe, child, argc + 2, io, async_out);
+    free(child);
+    return status;
+}
+
 typedef struct {
     char path[PATH_BUF];
     char *command;
@@ -1443,6 +1460,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         HANDLE process = NULL;
         status = run_program(path, argv, argc, &io, background ? &process : async_out);
         if (process) job_add(process, job_label(node));
+    } else if (resolved && !background) {
+        status = run_script(path, argv, argc, &io, async_out);
     } else if (background) {
         status = exec_background_child(node);
     } else {
@@ -1460,12 +1479,6 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
             status = builtin(argc, argv);
         } else if (fallback) {
             status = fallback(argc, argv);
-        } else if (resolved) {
-            StrList script_args;
-            sl_init(&script_args);
-            for (int i = 1; i < argc; i++) sl_push_copy(&script_args, argv[i]);
-            status = exec_script_file(path, &script_args);
-            sl_free(&script_args);
         } else {
             report_not_found(argv[0]);
             status = 127;

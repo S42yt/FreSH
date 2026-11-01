@@ -58,11 +58,11 @@ and `>(...)`, and `/dev/null`, `/dev/stdout`, `/dev/stderr`.
 ### Builtins
 
 ```
-:  .  [  alias  bg  break  builtin  cd  command  continue  declare  dirs  disown
-echo  eval  exec  exit  export  false  fg  getopts  help  history  jobs  kill  let
-local  mapfile  popd  printf  pushd  pwd  read  readarray  readonly  return
-set  shift  shopt  source  test  trap  true  type  typeset  unalias  unset
-wait
+:  .  [  alias  bg  break  builtin  cd  command  continue  declare  dirs
+disown  echo  eval  exec  exit  export  false  fg  getopts  help  history
+jobs  kill  let  local  mapfile  popd  printf  pushd  pwd  read  readarray
+readonly  return  set  shift  shopt  source  test  trap  true  type  typeset
+unalias  unset  wait
 ```
 
 Their options, exit statuses and output follow bash 5, down to the format of

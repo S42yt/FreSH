@@ -37,6 +37,19 @@ chmod +x .fresh-test-source.sh
 check bash_source_executed "$(./.fresh-test-source.sh)" ./.fresh-test-source.sh
 rm .fresh-test-source.sh
 
+printf 'inner=set\nexport PATH=/nowhere\ncd ..\nleaked() { :; }\nexit 3\n' > .fresh-test-child.sh
+chmod +x .fresh-test-child.sh
+before_path=$PATH
+before_dir=$(pwd)
+./.fresh-test-child.sh
+check script_exit_status "$?" 3
+check script_keeps_its_variables "${inner:-unset}" unset
+check script_keeps_its_path "$PATH" "$before_path"
+check script_keeps_its_directory "$(pwd)" "$before_dir"
+check script_keeps_its_functions "$(type leaked > /dev/null 2>&1 || echo no)" no
+check script_still_running yes yes
+rm .fresh-test-child.sh
+
 mkdir .fresh-test-target
 check cd_physical "$(cd -P .fresh-test-target && basename "$(pwd)")" .fresh-test-target
 check test_h_plain_dir "$(test -h .fresh-test-target || echo no)" no
@@ -78,6 +91,11 @@ check using_missing_file "$(using shout from .fresh-test-using/none.frsh 2> /dev
 check using_without_from "$(using shout 2> /dev/null; echo $?)" 2
 unset -f whisper
 rm -r .fresh-test-using
+
+check man_names_a_builtin "$(man cd | grep -c 'cd - change the working directory')" 1
+check man_has_a_synopsis "$(man cd | grep -c '^SYNOPSIS')" 1
+check man_needs_a_name "$(man 2> /dev/null; echo $?)" 1
+ok man_unknown_fails "$(man fresh-no-such-page > /dev/null 2>&1 || echo yes)"
 
 false | true
 check pipestatus_first "${PIPESTATUS[0]}" 1

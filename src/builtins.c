@@ -1206,6 +1206,44 @@ static int builtin_using(int argc, char **argv) {
     return status;
 }
 
+static int man_system(const char *name) {
+    char path[PATH_BUF];
+    if (!resolve_command("man", path, sizeof(path))) return -1;
+    StrBuf command;
+    sb_init(&command);
+    sb_put_quoted(&command, path);
+    sb_putc(&command, ' ');
+    sb_put_quoted(&command, name);
+    int status = exec_text(command.data);
+    sb_free(&command);
+    return status;
+}
+
+static int man_one(const char *name) {
+    char path[PATH_BUF];
+    int bundled = coreutil_lookup(name) && (coreutil_preferred(name) || !resolve_command(name, path, sizeof(path)));
+    if ((builtin_lookup(name) || bundled) && help_page(name)) return 0;
+
+    int status = man_system(name);
+    if (status >= 0) return status;
+    if (help_page(name)) return 0;
+    shell_error("No manual entry for %s", name);
+    return 1;
+}
+
+static int builtin_man(int argc, char **argv) {
+    if (argc < 2) {
+        shell_error("What manual page do you want?");
+        return 1;
+    }
+    int status = 0;
+    for (int i = 1; i < argc; i++) {
+        int one = man_one(argv[i]);
+        if (one != 0) status = one;
+    }
+    return status;
+}
+
 static int builtin_history(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "-c") == 0) {
         history_clear();
@@ -3117,6 +3155,7 @@ static const Builtin BUILTINS[] = {
     {"unset", builtin_unset},       {"which", builtin_which},
     {"[", builtin_test},            {".", builtin_source},
     {":", builtin_true},            {"using", builtin_using},
+    {"man", builtin_man},
 };
 
 static Table builtin_table;
