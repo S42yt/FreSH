@@ -83,3 +83,12 @@ printf '%s\n' "$counter"
 if [ -n "unset-check" ] && [ 1 -eq 1 ]; then
     printf 'compound condition\n'
 fi
+
+printf 'child_only=set\ncd ..\nshown() { :; }\nprintf "%%s\\n" "$1 $#"\nexit 3\n' > child.sh
+chmod +x child.sh
+outer=kept
+./child.sh one two
+printf 'child %s %s %s\n' "$?" "${child_only:-unset}" "$outer"
+[ -f child.sh ] && printf 'still here\n'
+command -v shown > /dev/null 2>&1 || printf 'no function\n'
+rm -f child.sh
