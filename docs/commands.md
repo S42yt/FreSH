@@ -37,6 +37,7 @@ rejected with the same message and status GNU uses.
 | `alias [name=value]` | | no arguments lists aliases |
 | `unalias name` | | |
 | `source file` / `. file` | | runs in the current shell |
+| `using name... from file` | | takes only the named functions from a file, see [scripting](scripting.md#taking-functions-from-another-file) |
 | `eval words` | | |
 | `exit [code]` | | |
 | `return [code]` | | in a function or sourced script |
