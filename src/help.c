@@ -186,7 +186,8 @@ static const HelpEntry ENTRIES[] = {
      "  -s   only stopped jobs\n"
      "The current job is marked +, the one before -. A finished job is listed once."},
 
-    {"mapfile", "mapfile [-t] [<name>]", "read the input into an array",
+    {"mapfile", "mapfile [-t] [-d <delim>] [-n <count>] [-O <origin>] [-s <count>] [-u <fd>] [<name>]",
+     "read the input into an array",
      "  -t   drop the newline from each line\n"
      "readarray is the same command. The default name is MAPFILE."},
 
@@ -201,13 +202,15 @@ static const HelpEntry ENTRIES[] = {
     {"readonly", "readonly [-p] [<name>[=<value>] ...]", "a variable that cannot change again",
      "  -p   list what is already read only"},
 
-    {"shopt", "shopt [-s|-u|-q] [<option> ...]", "switch a shell option",
+    {"shopt", "shopt [-s|-u|-q|-p|-o] [<option> ...]", "switch a shell option",
      "  -s   set        -u   unset        -q   say nothing, use the status\n"
+     "  -p   print as shopt commands      -o   the options of set -o instead\n"
      "  globstar     ** walks the tree\n"
      "  nullglob     a pattern that matches nothing disappears\n"
      "  dotglob      * also matches names starting with a dot\n"
-     "  extglob      ?( *( +( @( and !( groups\n"
+     "  extglob      ?( *( +( @( and !( groups, which FreSH always understands\n"
      "  nocasematch  patterns ignore case\n"
+     "  expand_aliases  accepted for scripts; FreSH always expands aliases\n"
      "With no option it lists them all."},
 
     {"local", "local <name>[=<value>] ...", "a variable that belongs to this function",
@@ -232,7 +235,8 @@ static const HelpEntry ENTRIES[] = {
 
     {"pwd", "pwd", "print the working directory", NULL},
 
-    {"read", "read [-p <prompt>] [<name> ...]", "read a line into variables",
+    {"read", "read [-rs] [-a <array>] [-d <delim>] [-n|-N <count>] [-p <prompt>] [-t <seconds>] [-u <fd>] [<name> ...]",
+     "read a line into variables",
      "The last name takes the rest of the line. With no name it fills REPLY.\n"
      "  read -p \"branch: \" branch"},
 
@@ -243,10 +247,12 @@ static const HelpEntry ENTRIES[] = {
 
     {"say", "say [<message> ...]", "print a message with a dim bullet", NULL},
 
-    {"set", "set [-e|-x|-u] [+e|+x|+u]", "shell options, or every variable",
+    {"set", "set [-efux] [-o <option>] [--] [<argument> ...]", "shell options, or every variable",
      "  -e   stop the script at the first command that fails\n"
      "  -x   print each command before running it\n"
      "  -u   treat an unset variable as an error\n"
+     "  -f   do not expand file name patterns\n"
+     "  -o pipefail   a pipeline fails when any stage fails; -o alone lists them\n"
      "A plus instead of a minus turns one back off. No argument lists variables."},
 
     {"shift", "shift [<count>]", "drop the first positional arguments", NULL},

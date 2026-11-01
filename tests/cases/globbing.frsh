@@ -25,8 +25,8 @@ set -- "$tree"/*.missing
 check nullglob_on "$#" 0
 shopt -u nullglob
 
-check shopt_reports "$(shopt globstar)" "globstar    off"
-check shopt_sets "$(shopt -s globstar; shopt globstar; shopt -u globstar)" "globstar    on"
+check shopt_reports "$(shopt globstar)" "$(printf '%-15s\t%s' globstar off)"
+check shopt_sets "$(shopt -s globstar; shopt globstar; shopt -u globstar)" "$(printf '%-15s\t%s' globstar on)"
 
 check extglob_at "$(case abc in @(abc|xyz)) echo yes ;; esac)" yes
 check extglob_at_other "$(case xyz in @(abc|xyz)) echo yes ;; esac)" yes
