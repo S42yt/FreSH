@@ -604,13 +604,30 @@ void node_free(Node *node) {
     free(node);
 }
 
+static void source_fd(int fd, int implied, StrBuf *out) {
+    sb_putc(out, ' ');
+    if (fd != implied) sb_printf(out, "%d", fd);
+}
+
 static void source_redirs(const Redir *r, StrBuf *out) {
     for (; r; r = r->next) {
         switch (r->type) {
-        case R_IN: sb_printf(out, " %d< %s", r->fd, r->target); break;
-        case R_OUT: sb_printf(out, " %d> %s", r->fd, r->target); break;
-        case R_APPEND: sb_printf(out, " %d>> %s", r->fd, r->target); break;
-        case R_DUP: sb_printf(out, " %d>&%s", r->fd, r->target); break;
+        case R_IN:
+            source_fd(r->fd, 0, out);
+            sb_printf(out, "< %s", r->target);
+            break;
+        case R_OUT:
+            source_fd(r->fd, 1, out);
+            sb_printf(out, "> %s", r->target);
+            break;
+        case R_APPEND:
+            source_fd(r->fd, 1, out);
+            sb_printf(out, ">> %s", r->target);
+            break;
+        case R_DUP:
+            source_fd(r->fd, 1, out);
+            sb_printf(out, ">&%s", r->target);
+            break;
         case R_HERESTRING: sb_printf(out, " <<< %s", r->target); break;
         case R_HEREDOC:
         case R_HEREDOC_RAW:
@@ -747,6 +764,7 @@ int node_source(const Node *node, StrBuf *out) {
     }
 
     source_redirs(node->redirs, out);
+    if (node->background) sb_puts(out, " &");
     return ok;
 }
 

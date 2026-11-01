@@ -515,13 +515,17 @@ trap 'echo "closing"' HUP TERM
 trap - ERR                        # remove it
 
 long-running-thing &
-jobs                              # what is still going
-fg                                # bring the last one to the foreground
-fg 2                              # or a numbered one
-stop 2                            # suspend it
-bg 2                              # let it carry on in the background
+jobs                              # what is still going, in bash's format
+jobs -l                           # with process ids, -p for only the ids
+fg                                # bring the current job to the foreground
+fg %2                             # or a numbered one
+stop %2                           # suspend it
+bg %2                             # let it carry on in the background
+kill %long                        # end the job whose command starts with long
 wait                              # for all of them
-wait 2                            # for job 2, or a process id
+wait %2                           # for job 2, or a process id, and take its status
+wait -n                           # for whichever finishes first
+disown %2                         # forget it and leave it running
 ```
 
 `trap` takes EXIT, HUP, INT, QUIT, TERM, ERR, DEBUG and RETURN, by name or by
@@ -529,12 +533,19 @@ number, with or without the `SIG` prefix. DEBUG runs before every command,
 RETURN when a function returns, ERR after any command that fails outside a
 condition, HUP and TERM when the window is closed.
 
+A job is named the way bash names it: `%1`, `%+` or `%%` for the current
+job, `%-` for the one before, `%name` for the job whose command starts with
+`name`, and `%?text` for the one whose command contains `text`. `jobs`, `fg`,
+`bg`, `stop`, `kill`, `wait` and `disown` all take them.
+
 `stop` is a FreSH addition: Windows has no Ctrl+Z, so suspending a job is a
 command rather than a keystroke. It suspends every thread in the process, and
 `bg` or `fg` resumes them.
 
-Only external programs become jobs. A bundled command with `&` runs in the
-foreground, because it runs inside the shell itself.
+Anything can run in the background: a program, a function, a bundled command,
+a pipeline or a `{ }` group. At the prompt, a job that finished is reported
+before the next prompt, `[1]+  Done  long-running-thing`. A script prints no
+such notices, the same as bash; `jobs` and `wait` are how a script finds out.
 
 ## select
 

@@ -365,6 +365,7 @@ static void interactive_loop(void) {
     warn_about_config();
 
     while (shell.running) {
+        jobs_notify();
         char *line = line_read(0);
         if (!line) break;
 

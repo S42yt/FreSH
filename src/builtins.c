@@ -445,39 +445,156 @@ static int builtin_trap(int argc, char **argv) {
     return 0;
 }
 
+static int job_options(int argc, char **argv, const char *allowed, char *seen, const char **value) {
+    int i = 1;
+    for (; i < argc && argv[i][0] == '-' && argv[i][1]; i++) {
+        if (strcmp(argv[i], "--") == 0) return i + 1;
+        for (const char *flag = argv[i] + 1; *flag; flag++) {
+            const char *known = *flag == ':' ? NULL : strchr(allowed, *flag);
+            if (!known) {
+                shell_error("%s: -%c: invalid option", argv[0], *flag);
+                return -1;
+            }
+            seen[(unsigned char)*flag] = 1;
+            if (known[1] != ':') continue;
+            *value = flag[1] ? flag + 1 : i + 1 < argc ? argv[++i] : NULL;
+            if (!*value) {
+                shell_error("%s: -%c: option requires an argument", argv[0], *flag);
+                return -1;
+            }
+            break;
+        }
+    }
+    return i;
+}
+
+static int pid_word(const char *word, unsigned long *pid) {
+    char *end;
+    if (!isdigit((unsigned char)word[0])) return 0;
+    *pid = strtoul(word, &end, 10);
+    return *end == '\0';
+}
+
+static int each_job(int argc, char **argv, int (*act)(int)) {
+    int status = 0;
+    for (int i = 1; i < argc || i == 1; i++) {
+        int slot = jobs_lookup(argv[0], i < argc ? argv[i] : NULL);
+        if (slot < 0 || act(slot) != 0) status = 1;
+    }
+    return status;
+}
+
 static int builtin_fg(int argc, char **argv) {
-    int id = argc > 1 ? atoi(argv[1]) : 0;
-    return jobs_foreground(id);
+    int slot = jobs_lookup("fg", argc > 1 ? argv[1] : NULL);
+    return slot < 0 ? 1 : jobs_foreground(slot);
 }
 
 static int builtin_bg(int argc, char **argv) {
-    int id = argc > 1 ? atoi(argv[1]) : 0;
-    return jobs_resume(id);
+    return each_job(argc, argv, jobs_resume);
 }
 
 static int builtin_stop(int argc, char **argv) {
-    int id = argc > 1 ? atoi(argv[1]) : 0;
-    return jobs_suspend(id);
+    return each_job(argc, argv, jobs_suspend);
 }
 
 static int builtin_jobs(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-    StrList lines;
-    sl_init(&lines);
-    jobs_list(&lines);
+    char seen[128] = {0};
+    int i = job_options(argc, argv, "lprs", seen, NULL);
+    if (i < 0) {
+        fprintf(stderr, "jobs: usage: jobs [-lprs] [jobspec ...]\n");
+        return 2;
+    }
+    int format = seen['p'] ? 'p' : seen['l'] ? 'l' : 0;
+    int state = seen['r'] ? 'r' : seen['s'] ? 's' : 0;
+    int status = 0;
+    if (i == argc)
+        for (int slot = jobs_next(-1, state); slot >= 0; slot = jobs_next(slot, state))
+            jobs_report(slot, format);
+    for (; i < argc; i++) {
+        int slot = jobs_lookup("jobs", argv[i]);
+        if (slot < 0) status = 1;
+        else jobs_report(slot, format);
+    }
+    jobs_sweep();
+    return status;
+}
 
-    for (size_t i = 0; i < lines.len; i++)
-        printf("  %s%s%s\n", style(S_DIM), lines.items[i], style(S_RESET));
-    sl_free(&lines);
-    return 0;
+static int wait_for_any(int argc, char **argv, unsigned long *pid) {
+    int *slots = xmalloc((size_t)(argc + 1) * sizeof(int));
+    int count = 0;
+    for (int i = 0; i < argc; i++) {
+        unsigned long candidate;
+        int numeric = pid_word(argv[i], &candidate);
+        int slot = numeric ? jobs_find_pid(candidate) : jobs_lookup("wait", argv[i]);
+        if (slot >= 0) slots[count++] = slot;
+        else if (numeric) shell_error("wait: %s: no such job", argv[i]);
+    }
+    int status = argc > 0 && count == 0 ? -1 : jobs_wait_any(slots, count, pid);
+    free(slots);
+    return status < 0 ? 127 : status;
 }
 
 static int builtin_wait(int argc, char **argv) {
-    if (argc < 2) return jobs_wait_all();
+    char seen[128] = {0};
+    const char *variable = NULL;
+    int i = job_options(argc, argv, "fnp:", seen, &variable);
+    if (i < 0) {
+        fprintf(stderr, "wait: usage: wait [-fn] [-p var] [id ...]\n");
+        return 2;
+    }
+    if (variable) var_unset(variable);
 
+    unsigned long pid = 0;
     int status = 0;
-    for (int i = 1; i < argc; i++) status = jobs_wait(atoi(argv[i]));
+    if (seen['n']) status = wait_for_any(argc - i, argv + i, &pid);
+    else if (i == argc) jobs_wait_all();
+    for (; !seen['n'] && i < argc; i++) {
+        unsigned long candidate;
+        int slot = argv[i][0] == '%' ? jobs_lookup("wait", argv[i]) : -1;
+        if (pid_word(argv[i], &candidate)) {
+            status = jobs_wait_pid(candidate);
+            pid = status == 127 ? pid : candidate;
+        } else if (slot >= 0) {
+            pid = (unsigned long)jobs_pid(slot);
+            status = jobs_wait(slot);
+        } else if (argv[i][0] == '%') {
+            status = 127;
+        } else {
+            shell_error("wait: `%s': not a pid or valid job spec", argv[i]);
+            status = 1;
+        }
+    }
+    if (variable && pid) {
+        char text[32];
+        snprintf(text, sizeof(text), "%lu", pid);
+        var_set(variable, text);
+    }
+    return status;
+}
+
+static int builtin_disown(int argc, char **argv) {
+    char seen[128] = {0};
+    int i = job_options(argc, argv, "ahr", seen, NULL);
+    if (i < 0) {
+        fprintf(stderr, "disown: usage: disown [-h] [-ar] [jobspec ... | pid ...]\n");
+        return 2;
+    }
+    if (i == argc && (seen['a'] || seen['r'])) {
+        int state = seen['r'] ? 'r' : 0;
+        for (int slot = jobs_next(-1, state); slot >= 0 && !seen['h']; slot = jobs_next(slot, state))
+            jobs_disown(slot);
+        return 0;
+    }
+    int status = 0;
+    for (int first = i; i < argc || i == first; i++) {
+        unsigned long pid;
+        const char *word = i < argc ? argv[i] : NULL;
+        int numeric = word && pid_word(word, &pid);
+        int slot = numeric ? jobs_find_pid(pid) : jobs_lookup("disown", word);
+        if (slot < 0 && numeric) shell_error("disown: %s: no such job", word);
+        if (slot < 0) status = 1;
+        else if (!seen['h']) jobs_disown(slot);
+    }
     return status;
 }
 
@@ -1979,6 +2096,7 @@ static const Builtin BUILTINS[] = {
     {"trap", builtin_trap},         {"jobs", builtin_jobs},
     {"wait", builtin_wait},         {"fg", builtin_fg},
     {"bg", builtin_bg},             {"stop", builtin_stop},
+    {"disown", builtin_disown},
     {"test", builtin_test},         {"theme", builtin_theme},
     {"plugin", builtin_plugin},     {"true", builtin_true},
     {"type", builtin_type},         {"unalias", builtin_unalias},

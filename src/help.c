@@ -32,8 +32,10 @@ static const HelpEntry ENTRIES[] = {
      "  alias ll='ls -l'\n"
      "  alias                 show every alias"},
 
-    {"bg", "bg [<job>]", "let a stopped job carry on in the background",
-     "The job number comes from jobs. With no argument it takes the most recent."},
+    {"bg", "bg [<job> ...]", "let a stopped job carry on in the background",
+     "A job is %1, %+ or %% for the current one, %- for the one before,\n"
+     "%name for the job whose command starts with name, or %?text for one containing text.\n"
+     "With no argument it takes the current job."},
 
     {"break", "break [<levels>]", "leave a loop early",
      "break 2 leaves two nested loops."},
@@ -79,6 +81,12 @@ static const HelpEntry ENTRIES[] = {
 
     {"copypath", "copypath [<file>]", "put the full path on the clipboard",
      "With no argument it takes the current directory."},
+
+    {"disown", "disown [-h] [-ar] [<job> | <pid> ...]", "forget a job and leave it running",
+     "  -a   every job\n"
+     "  -r   every running job\n"
+     "  -h   keep the job, FreSH never hangs up on its jobs anyway\n"
+     "With no argument it takes the current job."},
 
     {"dirs", "dirs [-c]", "the directory stack",
      "  -c   forget it\n"
@@ -132,7 +140,7 @@ static const HelpEntry ENTRIES[] = {
     {"false", "false", "do nothing and report failure", NULL},
 
     {"fg", "fg [<job>]", "resume a job if stopped and wait for it",
-     "With no argument it takes the most recent job."},
+     "Prints the command, then returns its status. With no argument it takes the current job."},
 
     {"for", "for <name> in <word> ...; do <commands>; done", "run commands once per word",
      "With no in list it walks the arguments the script was given.\n"
@@ -171,7 +179,12 @@ static const HelpEntry ENTRIES[] = {
      "  if test -f build.frsh; then echo found; fi\n"
      "  if have gcc; then cc=gcc; else cc=clang; fi"},
 
-    {"jobs", "jobs", "background jobs, running or stopped", NULL},
+    {"jobs", "jobs [-lprs] [<job> ...]", "background jobs, running, stopped or finished",
+     "  -l   with process ids\n"
+     "  -p   only the process ids\n"
+     "  -r   only running jobs\n"
+     "  -s   only stopped jobs\n"
+     "The current job is marked +, the one before -. A finished job is listed once."},
 
     {"mapfile", "mapfile [-t] [<name>]", "read the input into an array",
      "  -t   drop the newline from each line\n"
@@ -242,7 +255,7 @@ static const HelpEntry ENTRIES[] = {
      "Also spelled as a single dot.\n"
      "  source ~/.freshrc"},
 
-    {"stop", "stop [<job>]", "suspend a job",
+    {"stop", "stop [<job> ...]", "suspend a job",
      "FreSH addition. Windows has no Ctrl+Z, so this is a command.\n"
      "bg or fg starts it again."},
 
@@ -278,7 +291,11 @@ static const HelpEntry ENTRIES[] = {
      "A relative file is looked for next to the running script first.\n"
      "  using on_windows from os_checker.frsh"},
 
-    {"wait", "wait [<job>]", "wait for a background job, or for all of them", NULL},
+    {"wait", "wait [-n] [-p <name>] [<job> | <pid> ...]", "wait for background jobs and return a status",
+     "  -n   wait for whichever finishes first\n"
+     "  -p   put the process id it waited for in <name>\n"
+     "With no argument it waits for every job and returns 0.\n"
+     "An unknown pid or job returns 127."},
 
     {"warn", "warn [<message> ...]", "print a message with a yellow bang", NULL},
 
@@ -330,7 +347,9 @@ static const HelpEntry ENTRIES[] = {
     {"head", "head [-n <count>] [<file> ...]", "the first lines, ten by default", NULL},
     {"hostname", "hostname", "the name of this computer", NULL},
     {"id", "id", "your user and whether the shell is elevated", NULL},
-    {"kill", "kill <pid> ...", "end a process", NULL},
+    {"kill", "kill [-s <signal> | -<signal>] <pid> | <job> ...", "send a signal to a process or a job",
+     "  -l   list the signal names\n"
+     "TERM by default. A job is %1, %+, %-, %name or %?text, as for fg."},
     {"ln", "ln [-s] <target> <link>", "link a name to a file",
      "  -s   a symbolic link, which needs developer mode or admin"},
     {"md5sum", "md5sum <file> ...", "the MD5 of each file", NULL},
