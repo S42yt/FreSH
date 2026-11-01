@@ -39,6 +39,7 @@ rejected with the same message and status GNU uses.
 | `alias [name=value]` | | no arguments lists aliases |
 | `unalias name` | | |
 | `source file` / `. file` | | runs in the current shell |
+| `man name...` | | FreSH's page for a builtin or a bundled command it is running, the system `man` for the rest |
 | `using name... from file` | | takes only the named functions from a file, see [scripting](scripting.md#taking-functions-from-another-file) |
 | `eval words` | | |
 | `exit [code]` | | |

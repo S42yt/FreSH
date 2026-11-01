@@ -58,15 +58,18 @@ and `>(...)`, and `/dev/null`, `/dev/stdout`, `/dev/stderr`.
 ### Builtins
 
 ```
-:  .  alias  bg  break  builtin  cd  command  continue  declare  dirs  echo
-disown  eval  exec  exit  export  false  fg  getopts  hash  help  history
-jobs  kill  let  local  logout  mapfile  popd  printf  pushd  pwd  read
-readarray  readonly  return  set  shift  shopt  source  test  times  trap
-true  type  typeset  ulimit  umask  unalias  unset  wait
+:  .  [  alias  bg  break  builtin  cd  command  continue  declare  dirs
+disown  echo  eval  exec  exit  export  false  fg  getopts  help  history
+jobs  kill  let  local  mapfile  popd  printf  pushd  pwd  read  readarray
+readonly  return  set  shift  shopt  source  test  trap  true  type  typeset
+unalias  unset  wait
 ```
 
-`set -e -u -x -o pipefail --`, `shopt -s globstar nullglob dotglob extglob
-nocasematch`, `trap` for EXIT HUP INT QUIT TERM ERR DEBUG RETURN.
+Their options, exit statuses and output follow bash 5, down to the format of
+`declare -p`, `export -p`, `set -o`, `shopt` and `trap -p`, and the bash
+differential checks each of them. `set -e -u -x -f -o pipefail --`, `shopt -s
+globstar nullglob dotglob extglob nocasematch expand_aliases`, `trap` for EXIT
+HUP INT QUIT TERM ERR DEBUG RETURN.
 
 ### Patterns
 
@@ -100,6 +103,15 @@ and an unquoted `${a[@]}` splits its elements again.
 
 - `coproc`.
 - `${!prefix@}` in its array form, and `${v@a}` attribute listing.
+- `hash`, `times`, `ulimit`, `umask` and `logout` are not builtins.
+- `set` accepts every option bash has and reports it in `set -o` and `$-`, so
+  `set -Eeuo pipefail` runs, but only `-e`, `-u`, `-x`, `-f` and `pipefail`
+  change anything.
+- An alias defined in a script is not expanded on that script's later lines,
+  because FreSH reads a whole script before running it. A file sourced after
+  the definition does see it.
+- Duplicating an input descriptor, `cmd <&3` and `3<&-`, and a here string on
+  a descriptor other than 0, `3<<< text`. `read -u 3` and `3>&-` work.
 - `compgen` and `complete`: FreSH has its own completion, and `bind` binds keys
   in the FreSH way, described in [shortcuts](shortcuts.md).
 - `jobs -n`, `jobs -x`, `suspend` and `set -b`.

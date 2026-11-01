@@ -57,3 +57,15 @@ printf '%s\n' "$nested_default"
 count=0
 count=$((count + 1))
 printf '%s\n' "${count}"
+
+set -- abc 'Def ghi' xYz
+printf '%s\n' "${1^^} ${2,,} ${1^} ${3,}"
+printf '[%s]' "${@^^}"
+printf '\n'
+printf '[%s]' "${@,}"
+printf '\n'
+printf '%s\n' "${*^}"
+upper_positional() {
+    printf '%s %s\n' "${1^^}" "${2,,}"
+}
+upper_positional lower UPPER

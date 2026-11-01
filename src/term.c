@@ -149,6 +149,26 @@ static int map_extended(int code) {
     }
 }
 
+int term_input_wait(int fd, int milliseconds) {
+    HANDLE handle = (HANDLE)_get_osfhandle(fd);
+    DWORD type = GetFileType(handle);
+    if (type == FILE_TYPE_CHAR) return WaitForSingleObject(handle, (DWORD)milliseconds) == WAIT_OBJECT_0;
+    if (type != FILE_TYPE_PIPE) return 1;
+    for (int waited = 0;; waited += 10) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(handle, NULL, 0, NULL, &available, NULL) || available) return 1;
+        if (waited >= milliseconds) return 0;
+        Sleep(10);
+    }
+}
+
+void term_echo(int fd, int on) {
+    HANDLE handle = (HANDLE)_get_osfhandle(fd);
+    DWORD mode;
+    if (!GetConsoleMode(handle, &mode)) return;
+    SetConsoleMode(handle, on ? mode | ENABLE_ECHO_INPUT : mode & ~(DWORD)ENABLE_ECHO_INPUT);
+}
+
 static int pushback = -1;
 
 int term_input_pending(void) {
@@ -278,6 +298,19 @@ static int read_byte(void) {
 
 int term_input_pending(void) {
     return byte_ready(0);
+}
+
+int term_input_wait(int fd, int milliseconds) {
+    struct pollfd probe = {fd, POLLIN, 0};
+    return poll(&probe, 1, milliseconds) != 0;
+}
+
+void term_echo(int fd, int on) {
+    struct termios mode;
+    if (!isatty(fd) || tcgetattr(fd, &mode) != 0) return;
+    if (on) mode.c_lflag |= ECHO;
+    else mode.c_lflag &= (tcflag_t)~ECHO;
+    tcsetattr(fd, TCSAFLUSH, &mode);
 }
 
 static int map_tilde(int number, int modifier) {

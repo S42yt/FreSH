@@ -17,6 +17,11 @@ FreSH deploy.frsh a b    # from PowerShell or cmd, with arguments
 source lib.frsh          # run it in the current shell, keeping its variables
 ```
 
+Called by name, a script runs in a fresh FreSH of its own, the way bash runs
+one in a child process: it sees exported variables, and its variables,
+functions, `cd` and `exit` stay inside it. `source` is the way to run a file
+in the current shell on purpose.
+
 `.frsh` is part of the command search, so a script in `~/bin` can be called by
 name without the extension:
 

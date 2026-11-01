@@ -140,7 +140,15 @@ int function_defined(const char *name) {
 }
 
 int function_undefine(const char *name) {
-    return table_remove(&function_table, name);
+    return function_table.buckets && table_remove(&function_table, name);
+}
+
+int function_source(const char *name, StrBuf *out) {
+    Node *body = function_find(name);
+    if (!body) return 0;
+    sb_printf(out, "%s () \n", name);
+    node_source(body, out);
+    return 1;
 }
 
 void function_names(StrList *out) {
@@ -959,13 +967,18 @@ static int is_assignment(const char *word) {
     return *p == '=';
 }
 
-static void assign_from_word(char *word) {
+static int assign_from_word(char *word) {
     char *eq = strchr(word, '=');
-    if (!eq) return;
+    if (!eq) return 0;
 
     const char *value = eq + 1;
     int append = eq > word && eq[-1] == '+';
     char *name_end = append ? eq - 1 : eq;
+    char *bare = xstrndup(word, strcspn(word, "+=["));
+    int locked = var_is_readonly(bare);
+    if (locked) shell_error("%s: is read only", bare);
+    free(bare);
+    if (locked) return 1;
 
     char *open = memchr(word, '[', (size_t)(name_end - word));
     if (open) {
@@ -988,14 +1001,14 @@ static void assign_from_word(char *word) {
         free(resolved);
         free(index);
         free(name);
-        return;
+        return 0;
     }
 
     char *name = xstrndup(word, (size_t)(name_end - word));
     if (var_is_integer(name)) {
         int ok = 1;
         long number = eval_arith(value, &ok);
-        if (append) number = eval_arith(var_get(name), &ok) + number;
+        if (append) number = eval_arith(var_get(name) ? var_get(name) : "0", &ok) + number;
         char buffer[32];
         snprintf(buffer, sizeof(buffer), "%ld", number);
         var_set(name, buffer);
@@ -1005,6 +1018,7 @@ static void assign_from_word(char *word) {
         var_set(name, value);
     }
     free(name);
+    return 0;
 }
 
 static int call_function(Node *body, const StrList *args) {
@@ -1018,7 +1032,9 @@ static int call_function(Node *body, const StrList *args) {
 
     scope_push();
     shell.depth++;
+    shell.returnable++;
     int status = exec_node(body);
+    shell.returnable--;
     shell.depth--;
     scope_pop();
 
@@ -1077,6 +1093,23 @@ static int run_program(const char *path, char **argv, int argc, IoSet *io, HANDL
     GetExitCodeProcess(process, &exit_code);
     CloseHandle(process);
     return (int)exit_code;
+}
+
+static int run_script(const char *path, char **argv, int argc, IoSet *io, HANDLE *async_out) {
+    char exe[PATH_BUF];
+    if (!GetModuleFileNameA(NULL, exe, sizeof(exe))) {
+        shell_error("%s: cannot find FreSH to run the script with", path);
+        return 1;
+    }
+    char **child = xmalloc((size_t)(argc + 3) * sizeof(char *));
+    child[0] = exe;
+    child[1] = "--norc";
+    child[2] = (char *)path;
+    for (int i = 1; i < argc; i++) child[i + 2] = argv[i];
+    child[argc + 2] = NULL;
+    int status = run_program(exe, child, argc + 2, io, async_out);
+    free(child);
+    return status;
 }
 
 typedef struct {
@@ -1363,9 +1396,10 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
     while (first < words.len && is_assignment(words.items[first])) first++;
 
     if (first == words.len) {
-        for (size_t i = 0; i < words.len; i++) assign_from_word(words.items[i]);
+        int failed = 0;
+        for (size_t i = 0; i < words.len; i++) failed |= assign_from_word(words.items[i]);
         sl_free(&words);
-        return expand_substitution_status();
+        return failed ? 1 : expand_substitution_status();
     }
 
     StrList saved_names = {NULL, 0, 0};
@@ -1427,6 +1461,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         HANDLE process = NULL;
         status = run_program(path, argv, argc, &io, background ? &process : async_out);
         if (process) job_add(process, job_label(node));
+    } else if (resolved && !background) {
+        status = run_script(path, argv, argc, &io, async_out);
     } else if (background) {
         status = exec_background_child(node);
     } else {
@@ -1444,12 +1480,6 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
             status = builtin(argc, argv);
         } else if (fallback) {
             status = fallback(argc, argv);
-        } else if (resolved) {
-            StrList script_args;
-            sl_init(&script_args);
-            for (int i = 1; i < argc; i++) sl_push_copy(&script_args, argv[i]);
-            status = exec_script_file(path, &script_args);
-            sl_free(&script_args);
         } else {
             report_not_found(argv[0]);
             status = 127;
@@ -2165,32 +2195,9 @@ static const char *bracket_peek(Bracket *b) {
     return b->pos < b->words.len ? b->words.items[b->pos] : NULL;
 }
 
-static int file_check(char flag, const char *path) {
-    DWORD attributes = GetFileAttributesA(path);
-    int exists = attributes != INVALID_FILE_ATTRIBUTES;
-
-    switch (flag) {
-    case 'e': return exists;
-    case 'f': return exists && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
-    case 'd': return exists && (attributes & FILE_ATTRIBUTE_DIRECTORY);
-    case 'h':
-    case 'L': return path_is_link(path);
-#ifdef _WIN32
-    case 'r':
-    case 'x': return exists;
-    case 'w': return exists && !(attributes & FILE_ATTRIBUTE_READONLY);
-#else
-    case 'r': return exists && access(path, R_OK) == 0;
-    case 'x': return exists && access(path, X_OK) == 0;
-    case 'w': return exists && access(path, W_OK) == 0;
-#endif
-    case 's': {
-        WIN32_FILE_ATTRIBUTE_DATA info;
-        if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) return 0;
-        return info.nFileSizeLow > 0 || info.nFileSizeHigh > 0;
-    }
-    default: return 0;
-    }
+static long bracket_number(const char *text) {
+    int ok = 1;
+    return eval_arith(text, &ok);
 }
 
 static int bracket_primary(Bracket *b) {
@@ -2208,17 +2215,12 @@ static int bracket_primary(Bracket *b) {
         return value;
     }
 
-    if (word[0] == '-' && word[1] && !word[2] && strchr("efdhLrwxsznv", word[1])) {
-        char flag = word[1];
+    if (test_unary_operator(word)) {
         b->pos++;
         const char *operand = bracket_peek(b);
         if (!operand) return 0;
         b->pos++;
-
-        if (flag == 'z') return *operand == '\0';
-        if (flag == 'n') return *operand != '\0';
-        if (flag == 'v') return var_exists(operand);
-        return file_check(flag, operand);
+        return test_unary(word[1], operand);
     }
 
     b->pos++;
@@ -2252,20 +2254,14 @@ static int bracket_primary(Bracket *b) {
     }
     if (strcmp(op, "<") == 0) return strcmp(word, right) < 0;
     if (strcmp(op, ">") == 0) return strcmp(word, right) > 0;
-    if (strcmp(op, "-eq") == 0) return atol(word) == atol(right);
-    if (strcmp(op, "-ne") == 0) return atol(word) != atol(right);
-    if (strcmp(op, "-lt") == 0) return atol(word) < atol(right);
-    if (strcmp(op, "-le") == 0) return atol(word) <= atol(right);
-    if (strcmp(op, "-gt") == 0) return atol(word) > atol(right);
-    if (strcmp(op, "-ge") == 0) return atol(word) >= atol(right);
-    if (strcmp(op, "-nt") == 0 || strcmp(op, "-ot") == 0) {
-        WIN32_FILE_ATTRIBUTE_DATA left_info;
-        WIN32_FILE_ATTRIBUTE_DATA right_info;
-        if (!GetFileAttributesExA(word, GetFileExInfoStandard, &left_info)) return 0;
-        if (!GetFileAttributesExA(right, GetFileExInfoStandard, &right_info)) return 0;
-        LONG compared = CompareFileTime(&left_info.ftLastWriteTime, &right_info.ftLastWriteTime);
-        return strcmp(op, "-nt") == 0 ? compared > 0 : compared < 0;
-    }
+    if (strcmp(op, "-eq") == 0) return bracket_number(word) == bracket_number(right);
+    if (strcmp(op, "-ne") == 0) return bracket_number(word) != bracket_number(right);
+    if (strcmp(op, "-lt") == 0) return bracket_number(word) < bracket_number(right);
+    if (strcmp(op, "-le") == 0) return bracket_number(word) <= bracket_number(right);
+    if (strcmp(op, "-gt") == 0) return bracket_number(word) > bracket_number(right);
+    if (strcmp(op, "-ge") == 0) return bracket_number(word) >= bracket_number(right);
+    int compared = 0;
+    if (test_file_binary(op, word, right, &compared)) return compared;
     return *word != '\0';
 }
 
@@ -2528,11 +2524,34 @@ static int exec_switch(Node *node) {
         char cwd[PATH_BUF];
         GetCurrentDirectoryA(sizeof(cwd), cwd);
         void *snapshot = vars_snapshot();
+        char **traps[] = {&shell.trap_exit, &shell.trap_err,  &shell.trap_debug,
+                          &shell.trap_return, &shell.trap_hup, &shell.trap_int,
+                          &shell.trap_quit, &shell.trap_term};
+        char *outer_traps[8];
+        for (int i = 0; i < 8; i++) {
+            outer_traps[i] = *traps[i];
+            *traps[i] = i >= 4 && outer_traps[i] && !*outer_traps[i] ? xstrdup("") : NULL;
+        }
         int was_running = shell.running;
         status = exec_node(node->right);
         if (!shell.running) {
             shell.running = was_running;
             status = shell.last_status;
+        }
+        if (shell.trap_exit) {
+            char *handler = shell.trap_exit;
+            shell.trap_exit = NULL;
+            shell.last_status = status;
+            run_trap(handler);
+            free(handler);
+            if (!shell.running) {
+                shell.running = was_running;
+                status = shell.last_status;
+            }
+        }
+        for (int i = 0; i < 8; i++) {
+            free(*traps[i]);
+            *traps[i] = outer_traps[i];
         }
         vars_restore(snapshot);
         SetCurrentDirectoryA(cwd);

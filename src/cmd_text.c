@@ -3367,6 +3367,7 @@ static int printf_escapes(const char *s, StrBuf *out) {
 
 static long long printf_integer(const char *value, int *bad) {
     if ((*value == '\'' || *value == '"') && value[1]) return (unsigned char)value[1];
+    if (!*value) return 0;
     char *end;
     errno = 0;
     long long number = strtoll(value, &end, 0);
@@ -3375,12 +3376,30 @@ static long long printf_integer(const char *value, int *bad) {
     return number;
 }
 
+static void printf_time(StrBuf *out, const char *spec, const char *pattern, time_t when) {
+    struct tm *parts = localtime(&when);
+    StrBuf stamp;
+    sb_init(&stamp);
+    size_t written = 0;
+    while (parts && *pattern && written == 0 && stamp.cap < 65536) {
+        sb_reserve(&stamp, stamp.cap * 2);
+        written = strftime(stamp.data, stamp.cap, pattern, parts);
+    }
+    stamp.data[written] = '\0';
+    sb_printf(out, spec, stamp.data);
+    sb_free(&stamp);
+}
+
 static int cmd_printf(int argc, char **argv) {
     const char *destination = NULL;
     int start = 1;
-    if (argc > 2 && strcmp(argv[1], "-v") == 0) {
-        destination = argv[2];
+    if (argc > 1 && strcmp(argv[1], "-v") == 0) {
+        destination = argc > 2 ? argv[2] : "";
         start = 3;
+        if (!var_valid_name(destination, 1)) {
+            fprintf(stderr, "printf: `%s': not a valid identifier\n", destination);
+            return 2;
+        }
     }
     if (start >= argc) {
         fprintf(stderr, "printf: usage: printf [-v var] format [arguments]\n");
@@ -3445,6 +3464,20 @@ static int cmd_printf(int argc, char **argv) {
                 } else {
                     while (isdigit((unsigned char)*p) && s < sizeof(spec) - 4) spec[s++] = *p++;
                 }
+            }
+            const char *close = *p == '(' ? strchr(p, ')') : NULL;
+            if (close && close[1] == 'T') {
+                char *pattern = xstrndup(p + 1, (size_t)(close - p - 1));
+                p = close + 1;
+                has_conversion = 1;
+                const char *value = next < argc ? argv[next++] : "";
+                int now = !*value || strcmp(value, "-1") == 0 || strcmp(value, "-2") == 0;
+                time_t when = now ? time(NULL) : (time_t)strtoll(value, NULL, 10);
+                spec[s++] = 's';
+                spec[s] = '\0';
+                printf_time(&rendered, spec, pattern, when);
+                free(pattern);
+                continue;
             }
             while (*p == 'l' || *p == 'h' || *p == 'L' || *p == 'j' || *p == 'z' || *p == 't') p++;
             char conv = *p;
@@ -3550,7 +3583,7 @@ static int cmd_printf(int argc, char **argv) {
         }
     } while (next < argc && has_conversion && !stop);
 
-    if (destination) var_set(destination, rendered.data);
+    if (destination) var_assign(destination, rendered.data);
     else fwrite(rendered.data, 1, rendered.len, stdout);
     sb_free(&rendered);
     return status;
