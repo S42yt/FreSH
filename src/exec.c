@@ -1900,11 +1900,16 @@ static char *job_label(Node *node) {
     return sb_take(&label);
 }
 
+static const char *job_signal(int slot) {
+    int status = jobs[slot].status;
+    return jobs[slot].done && status > 128 && status < 144 ? SIGNAL_TEXT[status - 128] : NULL;
+}
+
 static const char *job_state(int slot, char *buffer, size_t size) {
     int status = jobs[slot].status;
     if (!jobs[slot].done) return jobs[slot].stopped ? "Stopped" : "Running";
     if (status == 0) return "Done";
-    if (status > 128 && status < 144 && SIGNAL_TEXT[status - 128]) return SIGNAL_TEXT[status - 128];
+    if (job_signal(slot)) return job_signal(slot);
     snprintf(buffer, size, "Exit %d", status);
     return buffer;
 }
@@ -2049,12 +2054,16 @@ int jobs_wait_any(const int *slots, int count, unsigned long *pid) {
 }
 
 void jobs_wait_all(void) {
+    jobs_refresh();
     for (int i = 0; i < job_slots; i++) {
         if (!jobs[i].process) continue;
-        if (jobs[i].stopped && !job_poll(i)) {
+        if (jobs[i].stopped && !jobs[i].done) {
             shell_error("wait: job %d is stopped", i + 1);
             continue;
         }
+        if (!shell.interactive && jobs[i].done && !job_signal(i) &&
+                jobs[i].pid == shell.last_background_pid)
+            continue;
         job_block(i);
         job_drop(i, 0);
     }

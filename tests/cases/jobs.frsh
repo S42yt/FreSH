@@ -42,8 +42,10 @@ check jobs_signal_name "$(jobs)" "[1]+  Terminated              sleep 30"
 check jobs_listed_once "$(jobs)" ""
 
 false &
+settle
 wait
 check wait_all_succeeds "$?" 0
+check wait_keeps_last_finished "$(jobs)" "[1]+  Exit 1                  false"
 wait -n
 check wait_n_without_jobs "$?" 127
 
