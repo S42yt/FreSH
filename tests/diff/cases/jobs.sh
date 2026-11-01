@@ -63,11 +63,19 @@ jobs %+
 kill %1; wait %1; echo "status $?"
 
 echo "--- compound jobs"
-{ sleep 2; } &
-sleep 2 | cat &
+{ sleep 1; } &
+sleep 1 | cat &
 ( sleep 2 ) &
 jobs
+wait; jobs > /dev/null
+
+echo "--- wait keeps the last job if it already ended"
+true &
+settle
 wait
+jobs
+jobs
+echo "listed once"
 
 echo "--- wait statuses"
 false &
@@ -82,7 +90,7 @@ wait %9 2> /dev/null
 echo "unknown job: $?"
 wait abc 2> /dev/null
 echo "not a pid: $?"
-(exit 4) &
+(sleep 1; exit 4) &
 wait %1
 echo "wait %1: $?"
 
