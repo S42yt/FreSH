@@ -27,9 +27,9 @@ cd .
 here
 cd "$base"
 
-cd - > said
+cd - > "$base/said"
 printf 'dash %s %s\n' "$?" "${PWD#"$base"}"
-printf 'printed %s\n' "$(sed 's|.*/||' said)"
+printf 'printed %s\n' "$(sed 's|.*/||' "$base/said")"
 cd - > /dev/null
 here
 
@@ -62,34 +62,34 @@ printf 'no oldpwd %s\n' "$?"
 OLDPWD=$saved_old
 
 CDPATH=$base/paths
-cd target > said
+cd target > "$base/said"
 printf 'cdpath %s %s\n' "$?" "${PWD#"$base"}"
-printf 'printed %s\n' "$(sed 's|.*/||' said)"
+printf 'printed %s\n' "$(sed 's|.*/||' "$base/said")"
 cd "$base"
-cd shared > said
+cd shared > "$base/said"
 printf 'cdpath first %s %s\n' "$?" "${PWD#"$base"}"
-printf 'printed %s\n' "$(sed 's|.*/||' said)"
+printf 'printed %s\n' "$(sed 's|.*/||' "$base/said")"
 cd "$base"
-cd one > said
-printf 'cdpath fallback %s %s [%s]\n' "$?" "${PWD#"$base"}" "$(cat said)"
+cd one > "$base/said"
+printf 'cdpath fallback %s %s [%s]\n' "$?" "${PWD#"$base"}" "$(cat "$base/said")"
 cd "$base"
 cd ./target 2> /dev/null
 printf 'dot ignores cdpath %s\n' "$?"
 CDPATH=:$base/paths
-cd shared > said
-printf 'empty entry %s %s [%s]\n' "$?" "${PWD#"$base"}" "$(cat said)"
+cd shared > "$base/said"
+printf 'empty entry %s %s [%s]\n' "$?" "${PWD#"$base"}" "$(cat "$base/said")"
 cd "$base"
 unset CDPATH
 
-pwd > said
-printf 'pwd %s %s\n' "$?" "$(sed 's|.*/||' said)"
+pwd > "$base/said"
+printf 'pwd %s %s\n' "$?" "$(sed 's|.*/||' "$base/said")"
 cd one
-pwd -L > said
-printf 'pwd -L %s\n' "$(sed 's|.*/||' said)"
-pwd -P > said
-printf 'pwd -P %s\n' "$(sed 's|.*/||' said)"
-pwd -Z > said 2> /dev/null
-printf 'pwd bad option %s [%s]\n' "$?" "$(cat said)"
+pwd -L > "$base/said"
+printf 'pwd -L %s\n' "$(sed 's|.*/||' "$base/said")"
+pwd -P > "$base/said"
+printf 'pwd -P %s\n' "$(sed 's|.*/||' "$base/said")"
+pwd -Z > "$base/said" 2> /dev/null
+printf 'pwd bad option %s [%s]\n' "$?" "$(cat "$base/said")"
 cd "$base"
 
 HOME=$base

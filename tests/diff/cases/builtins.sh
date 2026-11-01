@@ -74,7 +74,6 @@ alias greet
 alias quote
 alias
 alias -p
-greet world
 alias missing_alias 2> /dev/null
 printf 'alias missing %s\n' "$?"
 unalias greet
@@ -146,6 +145,6 @@ printf 'to three\n' >&3
 exec 3>&-
 cat fd3.txt
 exec 4< fd3.txt
-read -r from_four <&4
-exec 4<&-
+read -r -u 4 from_four
+exec 4>&-
 printf '%s\n' "$from_four"

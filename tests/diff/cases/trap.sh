@@ -16,13 +16,13 @@ trap '' TERM
 trap -p TERM
 trap 'printf "hup\n"' 1
 trap -p HUP
-trap -p
+trap -p EXIT HUP INT QUIT TERM
 trap - INT
 trap -p INT
 trap TERM
 trap -p TERM
 trap -- - HUP
-trap -p
+trap -p EXIT HUP INT QUIT TERM
 printf 'after resets\n'
 
 trap 'printf "err trapped\n"' ERR
@@ -43,4 +43,4 @@ trap 'printf "lower\n"' int
 trap -p 2
 trap - 2
 trap 'printf "zero\n"' 0
-trap -p
+trap -p EXIT HUP INT QUIT TERM

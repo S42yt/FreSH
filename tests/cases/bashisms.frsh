@@ -28,7 +28,7 @@ check based_number "$((2#1010))" 10
 check based_hex "$((16#ff))" 255
 
 check declare_prints "$(x=1; declare -p x | grep -c 'x=')" 1
-check export_prints "$(export EXPORTED_ONE=1; export -p | grep -c '^export EXPORTED_ONE=')" 1
+check export_prints "$(export EXPORTED_ONE=1; export -p | grep -c '^declare -x EXPORTED_ONE=')" 1
 
 check command_v "$(command -v echo > /dev/null && echo found)" found
 echo() { printf 'shadowed\n'; }

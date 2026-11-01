@@ -12,6 +12,7 @@
 #include <string.h>
 #include "platform.h"
 
+#include "builtins.h"
 #include "exec.h"
 #include "shell.h"
 #include "vars.h"
@@ -40,7 +41,7 @@ static const char *name_value(const char *name) {
 static void field_flush(Expander *ex) {
     if (!ex->has_content) return;
     char *value = xstrdup(ex->field.data);
-    if (ex->glob && ex->meta) {
+    if (ex->glob && ex->meta && !shell.noglob) {
         if (glob_expand(value, ex->out)) {
             free(value);
         } else {
@@ -145,6 +146,9 @@ static char *special_value(char c) {
         break;
     case '#':
         sb_printf(&sb, "%d", shell.params.len > 0 ? (int)shell.params.len - 1 : 0);
+        break;
+    case '-':
+        shell_option_flags(&sb);
         break;
     case '*': {
         char separator = separator_join();
@@ -862,7 +866,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         else field_add_split(ex, value);
         return;
     }
-    if (c && strchr("?$#*@!0123456789", c)) {
+    if (c && strchr("?$#*@!-0123456789", c)) {
         (*p)++;
         char *value = special_value(c);
         if (in_quotes) field_add_quoted(ex, value, strlen(value));
@@ -1188,12 +1192,19 @@ static int word_is_plain(const char *word) {
 
 void expand_words(const StrList *in, StrList *out) {
     int leading = 1;
+    int declaring = in->len > 0 && declaration_command(in->items[0]);
 
     sl_borrow(in);
     for (size_t i = 0; i < in->len; i++) {
-        size_t prefix = leading ? assignment_prefix(in->items[i]) : 0;
-        if (!prefix && !(i == 0 && declaration_command(in->items[i]))) leading = 0;
+        size_t prefix = leading || declaring ? assignment_prefix(in->items[i]) : 0;
+        if (!prefix && !(i == 0 && declaring)) leading = 0;
 
+        size_t length = strlen(in->items[i]);
+        if (prefix && declaring && i > 0 && in->items[i][prefix] == '(' &&
+            in->items[i][length - 1] == ')') {
+            sl_push_copy(out, in->items[i]);
+            continue;
+        }
         if (prefix) {
             expand_assignment(in->items[i], prefix, out);
             continue;

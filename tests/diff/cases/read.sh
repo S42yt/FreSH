@@ -41,7 +41,8 @@ show a "$a"
 read -t 5 a <<< 'timely'
 printf 'timeout %s ' "$?"
 show a "$a"
-read -u 3 a 3<<< 'from three'
+printf 'from three\n' > three
+read -u 3 a 3< three
 show a "$a"
 
 printf 'line one\\\nline two\n' > joined
