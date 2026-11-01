@@ -33,6 +33,10 @@ static const char *param_get(int index) {
     return shell.params.items[index];
 }
 
+static const char *name_value(const char *name) {
+    return isdigit((unsigned char)name[0]) ? param_get(atoi(name)) : var_get(name);
+}
+
 static void field_flush(Expander *ex) {
     if (!ex->has_content) return;
     char *value = xstrdup(ex->field.data);
@@ -223,13 +227,18 @@ static int expand_array_body(const char *body, StrList *out) {
 
     if (*source == '#') return 0;
 
-    if ((*source == '@' || *source == '*') && (source[1] == ':' || source[1] == '\0')) {
+    if ((*source == '@' || *source == '*') && (!source[1] || strchr(":#%/^,@", source[1]))) {
         StrList all;
         sl_init(&all);
         for (size_t i = 0; i < shell.params.len; i++) sl_push_copy(&all, shell.params.items[i]);
 
-        if (source[1] == ':') slice_elements(&all, source + 2, out);
-        else for (size_t i = 1; i < all.len; i++) sl_push_copy(out, all.items[i]);
+        if (source[1] == ':') {
+            slice_elements(&all, source + 2, out);
+        } else {
+            for (size_t i = 1; i < all.len; i++)
+                sl_push(out, source[1] ? apply_to_element(all.items[i], source + 1)
+                                       : xstrdup(all.items[i]));
+        }
 
         sl_free(&all);
         return 1;
@@ -483,7 +492,7 @@ static char *brace_expand(const char *body) {
         if (operator == '@' && rest[0] && !rest[1]) {
             memcpy(name, body, name_length);
             name[name_length] = '\0';
-            const char *value = var_get(name);
+            const char *value = name_value(name);
             const char *text = value ? value : "";
 
             if (rest[0] == 'U') return change_case(text, 1, 1);
@@ -502,7 +511,7 @@ static char *brace_expand(const char *body) {
         if (strchr("#%/^,:", operator)) {
             memcpy(name, body, name_length);
             name[name_length] = '\0';
-            const char *value = var_get(name);
+            const char *value = name_value(name);
             char *text = xstrdup(value ? value : "");
 
             if (operator == '#' || operator == '%') {
@@ -592,7 +601,10 @@ static char *brace_expand(const char *body) {
 
     const char *colon = strpbrk(body, ":-+=?");
     if (!colon) {
-        if (isdigit((unsigned char)body[0])) return special_value(body[0]);
+        if (isdigit((unsigned char)body[0])) {
+            const char *value = name_value(body);
+            return xstrdup(value ? value : "");
+        }
         if (!body[1] && !isalpha((unsigned char)body[0]) && body[0] != '_')
             return special_value(body[0]);
         const char *value = var_get(body);
@@ -793,7 +805,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         StrList elements;
         sl_init(&elements);
         if (expand_array_body(inner.data, &elements)) {
-            int joined = in_quotes && strstr(inner.data, "[*]") != NULL;
+            int joined = in_quotes && (strstr(inner.data, "[*]") != NULL || inner.data[0] == '*');
             char separator = separator_join();
             for (size_t i = 0; i < elements.len; i++) {
                 if (i > 0) {
