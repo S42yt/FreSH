@@ -145,7 +145,8 @@ int function_source(const char *name, StrBuf *out) {
     Node *body = function_find(name);
     if (!body) return 0;
     sb_printf(out, "%s () \n", name);
-    return node_source(body, out) || 1;
+    node_source(body, out);
+    return 1;
 }
 
 void function_names(StrList *out) {
