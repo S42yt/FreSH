@@ -87,6 +87,7 @@ void path_to_backslashes(char *p);
 char *path_last_sep(const char *p);
 int path_is_dir(const char *p);
 int path_is_file(const char *p);
+int path_is_link(const char *p);
 int path_is_absolute(const char *p);
 const char *path_ext(const char *p);
 char *path_join(const char *dir, const char *name);
