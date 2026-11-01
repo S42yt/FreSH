@@ -1913,7 +1913,10 @@ int jobs_lookup(const char *who, const char *spec) {
             found = i;
         }
     }
-    if (job_live(found)) return found;
+    if (job_live(found)) {
+        job_poll(found);
+        return found;
+    }
     shell_error("%s: %s: no such job", who, word);
     return -1;
 }
@@ -1940,7 +1943,7 @@ long jobs_pid(int slot) {
 }
 
 void jobs_report(int slot, int format) {
-    if (job_poll(slot)) jobs[slot].notified = 1;
+    if (jobs[slot].done) jobs[slot].notified = 1;
     job_line(stdout, slot, format);
 }
 
