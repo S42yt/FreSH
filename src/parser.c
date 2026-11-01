@@ -588,20 +588,22 @@ static Node *node_new(NodeKind kind) {
 }
 
 void node_free(Node *node) {
-    if (!node) return;
-    sl_free(&node->words);
-    Redir *r = node->redirs;
-    while (r) {
-        Redir *next = r->next;
-        free(r->target);
-        free(r);
-        r = next;
+    while (node) {
+        sl_free(&node->words);
+        Redir *r = node->redirs;
+        while (r) {
+            Redir *next = r->next;
+            free(r->target);
+            free(r);
+            r = next;
+        }
+        node_free(node->right);
+        node_free(node->extra);
+        free(node->name);
+        Node *left = node->left;
+        free(node);
+        node = left;
     }
-    node_free(node->left);
-    node_free(node->right);
-    node_free(node->extra);
-    free(node->name);
-    free(node);
 }
 
 static void source_fd(int fd, int implied, StrBuf *out) {

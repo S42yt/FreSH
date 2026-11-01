@@ -106,3 +106,7 @@ check null_command_status "$?" 0
 check and_or_true "$(true && echo yes || echo no)" yes
 check and_or_false "$(false && echo yes || echo no)" no
 check not_operator "$(! false && echo negated)" negated
+
+long_list=$(seq 1 20000 | sed "s/.*/long_count=&/")
+eval "$long_list"
+check long_statement_list "$long_count" 20000

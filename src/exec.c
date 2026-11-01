@@ -2564,10 +2564,18 @@ static int exec_switch(Node *node) {
         status = exec_pipeline(node);
         break;
 
-    case N_SEQ:
-        exec_node(node->left);
-        status = exec_node(node->right);
+    case N_SEQ: {
+        size_t depth = 0;
+        for (Node *link = node; link->kind == N_SEQ; link = link->left) depth++;
+        Node *local[16];
+        Node **order = depth < 16 ? local : xmalloc((depth + 1) * sizeof(Node *));
+        Node *link = node;
+        for (size_t i = depth; i > 0; i--, link = link->left) order[i] = link->right;
+        order[0] = link;
+        for (size_t i = 0; i <= depth; i++) status = exec_node(order[i]);
+        if (order != local) free(order);
         break;
+    }
 
     case N_AND:
         status = exec_condition(node->left);
