@@ -2627,7 +2627,9 @@ static void source_push(const char *path, StrList *outer) {
     var_values("BASH_SOURCE", outer);
     StrList stack;
     sl_init(&stack);
-    sl_push_copy(&stack, path);
+    char *shown = xstrdup(path);
+    path_to_slashes(shown);
+    sl_push(&stack, shown);
     for (size_t i = 0; i < outer->len; i++) sl_push_copy(&stack, outer->items[i]);
     var_set_array("BASH_SOURCE", &stack, VAR_INDEXED);
     sl_free(&stack);
