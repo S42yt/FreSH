@@ -259,6 +259,17 @@ static const HelpEntry ENTRIES[] = {
      "FreSH addition. Windows has no Ctrl+Z, so this is a command.\n"
      "bg or fg starts it again."},
 
+    {"task", "task [list] | run <name> <command> ... | log <name> | wait [<name> ...] | stop <name> ... | clear",
+     "run named commands in the background, each with its own log",
+     "  run    start the command as a background job called <name>\n"
+     "  list   name, state, how long it ran and the command; task alone does the same\n"
+     "  log    print what the task wrote, stdout and stderr together\n"
+     "  wait   wait for the named tasks or all of them, 0 when every one succeeded\n"
+     "  stop   end a task\n"
+     "  clear  forget finished tasks and delete their logs\n"
+     "A task is an ordinary job, so jobs, wait %<name> and kill %<name> see it.\n"
+     "  task run build make -j8"},
+
     {"test", "test <expression>   |   [ <expression> ]", "check a file or compare values",
      "  -e -f -d -s <path>    exists, regular file, directory, not empty\n"
      "  -r -w -x <path>       readable, writable, executable\n"

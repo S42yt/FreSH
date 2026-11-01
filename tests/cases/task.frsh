@@ -1,0 +1,68 @@
+suite task
+
+state_of() {
+  task | awk -v name="$1" '$1 == name { print ($2 == "failed") ? $2 " " $3 : $2 }'
+}
+
+task run hello echo hi there
+task wait hello
+check task_wait_done "$?" 0
+check task_log_stdout "$(task log hello)" "hi there"
+check task_state_done "$(state_of hello)" done
+
+task run boom 'echo oops >&2; exit 3'
+task wait boom
+check task_wait_failed "$?" 3
+check task_log_stderr "$(task log boom)" oops
+check task_state_failed "$(state_of boom)" "failed 3"
+
+task run nap -- sleep 30
+check task_state_running "$(state_of nap)" running
+check task_time "$(task | awk '$1 == "nap" { print $3 }' | grep -c '^[0-9][0-9]*s$')" 1
+check task_is_a_job "$(jobs %nap)" "[1]+  Running                 sleep 30 &"
+task run nap sleep 1 2> /dev/null
+check task_name_taken "$?" 1
+task stop nap
+task wait nap
+check task_stop_status "$?" 143
+check task_state_stopped "$(state_of nap)" stopped
+
+task run quick 'exit 4'
+wait %quick
+check task_wait_jobspec "$?" 4
+check task_sees_wait "$(state_of quick)" "failed 4"
+
+task run sleeper sleep 30
+kill %sleeper
+task wait sleeper
+check task_killed "$?" 143
+check task_state_killed "$(state_of sleeper)" "failed 143"
+
+task_greet() { echo "from a function $1"; }
+task run greet task_greet there
+task wait greet
+check task_runs_functions "$(task log greet)" "from a function there"
+
+task run shout 'echo quiet | tr a-z A-Z'
+task wait shout
+check task_runs_pipelines "$(task log shout)" QUIET
+
+task run hello echo again
+task wait hello
+check task_rerun_log "$(task log hello)" again
+check task_rerun_replaces "$(task | grep -c '^  hello ')" 1
+
+task wait
+check task_wait_all "$?" 143
+
+task run 9lives true 2> /dev/null
+check task_bad_name "$?" 2
+task log missing 2> /dev/null
+check task_log_missing "$?" 1
+task wait missing 2> /dev/null
+check task_wait_missing "$?" 127
+task frobnicate 2> /dev/null
+check task_bad_action "$?" 2
+
+task clear
+check task_clear_forgets "$(task)" ""

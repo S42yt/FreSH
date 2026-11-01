@@ -358,6 +358,47 @@ function defined inside an `if` is not found. A function that calls another
 from the same file needs that one named too, because only what is named comes
 in.
 
+### Running tasks in the background
+
+```sh
+task run build make -j8              # start it, its output goes to a log
+task run tests 'make test | tee result.txt'
+task                                 # what is going on
+task log build                       # everything build has printed so far
+task wait build tests || die "a task failed"
+task stop tests                      # end it
+task clear                           # forget the finished ones
+```
+
+`task` is a friendlier way to use background jobs. A task has a name, and its
+stdout and stderr both go to a log of their own, so two of them never write
+over each other or over your prompt. `task` alone, or `task list`, prints a
+table:
+
+```
+  name   state       time     command
+  build  done        42s      make -j8
+  tests  failed 2    1m03s    make test | tee result.txt
+  serve  running     5m12s    python -m http.server
+```
+
+A task is `running`, `done`, `failed` with its exit status, `stopped` after
+`task stop`, or `suspended` when `stop %name` paused it. The time is how long
+it ran, up to the moment the shell saw it finish.
+
+The command is the rest of the line, joined with spaces and run the way `eval`
+runs its words, so a quoted pipeline or `&&` chain is one task. A simple
+command runs as the task itself, so `task stop` ends the program; anything
+longer runs in a child shell, which is what `task stop` ends. Starting a task
+under a name that already finished replaces it; a name that is still running
+is refused.
+
+`task wait` with names waits for those, without for every task, and returns 0
+when they all succeeded or else the status of the last one that failed. Every
+task is an ordinary job underneath: it shows in `jobs` under its command,
+`wait %build` and `kill %build` find it by name, and `fg %build` brings it to
+the front.
+
 ### Side by side
 
 The bash way:

@@ -23,6 +23,7 @@
 #include "parser.h"
 #include "shell.h"
 #include "style.h"
+#include "task.h"
 #include "term.h"
 #include "theme.h"
 #include "util.h"
@@ -245,6 +246,7 @@ void shell_cleanup(void) {
         free(handler);
     }
     jobs_cleanup();
+    task_cleanup();
     exec_cleanup();
     vars_cleanup();
     sl_free(&shell.params);

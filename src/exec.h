@@ -46,6 +46,8 @@ int jobs_lookup(const char *who, const char *spec);
 int jobs_find_pid(unsigned long pid);
 int jobs_next(int slot, int state);
 long jobs_pid(int slot);
+int jobs_stopped(int slot);
+void jobs_name(unsigned long pid, const char *name, const char *label);
 void jobs_report(int slot, int format);
 void jobs_sweep(void);
 void jobs_notify(void);
