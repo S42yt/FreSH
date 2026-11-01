@@ -206,6 +206,12 @@ static const HelpEntry ENTRIES[] = {
      "  -1   one name per line\n"
      "Directories end in / and programs in *."},
 
+    {"man", "man <name> ...", "the manual page for a command",
+     "Builtins and the bundled commands FreSH is running get FreSH's own page.\n"
+     "Anything else goes to the system man, where there is one.\n"
+     "  man cd\n"
+     "  man grep"},
+
     {"ok", "ok [<message> ...]", "print a message with a green tick", NULL},
 
     {"plugin", "plugin [list|load <name> ...]", "plugins in ~/.fresh/plugins",
@@ -566,4 +572,31 @@ int help_show(const char *name) {
     }
     printf("\n  %s<required>  [optional]  ... repeatable%s\n\n", style(S_DIM), style(S_RESET));
     return 0;
+}
+
+static void page_section(const char *heading, const char *text) {
+    printf("%s%s%s\n", style(S_HEADING), heading, style(S_RESET));
+    const char *line = text;
+    while (*line) {
+        const char *end = strchr(line, '\n');
+        int length = end ? (int)(end - line) : (int)strlen(line);
+        printf("       %.*s\n", length, line);
+        if (!end) break;
+        line = end + 1;
+    }
+    printf("\n");
+}
+
+int help_page(const char *name) {
+    const HelpEntry *entry = find_entry(name);
+    if (!entry) return 0;
+
+    printf("\n");
+    char *title = xmalloc(strlen(entry->name) + (entry->summary ? strlen(entry->summary) : 0) + 4);
+    sprintf(title, "%s - %s", entry->name, entry->summary ? entry->summary : "");
+    page_section("NAME", title);
+    free(title);
+    page_section("SYNOPSIS", entry->usage ? entry->usage : entry->name);
+    if (entry->detail) page_section("DESCRIPTION", entry->detail);
+    return 1;
 }
