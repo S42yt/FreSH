@@ -2641,23 +2641,78 @@ static void source_pop(StrList *outer) {
     sl_free(outer);
 }
 
-int exec_script_file(const char *path, const StrList *args) {
+static char *read_script(const char *path) {
     FILE *f = fopen(path, "rb");
-    if (!f) {
-        shell_error("%s: cannot open script", path);
-        return 1;
-    }
+    if (!f) return NULL;
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (size < 0) {
         fclose(f);
-        return 1;
+        return NULL;
     }
     char *text = xmalloc((size_t)size + 1);
     size_t read = fread(text, 1, (size_t)size, f);
     text[read] = '\0';
     fclose(f);
+    return text;
+}
+
+static void import_functions(Node *node, const StrList *names, int *found) {
+    if (!node) return;
+    if (node->kind == N_SEQ) {
+        import_functions(node->left, names, found);
+        import_functions(node->right, names, found);
+        return;
+    }
+    if (node->kind != N_FUNC) return;
+    for (size_t i = 0; i < names->len; i++) {
+        if (strcmp(node->name, names->items[i]) != 0) continue;
+        function_define(node->name, node->right);
+        node->right = NULL;
+        found[i] = 1;
+        return;
+    }
+}
+
+int exec_import(const char *path, const StrList *names) {
+    char *text = read_script(path);
+    if (!text) {
+        shell_error("using: %s: cannot open", path);
+        return 1;
+    }
+    int incomplete = 0;
+    char *error = NULL;
+    Node *node = parse_string(text, &incomplete, &error);
+    free(text);
+    if (!node) {
+        shell_error("using: %s: %s", path, error ? error : "unexpected end of input");
+        free(error);
+        return 2;
+    }
+    free(error);
+
+    int *found = xmalloc(names->len * sizeof(int));
+    memset(found, 0, names->len * sizeof(int));
+    import_functions(node, names, found);
+    node_free(node);
+
+    int status = 0;
+    for (size_t i = 0; i < names->len; i++) {
+        if (found[i]) continue;
+        shell_error("using: %s: no function of that name in %s", names->items[i], path);
+        status = 1;
+    }
+    free(found);
+    return status;
+}
+
+int exec_script_file(const char *path, const StrList *args) {
+    char *text = read_script(path);
+    if (!text) {
+        shell_error("%s: cannot open script", path);
+        return 1;
+    }
 
     StrList saved = shell.params;
     if (args) {

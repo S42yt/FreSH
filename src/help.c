@@ -273,6 +273,11 @@ static const HelpEntry ENTRIES[] = {
 
     {"unset", "unset <name> ...", "forget a variable", NULL},
 
+    {"using", "using <function> [<function> ...] from <file>", "take functions from another script",
+     "FreSH addition. Defines only the named functions; nothing else in the file runs.\n"
+     "A relative file is looked for next to the running script first.\n"
+     "  using on_windows from os_checker.frsh"},
+
     {"wait", "wait [<job>]", "wait for a background job, or for all of them", NULL},
 
     {"warn", "warn [<message> ...]", "print a message with a yellow bang", NULL},

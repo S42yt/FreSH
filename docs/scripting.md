@@ -334,6 +334,30 @@ warn "no tests"      # a yellow bang
 These write to stdout with colour when the terminal supports it and plain
 text when the output is redirected, so a build log stays readable.
 
+### Taking functions from another file
+
+```sh
+using on_windows from os_checker.frsh
+using say_hello, say_goodbye from lib/greetings.frsh
+```
+
+`using` defines the named functions from another script and nothing else:
+the file's other functions stay out, and none of its other commands run, so a
+library can carry its own examples or checks at the top level without them
+firing on import. Names are separated by spaces, commas or both, and every one
+has to exist in the file or `using` fails with status 1 and says which.
+
+A relative path is looked for next to the script that says `using` first, so a
+script and its helpers can move together and still find each other from any
+working directory. After that it is tried from the working directory, and last
+on `PATH`, the same as `source`. At the prompt there is no script, so the
+working directory comes first.
+
+Only top level definitions count, the ones `source` would make every time. A
+function defined inside an `if` is not found. A function that calls another
+from the same file needs that one named too, because only what is named comes
+in.
+
 ### Side by side
 
 The bash way:

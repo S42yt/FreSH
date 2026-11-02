@@ -20,6 +20,7 @@ int exec_subshell(const char *text);
 void exec_keep_redirections(void);
 int exec_node(Node *node);
 int exec_script_file(const char *path, const StrList *args);
+int exec_import(const char *path, const StrList *names);
 int capture_command(const char *command, StrBuf *out);
 
 int resolve_command(const char *name, char *out, size_t out_size);

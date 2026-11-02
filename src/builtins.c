@@ -582,6 +582,48 @@ static int builtin_source(int argc, char **argv) {
     return status;
 }
 
+static int using_resolve(const char *file, char *path, size_t size) {
+    const char *script = var_get_element("BASH_SOURCE", "0");
+    const char *leaf = script ? path_last_sep(script) : NULL;
+    if (leaf && !path_is_absolute(file)) {
+        snprintf(path, size, "%.*s%c%s", (int)(leaf - script), script, PATH_SEP, file);
+        if (path_is_file(path)) return 1;
+    }
+    snprintf(path, size, "%s", file);
+    return path_is_file(path) || resolve_command(file, path, size);
+}
+
+static int builtin_using(int argc, char **argv) {
+    StrList names;
+    sl_init(&names);
+    int from = 1;
+    for (; from < argc && strcmp(argv[from], "from") != 0; from++) {
+        char *copy = xstrdup(argv[from]);
+        char *cursor = copy;
+        char *name;
+        while ((name = str_next_field(&cursor, ',')) != NULL) {
+            if (*name) sl_push_copy(&names, name);
+        }
+        free(copy);
+    }
+    if (names.len == 0 || from + 2 != argc) {
+        shell_error("using: usage: using <function> [<function> ...] from <file>");
+        sl_free(&names);
+        return 2;
+    }
+
+    char path[PATH_BUF];
+    int status;
+    if (using_resolve(argv[from + 1], path, sizeof(path))) {
+        status = exec_import(path, &names);
+    } else {
+        shell_error("using: %s: not found", argv[from + 1]);
+        status = 1;
+    }
+    sl_free(&names);
+    return status;
+}
+
 static int builtin_history(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "-c") == 0) {
         history_clear();
@@ -1942,7 +1984,7 @@ static const Builtin BUILTINS[] = {
     {"type", builtin_type},         {"unalias", builtin_unalias},
     {"unset", builtin_unset},       {"which", builtin_which},
     {"[", builtin_test},            {".", builtin_source},
-    {":", builtin_true},
+    {":", builtin_true},            {"using", builtin_using},
 };
 
 static Table builtin_table;

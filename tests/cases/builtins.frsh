@@ -50,6 +50,26 @@ if ! on_windows; then
 fi
 rm -r .fresh-test-target
 
+mkdir .fresh-test-using
+cat > .fresh-test-using/lib.frsh <<'EOF'
+echo "the file body ran"
+shout() { echo "loud $1"; }
+function whisper { echo "quiet $1"; }
+hidden() { echo hidden; }
+EOF
+printf 'using shout from lib.frsh\nshout beside\n' > .fresh-test-using/main.frsh
+check using_beside_the_script "$(source .fresh-test-using/main.frsh)" "loud beside"
+check using_two_names "$(using shout, whisper from .fresh-test-using/lib.frsh; shout a; whisper b)" "loud a
+quiet b"
+check using_leaves_the_rest "$(using shout from .fresh-test-using/lib.frsh; type hidden > /dev/null 2>&1 || echo no)" no
+using whisper from .fresh-test-using/lib.frsh
+check using_in_this_shell "$(whisper kept)" "quiet kept"
+check using_missing_function "$(using nothing from .fresh-test-using/lib.frsh 2> /dev/null; echo $?)" 1
+check using_missing_file "$(using shout from .fresh-test-using/none.frsh 2> /dev/null; echo $?)" 1
+check using_without_from "$(using shout 2> /dev/null; echo $?)" 2
+unset -f whisper
+rm -r .fresh-test-using
+
 false | true
 check pipestatus_first "${PIPESTATUS[0]}" 1
 check pipestatus_last "${PIPESTATUS[1]}" 0
