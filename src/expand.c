@@ -12,6 +12,7 @@
 #include <string.h>
 #include "platform.h"
 
+#include "builtins.h"
 #include "exec.h"
 #include "shell.h"
 #include "vars.h"
@@ -33,10 +34,14 @@ static const char *param_get(int index) {
     return shell.params.items[index];
 }
 
+static const char *name_value(const char *name) {
+    return isdigit((unsigned char)name[0]) ? param_get(atoi(name)) : var_get(name);
+}
+
 static void field_flush(Expander *ex) {
     if (!ex->has_content) return;
     char *value = xstrdup(ex->field.data);
-    if (ex->glob && ex->meta) {
+    if (ex->glob && ex->meta && !shell.noglob) {
         if (glob_expand(value, ex->out)) {
             free(value);
         } else {
@@ -142,6 +147,9 @@ static char *special_value(char c) {
     case '#':
         sb_printf(&sb, "%d", shell.params.len > 0 ? (int)shell.params.len - 1 : 0);
         break;
+    case '-':
+        shell_option_flags(&sb);
+        break;
     case '*': {
         char separator = separator_join();
         for (size_t i = 1; i < shell.params.len; i++) {
@@ -223,13 +231,18 @@ static int expand_array_body(const char *body, StrList *out) {
 
     if (*source == '#') return 0;
 
-    if ((*source == '@' || *source == '*') && (source[1] == ':' || source[1] == '\0')) {
+    if ((*source == '@' || *source == '*') && (!source[1] || strchr(":#%/^,@", source[1]))) {
         StrList all;
         sl_init(&all);
         for (size_t i = 0; i < shell.params.len; i++) sl_push_copy(&all, shell.params.items[i]);
 
-        if (source[1] == ':') slice_elements(&all, source + 2, out);
-        else for (size_t i = 1; i < all.len; i++) sl_push_copy(out, all.items[i]);
+        if (source[1] == ':') {
+            slice_elements(&all, source + 2, out);
+        } else {
+            for (size_t i = 1; i < all.len; i++)
+                sl_push(out, source[1] ? apply_to_element(all.items[i], source + 1)
+                                       : xstrdup(all.items[i]));
+        }
 
         sl_free(&all);
         return 1;
@@ -483,7 +496,7 @@ static char *brace_expand(const char *body) {
         if (operator == '@' && rest[0] && !rest[1]) {
             memcpy(name, body, name_length);
             name[name_length] = '\0';
-            const char *value = var_get(name);
+            const char *value = name_value(name);
             const char *text = value ? value : "";
 
             if (rest[0] == 'U') return change_case(text, 1, 1);
@@ -502,7 +515,7 @@ static char *brace_expand(const char *body) {
         if (strchr("#%/^,:", operator)) {
             memcpy(name, body, name_length);
             name[name_length] = '\0';
-            const char *value = var_get(name);
+            const char *value = name_value(name);
             char *text = xstrdup(value ? value : "");
 
             if (operator == '#' || operator == '%') {
@@ -592,7 +605,10 @@ static char *brace_expand(const char *body) {
 
     const char *colon = strpbrk(body, ":-+=?");
     if (!colon) {
-        if (isdigit((unsigned char)body[0])) return special_value(body[0]);
+        if (isdigit((unsigned char)body[0])) {
+            const char *value = name_value(body);
+            return xstrdup(value ? value : "");
+        }
         if (!body[1] && !isalpha((unsigned char)body[0]) && body[0] != '_')
             return special_value(body[0]);
         const char *value = var_get(body);
@@ -793,7 +809,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         StrList elements;
         sl_init(&elements);
         if (expand_array_body(inner.data, &elements)) {
-            int joined = in_quotes && strstr(inner.data, "[*]") != NULL;
+            int joined = in_quotes && (strstr(inner.data, "[*]") != NULL || inner.data[0] == '*');
             char separator = separator_join();
             for (size_t i = 0; i < elements.len; i++) {
                 if (i > 0) {
@@ -850,7 +866,7 @@ static void expand_dollar(Expander *ex, const char **p, int in_quotes) {
         else field_add_split(ex, value);
         return;
     }
-    if (c && strchr("?$#*@!0123456789", c)) {
+    if (c && strchr("?$#*@!-0123456789", c)) {
         (*p)++;
         char *value = special_value(c);
         if (in_quotes) field_add_quoted(ex, value, strlen(value));
@@ -1176,12 +1192,19 @@ static int word_is_plain(const char *word) {
 
 void expand_words(const StrList *in, StrList *out) {
     int leading = 1;
+    int declaring = in->len > 0 && declaration_command(in->items[0]);
 
     sl_borrow(in);
     for (size_t i = 0; i < in->len; i++) {
-        size_t prefix = leading ? assignment_prefix(in->items[i]) : 0;
-        if (!prefix && !(i == 0 && declaration_command(in->items[i]))) leading = 0;
+        size_t prefix = leading || declaring ? assignment_prefix(in->items[i]) : 0;
+        if (!prefix && !(i == 0 && declaring)) leading = 0;
 
+        size_t length = strlen(in->items[i]);
+        if (prefix && declaring && i > 0 && in->items[i][prefix] == '(' &&
+            in->items[i][length - 1] == ')') {
+            sl_push_copy(out, in->items[i]);
+            continue;
+        }
         if (prefix) {
             expand_assignment(in->items[i], prefix, out);
             continue;

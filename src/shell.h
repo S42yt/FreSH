@@ -29,6 +29,8 @@ typedef struct {
     int nullglob;
     int dotglob;
     int nocasematch;
+    int noglob;
+    int returnable;
     int condition_depth;
     unsigned long last_background_pid;
     StrList params;

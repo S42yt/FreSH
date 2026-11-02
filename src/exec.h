@@ -36,6 +36,7 @@ void path_ensure_environment(void);
 void function_define(const char *name, Node *body);
 int function_defined(const char *name);
 int function_undefine(const char *name);
+int function_source(const char *name, StrBuf *out);
 void function_names(StrList *out);
 int function_name_prefix(const char *prefix, size_t length);
 

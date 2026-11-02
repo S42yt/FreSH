@@ -63,6 +63,15 @@ if ! on_windows; then
 fi
 rm -r .fresh-test-target
 
+check pwd_variable_matches "$PWD" "$(pwd)"
+mkdir -p .fresh-test-cdpath/inner
+touch .fresh-test-cdpath/file
+check cdpath_absolute_entry "$(CDPATH="$PWD/.fresh-test-cdpath" cd inner > /dev/null && basename "$PWD")" inner
+check cdpath_prints_target "$(CDPATH="$PWD/.fresh-test-cdpath" cd inner)" "$PWD/.fresh-test-cdpath/inner"
+ok test_same_file "$([ .fresh-test-cdpath/file -ef ./.fresh-test-cdpath/inner/../file ] && echo yes)"
+check test_other_file "$([ .fresh-test-cdpath/file -ef .fresh-test-cdpath/inner ] || echo no)" no
+rm -r .fresh-test-cdpath
+
 mkdir .fresh-test-using
 cat > .fresh-test-using/lib.frsh <<'EOF'
 echo "the file body ran"

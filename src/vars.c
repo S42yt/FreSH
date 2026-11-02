@@ -7,9 +7,11 @@
 #include "vars.h"
 
 #include "exec.h"
+#include "expand.h"
 #include "shell.h"
 #include "table.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +28,7 @@ typedef struct {
     int integer;
     int readonly;
     int nameref;
+    char letter_case;
     int used;
 } Entry;
 
@@ -177,8 +180,12 @@ static void apply_export(const char *name, const char *value) {
 
 void vars_init(void) {
     char cwd[PATH_BUF];
-    if (GetCurrentDirectoryA(sizeof(cwd), cwd)) var_set_exported("PWD", cwd);
+    if (GetCurrentDirectoryA(sizeof(cwd), cwd)) {
+        path_to_slashes(cwd);
+        var_set_exported("PWD", cwd);
+    }
     if (!getenv("HOME")) var_set_exported("HOME", home_dir());
+    var_unexport("_");
     if (!getenv("SHELL")) {
         char exe[PATH_BUF];
         if (GetModuleFileNameA(NULL, exe, sizeof(exe))) var_set_exported("SHELL", exe);
@@ -265,7 +272,7 @@ const char *var_get(const char *name) {
     Entry *e = find(name);
     if (e) {
         if (e->kind != VAR_SCALAR) return e->values.len > 0 ? e->values.items[0] : "";
-        return e->value ? e->value : "";
+        return e->value;
     }
     const char *generated = dynamic_value(name);
     if (generated) return generated;
@@ -275,17 +282,25 @@ const char *var_get(const char *name) {
 }
 
 int var_exists(const char *name) {
-    return find(name) != NULL || dynamic_value(name) != NULL ||
-           env_value(name) != NULL;
+    Entry *e = find(name);
+    if (e) return e->kind != VAR_SCALAR || e->value != NULL;
+    return dynamic_value(name) != NULL || env_value(name) != NULL;
 }
 
-void var_set(const char *name, const char *value) {
+static char *cased_copy(const Entry *e, const char *value) {
+    char *copy = xstrdup(value ? value : "");
+    for (char *p = copy; e->letter_case && *p; p++)
+        *p = e->letter_case == 'u' ? (char)toupper((unsigned char)*p) : (char)tolower((unsigned char)*p);
+    return copy;
+}
+
+int var_set(const char *name, const char *value) {
     name = follow_nameref(name, 0);
 
     Entry *existing = find(name);
     if (existing && existing->readonly) {
         shell_error("%s: is read only", name);
-        return;
+        return 1;
     }
 
     Entry *e = existing;
@@ -295,8 +310,9 @@ void var_set(const char *name, const char *value) {
     }
     entry_reset(e);
     e->kind = VAR_SCALAR;
-    e->value = xstrdup(value ? value : "");
+    e->value = cased_copy(e, value);
     if (e->exported) apply_export(name, e->value);
+    return 0;
 }
 
 void var_set_exported(const char *name, const char *value) {
@@ -314,10 +330,52 @@ void var_export(const char *name) {
     if (!e) {
         const char *env = env_value(name);
         e = add(name);
-        e->value = xstrdup(env ? env : "");
+        e->value = env ? xstrdup(env) : NULL;
     }
     e->exported = 1;
-    apply_export(name, e->value ? e->value : "");
+    if (e->value) apply_export(name, e->value);
+}
+
+void var_unexport(const char *name) {
+    Entry *e = find(name);
+    if (!e && env_value(name)) {
+        e = add(name);
+        e->value = xstrdup(env_value(name));
+    }
+    if (!e) return;
+    e->exported = 0;
+    apply_export(name, NULL);
+}
+
+void var_attribute(const char *name, char letter, int on) {
+    Entry *e = find(name);
+    if (!e && !on) return;
+    if (!e) e = add(name);
+    if (letter == 'i') e->integer = on;
+    else if (letter == 'n') e->nameref = on;
+    else if (letter == 'r') e->readonly = 1;
+    else if (letter == 'l' || letter == 'u') e->letter_case = on ? letter : 0;
+}
+
+int var_valid_name(const char *name, int subscript) {
+    const char *p = name;
+    if (!isalpha((unsigned char)*p) && *p != '_') return 0;
+    while (isalnum((unsigned char)*p) || *p == '_') p++;
+    if (subscript && *p == '[' && p[1] && name[strlen(name) - 1] == ']') return 1;
+    return *p == '\0';
+}
+
+int var_assign(const char *target, const char *value) {
+    const char *open = strchr(target, '[');
+    if (!open) return var_set(target, value);
+    char *base = xstrndup(target, (size_t)(open - target));
+    char *index = xstrndup(open + 1, strlen(open + 1) - 1);
+    char *resolved = expand_single(index);
+    var_set_element(base, resolved, value);
+    free(resolved);
+    free(index);
+    free(base);
+    return 0;
 }
 
 int var_is_exported(const char *name) {
@@ -387,6 +445,10 @@ static int index_position(Entry *e, const char *index) {
 
 void var_set_element(const char *name, const char *index, const char *value) {
     Entry *e = find(name);
+    if (e && e->readonly) {
+        shell_error("%s: is read only", name);
+        return;
+    }
     if (!e) {
         e = add(name);
         e->kind = VAR_INDEXED;
@@ -406,11 +468,11 @@ void var_set_element(const char *name, const char *index, const char *value) {
     int position = index_position(e, index);
     if (position >= 0) {
         free(e->values.items[position]);
-        e->values.items[position] = xstrdup(value);
+        e->values.items[position] = cased_copy(e, value);
         return;
     }
     sl_push_copy(&e->keys, index);
-    sl_push_copy(&e->values, value);
+    sl_push(&e->values, cased_copy(e, value));
 }
 
 int var_unset_element(const char *name, const char *index) {
@@ -437,6 +499,11 @@ void var_mark_readonly(const char *name) {
     e->readonly = 1;
 }
 
+int var_is_nameref(const char *name) {
+    Entry *e = find(name);
+    return e ? e->nameref : 0;
+}
+
 int var_is_readonly(const char *name) {
     Entry *e = find(name);
     return e ? e->readonly : 0;
@@ -450,6 +517,63 @@ void vars_readonly_names(StrList *out) {
 void vars_exported_names(StrList *out) {
     for (size_t i = 0; i < var_count_total; i++)
         if (vars[i].used && vars[i].exported) sl_push_copy(out, vars[i].name);
+
+    env_ready();
+    StrList names;
+    sl_init(&names);
+    table_names(&env_table, &names);
+    for (size_t i = 0; i < names.len; i++)
+        if (!find(names.items[i])) sl_push_copy(out, names.items[i]);
+    sl_free(&names);
+}
+
+static void put_double_quoted(StrBuf *out, const char *text) {
+    sb_putc(out, '"');
+    for (const char *p = text; *p; p++) {
+        if (strchr("\\\"$`", *p)) sb_putc(out, '\\');
+        sb_putc(out, *p);
+    }
+    sb_putc(out, '"');
+}
+
+int var_describe(const char *name, StrBuf *out) {
+    Entry *e = find(name);
+    const char *env = e ? NULL : env_value(name);
+    if (!e && !env) return 0;
+
+    char flags[12];
+    size_t count = 0;
+    if (e) {
+        if (e->kind == VAR_INDEXED) flags[count++] = 'a';
+        if (e->kind == VAR_ASSOC) flags[count++] = 'A';
+        if (e->integer) flags[count++] = 'i';
+        if (e->nameref) flags[count++] = 'n';
+        if (e->readonly) flags[count++] = 'r';
+    }
+    if (!e || e->exported) flags[count++] = 'x';
+    if (e && e->letter_case) flags[count++] = e->letter_case;
+    flags[count] = '\0';
+
+    sb_printf(out, "declare -%s %s", count ? flags : "-", name);
+    if (!e) {
+        sb_putc(out, '=');
+        put_double_quoted(out, env);
+    } else if (e->kind == VAR_SCALAR) {
+        if (e->value) {
+            sb_putc(out, '=');
+            put_double_quoted(out, e->value);
+        }
+    } else {
+        sb_puts(out, "=(");
+        for (size_t i = 0; i < e->values.len; i++) {
+            if (i > 0) sb_putc(out, ' ');
+            sb_printf(out, "[%s]=", e->keys.items[i]);
+            put_double_quoted(out, e->values.items[i]);
+        }
+        if (e->kind == VAR_ASSOC && e->values.len > 0) sb_putc(out, ' ');
+        sb_putc(out, ')');
+    }
+    return 1;
 }
 
 void var_mark_integer(const char *name) {
@@ -565,6 +689,9 @@ static Entry entry_copy(const Entry *src) {
     e.kind = src->kind;
     e.exported = src->exported;
     e.integer = src->integer;
+    e.readonly = src->readonly;
+    e.nameref = src->nameref;
+    e.letter_case = src->letter_case;
     e.used = 1;
     sl_init(&e.keys);
     sl_init(&e.values);
@@ -658,8 +785,7 @@ void var_make_local(const char *name) {
         sl_init(&saved->saved.values);
     }
 
-    Entry *fresh = add(name);
-    fresh->value = xstrdup("");
+    add(name);
 }
 
 static void alias_table_ready(void) {
@@ -676,7 +802,12 @@ const char *alias_get(const char *name) {
 }
 
 int alias_unset(const char *name) {
-    return table_remove(&alias_table, name);
+    return alias_table.buckets && table_remove(&alias_table, name);
+}
+
+void alias_clear(void) {
+    if (alias_table.buckets) table_free(&alias_table);
+    memset(&alias_table, 0, sizeof(alias_table));
 }
 
 void alias_list(StrList *out) {
@@ -687,7 +818,8 @@ void alias_list(StrList *out) {
     for (size_t i = 0; i < names.len; i++) {
         StrBuf sb;
         sb_init(&sb);
-        sb_printf(&sb, "%s='%s'", names.items[i], (const char *)table_get(&alias_table, names.items[i]));
+        sb_printf(&sb, "%s=", names.items[i]);
+        sb_put_quoted(&sb, (const char *)table_get(&alias_table, names.items[i]));
         sl_push(out, sb_take(&sb));
     }
     sl_free(&names);

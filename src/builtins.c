@@ -15,6 +15,9 @@
 
 #ifdef _WIN32
 #include <shellapi.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #include "commands.h"
@@ -37,60 +40,173 @@
 static void sync_cwd(void) {
     char cwd[PATH_BUF];
     if (GetCurrentDirectoryA(sizeof(cwd), cwd)) {
-        var_set_exported("PWD", cwd);
         path_to_slashes(cwd);
+        var_set_exported("PWD", cwd);
         visits_record(cwd);
     }
     git_invalidate();
 }
 
-static int builtin_cd(int argc, char **argv) {
-    const char *target;
+typedef struct {
+    int index;
+    int offset;
+    int plus;
+    const char *arg;
+} Opts;
+
+static int opt_next(Opts *o, int argc, char **argv, const char *name, const char *spec) {
+    int allow_plus = spec[0] == '+';
+    if (allow_plus) spec++;
+    if (o->offset == 0) {
+        if (o->index >= argc) return 0;
+        const char *word = argv[o->index];
+        if ((word[0] != '-' && !(allow_plus && word[0] == '+')) || !word[1]) return 0;
+        if (strcmp(word, "--") == 0) {
+            o->index++;
+            return 0;
+        }
+        o->plus = word[0] == '+';
+        o->offset = 1;
+    }
+    const char *word = argv[o->index];
+    char letter = word[o->offset++];
+    const char *found = letter != ':' ? strchr(spec, letter) : NULL;
+    int last = word[o->offset] == '\0';
+    o->arg = NULL;
+    if (!found) {
+        shell_error("%s: %c%c: invalid option", name, o->plus ? '+' : '-', letter);
+        return '?';
+    }
+    if (found[1] == ':') {
+        if (!last) {
+            o->arg = word + o->offset;
+        } else if (o->index + 1 < argc) {
+            o->arg = argv[++o->index];
+        } else {
+            shell_error("%s: -%c: option requires an argument", name, letter);
+            return '?';
+        }
+        last = 1;
+    }
+    if (last) {
+        o->index++;
+        o->offset = 0;
+    }
+    return letter;
+}
+
+static int options_only(int argc, char **argv, const char *name) {
+    Opts o = {1, 0, 0, NULL};
+    if (opt_next(&o, argc, argv, name, "") == '?') return -1;
+    return o.index;
+}
+
+static int invalid_name(const char *builtin, const char *name) {
+    shell_error("%s: `%s': not a valid identifier", builtin, name);
+    return 1;
+}
+
+static int parse_number(const char *text, long long *out) {
+    while (*text == ' ' || *text == '\t') text++;
+    if (!*text) return 0;
+    char *end;
+    *out = strtoll(text, &end, 10);
+    if (end == text || (end == text + 1 && (*text == '-' || *text == '+'))) return 0;
+    while (*end == ' ' || *end == '\t') end++;
+    return *end == '\0';
+}
+
+static int change_directory(const char *target) {
+    char native[PATH_BUF];
+    snprintf(native, sizeof(native), "%s", target);
+    path_to_backslashes(native);
+    return *target && SetCurrentDirectoryA(native);
+}
+
+static int cdpath_separator(const char *start, const char *p) {
+#ifdef _WIN32
+    if (*p == ':' && p == start + 1 && (p[1] == '/' || p[1] == '\\')) return 0;
+#else
+    (void)start;
+#endif
+    return *p == ':' || *p == PATH_LIST_SEP;
+}
+
+static int cd_through_cdpath(const char *target, int *show) {
+    const char *cdpath = var_get("CDPATH");
+    int dotted = target[0] == '.' &&
+                 (!target[1] || target[1] == '/' || (target[1] == '.' && (!target[2] || target[2] == '/')));
+    if (!cdpath || !*cdpath || path_is_absolute(target) || dotted) return 0;
+
+    for (const char *start = cdpath;;) {
+        const char *end = start;
+        while (*end && !cdpath_separator(start, end)) end++;
+        StrBuf dir;
+        sb_init(&dir);
+        if (end > start) {
+            sb_putn(&dir, start, (size_t)(end - start));
+            sb_putc(&dir, '/');
+        }
+        sb_puts(&dir, target);
+        int entered = change_directory(dir.data);
+        sb_free(&dir);
+        if (entered) {
+            if (end > start) *show = 1;
+            return 1;
+        }
+        if (!*end) return 0;
+        start = end + 1;
+    }
+}
+
+static int enter_directory(const char *name, const char *target, int *show) {
     char previous[PATH_BUF];
     GetCurrentDirectoryA(sizeof(previous), previous);
+    path_to_slashes(previous);
 
-    while (argc > 1 && (strcmp(argv[1], "-L") == 0 || strcmp(argv[1], "-P") == 0)) {
-        argc--;
-        argv++;
+    if (!cd_through_cdpath(target, show) && !change_directory(target)) {
+        shell_error("%s: %s: No such file or directory", name, target);
+        return 0;
     }
-    if (argc > 1 && strcmp(argv[1], "--") == 0) {
-        argc--;
-        argv++;
+    var_set_exported("OLDPWD", previous);
+    sync_cwd();
+    return 1;
+}
+
+static int builtin_cd(int argc, char **argv) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    while ((c = opt_next(&o, argc, argv, "cd", "LPe@")) > 0)
+        if (c == '?') return 2;
+    if (argc - o.index > 1) {
+        shell_error("cd: too many arguments");
+        return 1;
     }
 
-    if (argc < 2) {
-        target = var_get("HOME");
-        if (!target) target = home_dir();
-    } else if (strcmp(argv[1], "-") == 0) {
+    int show = 0;
+    const char *target = o.index < argc ? argv[o.index] : var_get("HOME");
+    if (!target) {
+        shell_error("cd: HOME not set");
+        return 1;
+    }
+    if (o.index < argc && strcmp(target, "-") == 0) {
         target = var_get("OLDPWD");
         if (!target) {
             shell_error("cd: OLDPWD not set");
             return 1;
         }
-        char shown[PATH_BUF];
-        snprintf(shown, sizeof(shown), "%s", target);
-        path_to_slashes(shown);
-        printf("%s\n", shown);
-    } else {
-        target = argv[1];
+        show = 1;
     }
-
-    char native[PATH_BUF];
-    snprintf(native, sizeof(native), "%s", target);
-    path_to_backslashes(native);
-
-    if (!SetCurrentDirectoryA(native)) {
-        shell_error("cd: %s: no such directory", target);
-        return 1;
-    }
-    var_set_exported("OLDPWD", previous);
-    sync_cwd();
+    if (!enter_directory("cd", target, &show)) return 1;
+    if (show) printf("%s\n", var_get("PWD"));
     return 0;
 }
 
 static int builtin_pwd(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    while ((c = opt_next(&o, argc, argv, "pwd", "LP")) > 0)
+        if (c == '?') return 2;
     char cwd[PATH_BUF];
     if (!GetCurrentDirectoryA(sizeof(cwd), cwd)) return 1;
     path_to_slashes(cwd);
@@ -98,31 +214,84 @@ static int builtin_pwd(int argc, char **argv) {
     return 0;
 }
 
-static int builtin_exit(int argc, char **argv) {
-    shell.running = 0;
-    return argc > 1 ? atoi(argv[1]) : shell.last_status;
+static int exit_status_argument(const char *name, int argc, char **argv, int *status) {
+    int index = argc > 1 && strcmp(argv[1], "--") == 0 ? 2 : 1;
+    long long value;
+    if (index >= argc) {
+        *status = shell.last_status;
+        return 1;
+    }
+    if (!parse_number(argv[index], &value)) {
+        shell_error("%s: %s: numeric argument required", name, argv[index]);
+        *status = 2;
+        return 1;
+    }
+    if (index + 1 < argc) {
+        shell_error("%s: too many arguments", name);
+        *status = 1;
+        return 0;
+    }
+    *status = (int)(value & 255);
+    return 1;
 }
 
-static void echo_escaped(const char *text) {
+static int builtin_exit(int argc, char **argv) {
+    int status;
+    if (!exit_status_argument(argv[0], argc, argv, &status)) return status;
+    shell.running = 0;
+    return status;
+}
+
+static void put_utf8(unsigned long code) {
+    if (code < 0x80) {
+        putchar((int)code);
+    } else if (code < 0x800) {
+        putchar((int)(0xC0 | (code >> 6)));
+        putchar((int)(0x80 | (code & 0x3F)));
+    } else if (code < 0x10000) {
+        putchar((int)(0xE0 | (code >> 12)));
+        putchar((int)(0x80 | ((code >> 6) & 0x3F)));
+        putchar((int)(0x80 | (code & 0x3F)));
+    } else {
+        putchar((int)(0xF0 | ((code >> 18) & 0x07)));
+        putchar((int)(0x80 | ((code >> 12) & 0x3F)));
+        putchar((int)(0x80 | ((code >> 6) & 0x3F)));
+        putchar((int)(0x80 | (code & 0x3F)));
+    }
+}
+
+static int hex_value(char c) {
+    return isdigit((unsigned char)c) ? c - '0' : tolower((unsigned char)c) - 'a' + 10;
+}
+
+static int echo_escaped(const char *text) {
+    static const char SIMPLE[] = "a\ab\be\x1b" "E\x1b" "f\fn\nr\rt\tv\v\\\\";
     for (const char *p = text; *p; p++) {
         if (*p != '\\' || !p[1]) {
             putchar(*p);
             continue;
         }
-        p++;
-        switch (*p) {
-        case 'n': putchar('\n'); break;
-        case 't': putchar('\t'); break;
-        case 'r': putchar('\r'); break;
-        case '0': putchar('\0'); break;
-        case 'e': putchar('\x1b'); break;
-        case '\\': putchar('\\'); break;
-        default:
+        char kind = *++p;
+        const char *simple = strchr(SIMPLE, kind);
+        int digits = kind == 'x' ? 2 : kind == 'u' ? 4 : kind == 'U' ? 8 : kind == '0' ? 3 : 0;
+        if (kind == 'c') return 1;
+        if (simple && (simple - SIMPLE) % 2 == 0) {
+            putchar(simple[1]);
+        } else if (digits && (kind == '0' || isxdigit((unsigned char)p[1]))) {
+            unsigned long value = 0;
+            int base = kind == '0' ? 8 : 16;
+            for (int i = 0; i < digits && (base == 8 ? p[1] >= '0' && p[1] <= '7'
+                                                    : isxdigit((unsigned char)p[1]));
+                 i++)
+                value = value * (unsigned long)base + (unsigned long)hex_value(*++p);
+            if (kind == 'u' || kind == 'U') put_utf8(value);
+            else putchar((int)(value & 0xFF));
+        } else {
             putchar('\\');
-            putchar(*p);
-            break;
+            putchar(kind);
         }
     }
+    return 0;
 }
 
 static int builtin_echo(int argc, char **argv) {
@@ -142,73 +311,189 @@ static int builtin_echo(int argc, char **argv) {
 
     for (int i = index; i < argc; i++) {
         if (i > index) putchar(' ');
-        if (escapes) echo_escaped(argv[i]);
-        else fputs(argv[i], stdout);
+        if (!escapes) fputs(argv[i], stdout);
+        else if (echo_escaped(argv[i])) return 0;
     }
     if (newline) putchar('\n');
     return 0;
 }
 
+static void print_declarations(StrList *names) {
+    sl_sort(names);
+    StrBuf line;
+    sb_init(&line);
+    for (size_t i = 0; i < names->len; i++) {
+        sb_clear(&line);
+        if (var_describe(names->items[i], &line)) printf("%s\n", line.data);
+    }
+    sb_free(&line);
+}
+
+static int assign_word(const char *builtin, char *word);
+
+static char *word_name(const char *word) {
+    const char *eq = strchr(word, '=');
+    if (!eq) return xstrdup(word);
+    return xstrndup(word, (size_t)(eq - word) - (eq > word && eq[-1] == '+'));
+}
+
 static int builtin_export(int argc, char **argv) {
-    if (argc > 1 && strcmp(argv[1], "-p") == 0) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    int unexport = 0;
+    int functions = 0;
+    while ((c = opt_next(&o, argc, argv, "export", "fnp")) > 0) {
+        if (c == '?') return 2;
+        if (c == 'n') unexport = 1;
+        if (c == 'f') functions = 1;
+    }
+    if (o.index >= argc) {
         StrList names;
         sl_init(&names);
         vars_exported_names(&names);
-        sl_sort(&names);
-        for (size_t i = 0; i < names.len; i++)
-            printf("export %s=\"%s\"\n", names.items[i], var_get(names.items[i]));
+        print_declarations(&names);
         sl_free(&names);
         return 0;
     }
-    if (argc < 2) {
-        StrList list;
-        sl_init(&list);
-        vars_list(&list);
-        for (size_t i = 0; i < list.len; i++) printf("export %s\n", list.items[i]);
-        sl_free(&list);
-        return 0;
-    }
-    for (int i = 1; i < argc; i++) {
+
+    int status = 0;
+    for (int i = o.index; i < argc; i++) {
         char *eq = strchr(argv[i], '=');
-        if (eq) {
-            *eq = '\0';
-            var_set_exported(argv[i], eq + 1);
-            *eq = '=';
+        char *name = word_name(argv[i]);
+        if (functions) {
+            if (!function_defined(name)) {
+                shell_error("export: %s: not a function", name);
+                status = 1;
+            }
+        } else if (!var_valid_name(name, 0)) {
+            status = invalid_name("export", argv[i]);
+        } else if (unexport) {
+            if (eq) assign_word("export", argv[i]);
+            var_unexport(name);
         } else {
-            var_export(argv[i]);
+            if (eq && assign_word("export", argv[i])) status = 1;
+            var_export(name);
+            if (strcmp(name, "PATH") == 0) path_rehash();
         }
-        if (strcmp(argv[i], "PATH") == 0 || strncmp(argv[i], "PATH=", 5) == 0) path_rehash();
+        free(name);
     }
-    return 0;
+    return status;
 }
 
 static int builtin_unset(int argc, char **argv) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
     int functions_only = 0;
     int variables_only = 0;
-    int index = 1;
-
-    for (; index < argc && argv[index][0] == '-' && argv[index][1]; index++) {
-        if (strchr(argv[index], 'f')) functions_only = 1;
-        if (strchr(argv[index], 'v')) variables_only = 1;
+    while ((c = opt_next(&o, argc, argv, "unset", "fvn")) > 0) {
+        if (c == '?') return 2;
+        if (c == 'f') functions_only = 1;
+        if (c == 'v') variables_only = 1;
     }
 
-    for (int i = index; i < argc; i++) {
-        if (!variables_only && function_undefine(argv[i])) continue;
-        if (functions_only) continue;
-
-        char *open = strchr(argv[i], '[');
-        size_t length = strlen(argv[i]);
-        if (open && open != argv[i] && argv[i][length - 1] == ']') {
-            char *name = xstrndup(argv[i], (size_t)(open - argv[i]));
-            char *key = xstrndup(open + 1, length - (size_t)(open - argv[i]) - 2);
-            var_unset_element(name, key);
-            free(name);
-            free(key);
+    int status = 0;
+    for (int i = o.index; i < argc; i++) {
+        const char *name = argv[i];
+        if (functions_only) {
+            function_undefine(name);
             continue;
         }
-        var_unset(argv[i]);
+        if (!var_valid_name(name, 1)) {
+            if (variables_only) status = invalid_name("unset", name);
+            else function_undefine(name);
+            continue;
+        }
+
+        char *open = strchr(name, '[');
+        char *base = open ? xstrndup(name, (size_t)(open - name)) : xstrdup(name);
+        if (var_is_readonly(base)) {
+            shell_error("unset: %s: cannot unset: readonly variable", base);
+            status = 1;
+        } else if (open) {
+            char *key = xstrndup(open + 1, strlen(open + 1) - 1);
+            char *resolved = expand_single(key);
+            if (strcmp(resolved, "@") == 0 || strcmp(resolved, "*") == 0) var_unset(base);
+            else var_unset_element(base, resolved);
+            free(resolved);
+            free(key);
+        } else if (variables_only || var_exists(base) || !function_undefine(base)) {
+            var_unset(base);
+        }
+        free(base);
     }
-    return 0;
+    return status;
+}
+
+typedef struct {
+    const char *name;
+    char letter;
+    int *slot;
+    int state;
+} SetOption;
+
+static SetOption SET_OPTIONS[] = {
+    {"allexport", 'a', NULL, 0},
+    {"braceexpand", 'B', NULL, 1},
+    {"emacs", 0, NULL, 0},
+    {"errexit", 'e', &shell.errexit, 0},
+    {"errtrace", 'E', NULL, 0},
+    {"functrace", 'T', NULL, 0},
+    {"hashall", 'h', NULL, 1},
+    {"histexpand", 'H', NULL, 0},
+    {"history", 0, NULL, 0},
+    {"ignoreeof", 0, NULL, 0},
+    {"interactive-comments", 0, NULL, 1},
+    {"keyword", 'k', NULL, 0},
+    {"monitor", 'm', NULL, 0},
+    {"noclobber", 'C', NULL, 0},
+    {"noexec", 'n', NULL, 0},
+    {"noglob", 'f', &shell.noglob, 0},
+    {"nolog", 0, NULL, 0},
+    {"notify", 'b', NULL, 0},
+    {"nounset", 'u', &shell.nounset, 0},
+    {"onecmd", 't', NULL, 0},
+    {"physical", 'P', NULL, 0},
+    {"pipefail", 0, &shell.pipefail, 0},
+    {"posix", 0, NULL, 0},
+    {"privileged", 'p', NULL, 0},
+    {"verbose", 'v', NULL, 0},
+    {"vi", 0, NULL, 0},
+    {"xtrace", 'x', &shell.xtrace, 0},
+};
+
+#define SET_OPTION_COUNT (sizeof(SET_OPTIONS) / sizeof(SET_OPTIONS[0]))
+
+static int *set_option_slot(SetOption *option) {
+    return option->slot ? option->slot : &option->state;
+}
+
+static SetOption *set_option_named(const char *name) {
+    for (size_t i = 0; i < SET_OPTION_COUNT; i++)
+        if (strcmp(SET_OPTIONS[i].name, name) == 0) return &SET_OPTIONS[i];
+    return NULL;
+}
+
+static SetOption *set_option_letter(char letter) {
+    for (size_t i = 0; i < SET_OPTION_COUNT; i++)
+        if (SET_OPTIONS[i].letter == letter) return &SET_OPTIONS[i];
+    return NULL;
+}
+
+void shell_option_flags(StrBuf *out) {
+    for (const char *letter = "abefhkmnptuvxBCEHPT"; *letter; letter++) {
+        SetOption *option = set_option_letter(*letter);
+        if (option && *set_option_slot(option)) sb_putc(out, *letter);
+    }
+    if (shell.interactive) sb_putc(out, 'i');
+}
+
+static void print_set_options(int as_commands) {
+    for (size_t i = 0; i < SET_OPTION_COUNT; i++) {
+        SetOption *option = &SET_OPTIONS[i];
+        int on = *set_option_slot(option);
+        if (as_commands) printf("set %co %s\n", on ? '-' : '+', option->name);
+        else printf("%-15s\t%s\n", option->name, on ? "on" : "off");
+    }
 }
 
 static int builtin_set(int argc, char **argv) {
@@ -222,38 +507,44 @@ static int builtin_set(int argc, char **argv) {
     }
 
     int i = 1;
+    int replace = 0;
     for (; i < argc; i++) {
         char sign = argv[i][0];
-        if (sign != '-' && sign != '+') break;
-        if (strcmp(argv[i], "--") == 0) {
+        if ((sign != '-' && sign != '+') || (sign == '+' && !argv[i][1])) break;
+        if (strcmp(argv[i], "--") == 0 || strcmp(argv[i], "-") == 0) {
+            if (argv[i][1] == '\0') {
+                shell.xtrace = 0;
+                set_option_named("verbose")->state = 0;
+            }
+            replace = argv[i][1] == '-';
             i++;
             break;
         }
-        if (argv[i][1] == 'o' && i + 1 >= argc) {
-            printf("%-12s%s\n", "errexit", shell.errexit ? "on" : "off");
-            printf("%-12s%s\n", "nounset", shell.nounset ? "on" : "off");
-            printf("%-12s%s\n", "xtrace", shell.xtrace ? "on" : "off");
-            printf("%-12s%s\n", "pipefail", shell.pipefail ? "on" : "off");
-            continue;
-        }
-        if (argv[i][1] == 'o') {
-            const char *name = i + 1 < argc ? argv[++i] : "";
-            int on = sign == '-';
-            if (strcmp(name, "pipefail") == 0) shell.pipefail = on;
-            else if (strcmp(name, "errexit") == 0) shell.errexit = on;
-            else if (strcmp(name, "xtrace") == 0) shell.xtrace = on;
-            else if (strcmp(name, "nounset") == 0) shell.nounset = on;
-            continue;
-        }
         for (const char *flag = argv[i] + 1; *flag; flag++) {
-            if (*flag == 'e') shell.errexit = sign == '-';
-            else if (*flag == 'x') shell.xtrace = sign == '-';
-            else if (*flag == 'u') shell.nounset = sign == '-';
+            if (*flag != 'o') {
+                SetOption *option = set_option_letter(*flag);
+                if (!option) {
+                    shell_error("set: %c%c: invalid option", sign, *flag);
+                    return 2;
+                }
+                *set_option_slot(option) = sign == '-';
+                continue;
+            }
+            if (i + 1 >= argc || argv[i + 1][0] == '-' || argv[i + 1][0] == '+') {
+                print_set_options(sign == '+');
+                continue;
+            }
+            SetOption *option = set_option_named(argv[++i]);
+            if (!option) {
+                shell_error("set: %s: invalid option name", argv[i]);
+                return 2;
+            }
+            *set_option_slot(option) = sign == '-';
+            break;
         }
     }
 
-    int saw_dashes = i > 1 && strcmp(argv[i - 1], "--") == 0;
-    if (saw_dashes || i < argc) {
+    if (replace || i < argc) {
         char *name = shell.params.len > 0 ? xstrdup(shell.params.items[0]) : xstrdup("FreSH");
         sl_free(&shell.params);
         sl_init(&shell.params);
@@ -263,129 +554,242 @@ static int builtin_set(int argc, char **argv) {
     return 0;
 }
 
-static void assign_word(char *word) {
+static char *next_array_word(const char **cursor) {
+    const char *p = *cursor;
+    while (*p == ' ') p++;
+    if (!*p) return NULL;
+    const char *start = p;
+    int depth = 0;
+    char quote = 0;
+    for (; *p && (quote || depth || *p != ' '); p++) {
+        if (*p == '\\' && quote != '\'' && p[1]) p++;
+        else if (quote && *p == quote) quote = 0;
+        else if (!quote && (*p == '\'' || *p == '"')) quote = *p;
+        else if (!quote && (*p == '(' || *p == '{')) depth++;
+        else if (!quote && (*p == ')' || *p == '}') && depth) depth--;
+    }
+    *cursor = p;
+    return xstrndup(start, (size_t)(p - start));
+}
+
+static void assign_array_text(const char *name, const char *inside, int append) {
+    StrList raw;
+    StrList values;
+    sl_init(&raw);
+    sl_init(&values);
+    const char *cursor = inside;
+    char *word;
+    while ((word = next_array_word(&cursor)) != NULL) sl_push(&raw, word);
+    expand_words(&raw, &values);
+
+    VarKind kind = var_kind(name) == VAR_ASSOC ? VAR_ASSOC : VAR_INDEXED;
+    if (!append) {
+        StrList empty;
+        sl_init(&empty);
+        var_set_array(name, &empty, kind);
+        sl_free(&empty);
+    }
+    long next = append ? var_count(name) : 0;
+    for (size_t i = 0; i < values.len; i++) {
+        const char *item = values.items[i];
+        const char *close = item[0] == '[' ? strstr(item, "]=") : NULL;
+        char index[32];
+        if (kind == VAR_ASSOC && !close) {
+            var_set_element(name, item, i + 1 < values.len ? values.items[++i] : "");
+            continue;
+        }
+        if (close) {
+            char *key = xstrndup(item + 1, (size_t)(close - item - 1));
+            var_set_element(name, key, close + 2);
+            if (kind == VAR_INDEXED) next = atol(key) + 1;
+            free(key);
+            continue;
+        }
+        snprintf(index, sizeof(index), "%ld", next++);
+        var_set_element(name, index, item);
+    }
+    sl_free(&raw);
+    sl_free(&values);
+}
+
+static int assign_word(const char *builtin, char *word) {
     char *eq = strchr(word, '=');
     if (!eq) {
-        if (!var_exists(word)) var_set(word, "");
-        return;
+        if (!var_valid_name(word, 0)) return invalid_name(builtin, word);
+        if (!var_exists(word) && var_kind(word) == VAR_SCALAR) var_declare(word, VAR_SCALAR);
+        return 0;
     }
-    *eq = '\0';
-    size_t value_length = strlen(eq + 1);
-    if (eq[1] == '(' && value_length >= 2 && eq[value_length] == ')') {
-        char *inside = xstrndup(eq + 2, value_length - 2);
-        StrList items;
-        sl_init(&items);
-        char *cursor = inside;
-        char *item;
-        while ((item = str_next_field(&cursor, ' ')) != NULL) {
-            if (*item) sl_push_copy(&items, item);
-        }
-        var_set_array(word, &items, VAR_INDEXED);
-        sl_free(&items);
+    int append = eq > word && eq[-1] == '+';
+    char *name = xstrndup(word, (size_t)(eq - word - append));
+    int status = 0;
+    if (!var_valid_name(name, 1)) {
+        status = invalid_name(builtin, word);
+    } else if (var_is_readonly(name)) {
+        shell_error("%s: %s: readonly variable", builtin, name);
+        status = 1;
+    } else if (eq[1] == '(' && eq[strlen(eq) - 1] == ')' && !strchr(name, '[')) {
+        char *inside = xstrndup(eq + 2, strlen(eq + 2) - 1);
+        assign_array_text(name, inside, append);
         free(inside);
-        *eq = '=';
-        return;
-    }
-    char *open = strchr(word, '[');
-    if (open && word[strlen(word) - 1] == ']') {
-        *open = '\0';
-        word[strlen(word) + strlen(open + 1)] = '\0';
-        char index[128];
-        snprintf(index, sizeof(index), "%s", open + 1);
-        index[strcspn(index, "]")] = '\0';
-        var_set_element(word, index, eq + 1);
-    } else if (var_is_integer(word)) {
+    } else if (var_is_integer(name)) {
         int ok = 1;
         long number = eval_arith(eq + 1, &ok);
+        if (append) number += eval_arith(var_get(name) ? var_get(name) : "0", &ok);
         char buffer[32];
         snprintf(buffer, sizeof(buffer), "%ld", number);
-        var_set(word, buffer);
+        status = ok ? var_assign(name, buffer) : 1;
+    } else if (append && !strchr(name, '[')) {
+        var_append(name, eq + 1);
     } else {
-        var_set(word, eq + 1);
+        status = var_assign(name, eq + 1);
     }
-    *eq = '=';
+    free(name);
+    return status;
 }
 
 static int builtin_let(int argc, char **argv) {
+    if (argc < 2) {
+        shell_error("let: expression expected");
+        return 1;
+    }
     long value = 0;
     int ok = 1;
     for (int i = 1; i < argc; i++) value = eval_arith(argv[i], &ok);
-    if (!ok) return 2;
+    if (!ok) return 1;
     return value != 0 ? 0 : 1;
 }
 
-static int builtin_local(int argc, char **argv) {
-    int reference = 0;
-    int index = 1;
-
-    for (; index < argc && argv[index][0] == '-' && argv[index][1]; index++) {
-        if (strchr(argv[index], 'n')) reference = 1;
-    }
-
-    for (int i = index; i < argc; i++) {
-        char *eq = strchr(argv[i], '=');
-        char *name = eq ? xstrndup(argv[i], (size_t)(eq - argv[i])) : xstrdup(argv[i]);
-        var_make_local(name);
-        if (eq) assign_word(argv[i]);
-        if (reference) var_mark_nameref(name);
-        free(name);
-    }
-    return 0;
+static void print_function(const char *name) {
+    StrBuf text;
+    sb_init(&text);
+    if (function_source(name, &text)) printf("%s\n", text.data);
+    sb_free(&text);
 }
 
-static int builtin_declare(int argc, char **argv) {
-    VarKind kind = VAR_SCALAR;
-    int local_wanted = 0;
-    int integer_wanted = 0;
-    int reference_wanted = 0;
+static void print_functions(int argc, char **argv, int index, int names_only) {
+    StrList names;
+    sl_init(&names);
+    if (index >= argc) function_names(&names);
+    else for (int i = index; i < argc; i++) if (function_defined(argv[i])) sl_push_copy(&names, argv[i]);
+    sl_sort(&names);
+    for (size_t i = 0; i < names.len; i++) {
+        if (names_only && index >= argc) printf("declare -f %s\n", names.items[i]);
+        else if (names_only) printf("%s\n", names.items[i]);
+        else print_function(names.items[i]);
+    }
+    sl_free(&names);
+}
+
+static int declare_words(int argc, char **argv, int forced_local) {
+    const char *builtin = argv[0];
+    if (forced_local && shell.returnable <= 0) {
+        shell_error("local: can only be used in a function");
+        return 1;
+    }
+
+    char on[16] = "";
+    char off[16] = "";
     int printing = 0;
-    int index = 1;
-
-    for (; index < argc && argv[index][0] == '-'; index++) {
-        if (strchr(argv[index], 'p')) printing = 1;
-        if (strchr(argv[index], 'A')) kind = VAR_ASSOC;
-        if (strchr(argv[index], 'a')) kind = VAR_INDEXED;
-        if (strchr(argv[index], 'i')) integer_wanted = 1;
-        if (strchr(argv[index], 'n')) reference_wanted = 1;
-        if (strchr(argv[index], 'g')) local_wanted = 0;
-    }
-
-    if (index >= argc) {
-        StrList list;
-        sl_init(&list);
-        vars_list(&list);
-        for (size_t i = 0; i < list.len; i++) printf("%s%s\n", printing ? "declare -- " : "", list.items[i]);
-        sl_free(&list);
-        return 0;
-    }
-
-    if (printing) {
-        int status = 0;
-        for (; index < argc; index++) {
-            if (!var_exists(argv[index])) {
-                shell_error("declare: %s: not found", argv[index]);
-                status = 1;
-                continue;
-            }
-            const char *flags = var_kind(argv[index]) == VAR_ASSOC   ? "-A"
-                                : var_kind(argv[index]) == VAR_INDEXED ? "-a"
-                                                                       : "--";
-            printf("declare %s %s=\"%s\"\n", flags, argv[index], var_get(argv[index]));
+    int functions = 0;
+    int names_only = 0;
+    int global = 0;
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    while ((c = opt_next(&o, argc, argv, builtin, "+aAfFgilnprtux")) > 0) {
+        if (c == '?') return 2;
+        if (c == 'p') printing = 1;
+        else if (c == 'f') functions = 1;
+        else if (c == 'F') functions = names_only = 1;
+        else if (c == 'g') global = 1;
+        else if (!strchr(o.plus ? off : on, c)) {
+            char *flags = o.plus ? off : on;
+            size_t used = strlen(flags);
+            flags[used] = (char)c;
+            flags[used + 1] = '\0';
         }
+    }
+
+    if (functions) {
+        int status = 0;
+        for (int i = o.index; i < argc; i++)
+            if (!function_defined(argv[i])) status = 1;
+        print_functions(argc, argv, o.index, names_only);
         return status;
     }
 
-    for (; index < argc; index++) {
-        char *eq = strchr(argv[index], '=');
-        char *name = eq ? xstrndup(argv[index], (size_t)(eq - argv[index])) : xstrdup(argv[index]);
-        if (local_wanted) var_make_local(name);
-        if (kind != VAR_SCALAR) var_declare(name, kind);
-        if (integer_wanted) var_mark_integer(name);
-        if (reference_wanted) var_mark_nameref(name);
-        free(name);
-        if (eq) assign_word(argv[index]);
+    if (o.index >= argc) {
+        StrList names;
+        sl_init(&names);
+        if (printing || on[0]) {
+            StrList list;
+            sl_init(&list);
+            vars_list(&list);
+            for (size_t i = 0; i < list.len; i++) {
+                list.items[i][strcspn(list.items[i], "=")] = '\0';
+                StrBuf line;
+                sb_init(&line);
+                var_describe(list.items[i], &line);
+                size_t flags = strcspn(line.data + 8, " ");
+                int wanted = 1;
+                for (const char *flag = on; *flag; flag++)
+                    if (!memchr(line.data + 8, *flag, flags)) wanted = 0;
+                if (wanted) sl_push_copy(&names, list.items[i]);
+                sb_free(&line);
+            }
+            sl_free(&list);
+            print_declarations(&names);
+        } else {
+            vars_list(&names);
+            for (size_t i = 0; i < names.len; i++) printf("%s\n", names.items[i]);
+        }
+        sl_free(&names);
+        return 0;
     }
-    return 0;
+
+    int local = forced_local || (shell.returnable > 0 && !global);
+    int status = 0;
+    for (int i = o.index; i < argc; i++) {
+        char *name = word_name(argv[i]);
+
+        if (printing) {
+            StrBuf line;
+            sb_init(&line);
+            if (var_describe(name, &line)) {
+                printf("%s\n", line.data);
+            } else {
+                shell_error("%s: %s: not found", builtin, name);
+                status = 1;
+            }
+            sb_free(&line);
+        } else if (!var_valid_name(name, 0)) {
+            status = invalid_name(builtin, argv[i]);
+        } else if (strchr(off, 'r') && var_is_readonly(name)) {
+            shell_error("%s: %s: readonly variable", builtin, name);
+            status = 1;
+        } else {
+            if (local) var_make_local(name);
+            if (strchr(on, 'A')) var_declare(name, VAR_ASSOC);
+            else if (strchr(on, 'a') && var_kind(name) != VAR_INDEXED) var_declare(name, VAR_INDEXED);
+            for (const char *flag = "ilnu"; *flag; flag++) {
+                if (strchr(on, *flag)) var_attribute(name, *flag, 1);
+                if (strchr(off, *flag)) var_attribute(name, *flag, 0);
+            }
+            if (assign_word(builtin, argv[i])) status = 1;
+            if (strchr(on, 'x')) var_export(name);
+            if (strchr(off, 'x')) var_unexport(name);
+            if (strchr(on, 'r')) var_mark_readonly(name);
+        }
+        free(name);
+    }
+    return status;
+}
+
+static int builtin_local(int argc, char **argv) {
+    return declare_words(argc, argv, 1);
+}
+
+static int builtin_declare(int argc, char **argv) {
+    return declare_words(argc, argv, 0);
 }
 
 typedef struct {
@@ -407,42 +811,77 @@ static int trap_table(TrapSlot *slots) {
     return count;
 }
 
+static TrapSlot *trap_find(TrapSlot *slots, int count, const char *given) {
+    if (_strnicmp(given, "SIG", 3) == 0) given += 3;
+    for (int s = 0; s < count; s++) {
+        if (str_ieq(given, slots[s].name) || (slots[s].number && strcmp(given, slots[s].number) == 0))
+            return &slots[s];
+    }
+    return NULL;
+}
+
+static void trap_print(const TrapSlot *slot) {
+    if (!*slot->slot) return;
+    StrBuf line;
+    sb_init(&line);
+    sb_puts(&line, "trap -- ");
+    sb_put_quoted(&line, *slot->slot);
+    printf("%s %s%s\n", line.data, slot->number && strcmp(slot->number, "0") ? "SIG" : "",
+           slot->name);
+    sb_free(&line);
+}
+
 static int builtin_trap(int argc, char **argv) {
     TrapSlot slots[8];
     int count = trap_table(slots);
-
-    if (argc < 2 || strcmp(argv[1], "-p") == 0) {
-        for (int i = 0; i < count; i++)
-            if (*slots[i].slot) printf("trap -- '%s' %s\n", *slots[i].slot, slots[i].name);
-        return 0;
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    int printing = 0;
+    int listing = 0;
+    while ((c = opt_next(&o, argc, argv, "trap", "lp")) > 0) {
+        if (c == '?') return 2;
+        if (c == 'p') printing = 1;
+        if (c == 'l') listing = 1;
     }
 
-    const char *command = argv[1];
-    int clearing = strcmp(command, "-") == 0 || !*command;
+    if (listing) {
+        for (int i = 1; i < 5; i++) printf("%2s) SIG%s\n", slots[i].number, slots[i].name);
+        return 0;
+    }
+    if (printing || o.index >= argc) {
+        int status = 0;
+        for (int i = o.index; i < argc; i++) {
+            TrapSlot *slot = trap_find(slots, count, argv[i]);
+            if (slot) trap_print(slot);
+            else status = 1;
+        }
+        for (int i = 0; o.index >= argc && i < count; i++) trap_print(&slots[i]);
+        return status;
+    }
 
-    if (argc == 2) {
-        shell_error("trap: usage: trap command SIGNAL...");
+    int first = o.index;
+    const char *command = argv[first];
+    int clearing = strcmp(command, "-") == 0;
+    if (argc - first == 1 && trap_find(slots, count, command)) {
+        clearing = 1;
+        first--;
+    } else if (argc - first == 1) {
+        shell_error("trap: usage: trap [-lp] [[action] signal_spec ...]");
         return 2;
     }
 
-    for (int i = 2; i < argc; i++) {
-        const char *given = argv[i];
-        if (str_has_prefix(given, "SIG") || str_has_prefix(given, "sig")) given += 3;
-
-        char **slot = NULL;
-        for (int s = 0; s < count; s++) {
-            if (str_ieq(given, slots[s].name) ||
-                (slots[s].number && strcmp(given, slots[s].number) == 0))
-                slot = slots[s].slot;
-        }
+    int status = 0;
+    for (int i = first + 1; i < argc; i++) {
+        TrapSlot *slot = trap_find(slots, count, argv[i]);
         if (!slot) {
-            shell_error("trap: %s: use EXIT HUP INT QUIT TERM ERR DEBUG or RETURN", argv[i]);
-            return 1;
+            shell_error("trap: %s: invalid signal specification", argv[i]);
+            status = 1;
+            continue;
         }
-        free(*slot);
-        *slot = clearing ? NULL : xstrdup(command);
+        free(*slot->slot);
+        *slot->slot = clearing ? NULL : xstrdup(command);
     }
-    return 0;
+    return status;
 }
 
 static int builtin_fg(int argc, char **argv) {
@@ -525,7 +964,11 @@ static int builtin_warn(int argc, char **argv) {
 }
 
 static int builtin_alias(int argc, char **argv) {
-    if (argc < 2) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    while ((c = opt_next(&o, argc, argv, "alias", "p")) > 0)
+        if (c == '?') return 2;
+    if (o.index >= argc) {
         StrList list;
         sl_init(&list);
         alias_list(&list);
@@ -533,27 +976,44 @@ static int builtin_alias(int argc, char **argv) {
         sl_free(&list);
         return 0;
     }
-    for (int i = 1; i < argc; i++) {
+    int status = 0;
+    for (int i = o.index; i < argc; i++) {
         char *eq = strchr(argv[i], '=');
-        if (!eq) {
-            const char *value = alias_get(argv[i]);
-            if (value) printf("alias %s='%s'\n", argv[i], value);
-            else {
-                shell_error("alias: %s: not found", argv[i]);
-                return 1;
-            }
+        if (eq) {
+            *eq = '\0';
+            alias_set(argv[i], eq + 1);
+            *eq = '=';
             continue;
         }
-        *eq = '\0';
-        alias_set(argv[i], eq + 1);
-        *eq = '=';
+        const char *value = alias_get(argv[i]);
+        if (!value) {
+            shell_error("alias: %s: not found", argv[i]);
+            status = 1;
+            continue;
+        }
+        StrBuf line;
+        sb_init(&line);
+        sb_put_quoted(&line, value);
+        printf("alias %s=%s\n", argv[i], line.data);
+        sb_free(&line);
     }
-    return 0;
+    return status;
 }
 
 static int builtin_unalias(int argc, char **argv) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    while ((c = opt_next(&o, argc, argv, "unalias", "a")) > 0) {
+        if (c == '?') return 2;
+        alias_clear();
+        return 0;
+    }
+    if (o.index >= argc) {
+        shell_error("unalias: usage: unalias [-a] name [name ...]");
+        return 2;
+    }
     int status = 0;
-    for (int i = 1; i < argc; i++) {
+    for (int i = o.index; i < argc; i++) {
         if (!alias_unset(argv[i])) {
             shell_error("unalias: %s: not found", argv[i]);
             status = 1;
@@ -563,21 +1023,26 @@ static int builtin_unalias(int argc, char **argv) {
 }
 
 static int builtin_source(int argc, char **argv) {
-    if (argc < 2) {
-        shell_error("source: filename required");
-        return 1;
+    int first = options_only(argc, argv, argv[0]);
+    if (first < 0) return 2;
+    if (first >= argc) {
+        shell_error("%s: filename argument required", argv[0]);
+        return 2;
     }
+    const char *file = argv[first];
     char path[PATH_BUF];
-    if (!path_is_file(argv[1]) && !resolve_command(argv[1], path, sizeof(path))) {
-        shell_error("source: %s: not found", argv[1]);
+    if (path_is_file(file)) snprintf(path, sizeof(path), "%s", file);
+    else if (strpbrk(file, "/\\") || !resolve_command(file, path, sizeof(path))) {
+        shell_error("%s: %s: No such file or directory", argv[0], file);
         return 1;
     }
-    if (path_is_file(argv[1])) snprintf(path, sizeof(path), "%s", argv[1]);
 
     StrList args;
     sl_init(&args);
-    for (int i = 2; i < argc; i++) sl_push_copy(&args, argv[i]);
-    int status = exec_script_file(path, argc > 2 ? &args : NULL);
+    for (int i = first + 1; i < argc; i++) sl_push_copy(&args, argv[i]);
+    shell.returnable++;
+    int status = exec_script_file(path, argc > first + 1 ? &args : NULL);
+    shell.returnable--;
     sl_free(&args);
     return status;
 }
@@ -675,162 +1140,207 @@ static int builtin_history(int argc, char **argv) {
     return 0;
 }
 
-static int describe_command(const char *name, int verbose) {
-    if (alias_get(name)) {
-        if (verbose) printf("%s is an alias for %s\n", name, alias_get(name));
-        else printf("%s: aliased to %s\n", name, alias_get(name));
-        return 0;
-    }
-    if (function_defined(name)) {
-        printf("%s is a shell function\n", name);
-        return 0;
-    }
-    if (builtin_lookup(name)) {
-        printf("%s is a shell builtin\n", name);
-        return 0;
-    }
-    char path[PATH_BUF];
-    if (resolve_command(name, path, sizeof(path))) {
+static int shell_keyword(const char *name) {
+    return keyword_known(name) || strcmp(name, "!") == 0 || strcmp(name, "time") == 0;
+}
+
+static const char *command_kind(const char *name, char *path, size_t size) {
+    if (alias_get(name)) return "alias";
+    if (shell_keyword(name)) return "keyword";
+    if (function_defined(name)) return "function";
+    if (builtin_lookup(name) || coreutil_preferred(name)) return "builtin";
+    if (resolve_command(name, path, size)) {
         path_to_slashes(path);
-        printf("%s\n", path);
-        return 0;
+        return "file";
     }
-    if (coreutil_lookup(name)) {
-        printf("%s is a command bundled with FreSH\n", name);
-        return 0;
+    if (coreutil_lookup(name)) return "builtin";
+    return NULL;
+}
+
+static int describe_command(const char *name, char style) {
+    char path[PATH_BUF];
+    const char *kind = command_kind(name, path, sizeof(path));
+    if (!kind) return 0;
+    int file = strcmp(kind, "file") == 0;
+
+    if (style == 't') {
+        printf("%s\n", kind);
+    } else if (style == 'v') {
+        if (*kind == 'a') {
+            StrBuf quoted;
+            sb_init(&quoted);
+            sb_put_quoted(&quoted, alias_get(name));
+            printf("alias %s=%s\n", name, quoted.data);
+            sb_free(&quoted);
+        } else {
+            printf("%s\n", file ? path : name);
+        }
+    } else if (style == 'p') {
+        if (file) printf("%s\n", path);
+    } else if (*kind == 'a') {
+        printf("%s is aliased to `%s'\n", name, alias_get(name));
+    } else if (*kind == 'k') {
+        printf("%s is a shell keyword\n", name);
+    } else if (strcmp(kind, "function") == 0) {
+        printf("%s is a function\n", name);
+        print_function(name);
+    } else if (*kind == 'b') {
+        printf("%s is a shell builtin\n", name);
+    } else {
+        printf("%s is %s\n", name, path);
     }
-    shell_error("%s: not found", name);
     return 1;
 }
 
 static int builtin_which(int argc, char **argv) {
-    int status = 0;
-    for (int i = 1; i < argc; i++) {
-        if (describe_command(argv[i], 0) != 0) status = 1;
-    }
     if (argc < 2) {
         shell_error("which: command required");
         return 1;
     }
+    int status = 0;
+    for (int i = 1; i < argc; i++) {
+        char path[PATH_BUF];
+        const char *kind = command_kind(argv[i], path, sizeof(path));
+        if (!kind) {
+            shell_error("%s: not found", argv[i]);
+            status = 1;
+        } else if (strcmp(kind, "file") == 0) {
+            printf("%s\n", path);
+        } else if (*kind == 'a') {
+            printf("%s: aliased to %s\n", argv[i], alias_get(argv[i]));
+        } else if (*kind == 'b' && !builtin_lookup(argv[i])) {
+            printf("%s is a command bundled with FreSH\n", argv[i]);
+        } else {
+            printf("%s is a shell %s\n", argv[i], kind);
+        }
+    }
     return status;
 }
 
-static const char *command_kind(const char *name) {
-    if (alias_get(name)) return "alias";
-    if (function_defined(name)) return "function";
-    if (builtin_lookup(name) || coreutil_lookup(name)) return "builtin";
-
-    char path[PATH_BUF];
-    if (resolve_command(name, path, sizeof(path))) return "file";
-    return NULL;
-}
-
 static int builtin_type(int argc, char **argv) {
-    int brief = argc > 1 && strcmp(argv[1], "-t") == 0;
-    int status = 0;
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    char style = 'V';
+    int forced = 0;
+    while ((c = opt_next(&o, argc, argv, "type", "afptP")) > 0) {
+        if (c == '?') return 2;
+        if (c == 't' || c == 'p') style = (char)c;
+        if (c == 'P') forced = 1;
+    }
 
-    for (int i = brief ? 2 : 1; i < argc; i++) {
-        if (!brief) {
-            if (describe_command(argv[i], 1) != 0) status = 1;
+    int status = 0;
+    for (int i = o.index; i < argc; i++) {
+        char path[PATH_BUF];
+        if (forced) {
+            if (resolve_command(argv[i], path, sizeof(path))) {
+                path_to_slashes(path);
+                printf("%s\n", path);
+            } else {
+                status = 1;
+            }
             continue;
         }
-        const char *kind = command_kind(argv[i]);
-        if (kind) printf("%s\n", kind);
-        else status = 1;
+        if (describe_command(argv[i], style)) continue;
+        if (style == 'V') shell_error("type: %s: not found", argv[i]);
+        status = 1;
     }
+    return status;
+}
+
+static int run_words(int argc, char **argv, int bypass) {
+    StrBuf line;
+    sb_init(&line);
+    for (int i = 0; i < argc; i++) {
+        if (i > 0) sb_putc(&line, ' ');
+        sb_put_quoted(&line, argv[i]);
+    }
+    int status = bypass ? exec_bypassing_functions(line.data) : exec_text(line.data);
+    sb_free(&line);
     return status;
 }
 
 static int builtin_command(int argc, char **argv) {
-    int index = 1;
-    int describe = 0;
-
-    for (; index < argc && argv[index][0] == '-' && argv[index][1]; index++) {
-        if (strchr(argv[index], 'v') || strchr(argv[index], 'V')) describe = 1;
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    char style = 0;
+    while ((c = opt_next(&o, argc, argv, "command", "pvV")) > 0) {
+        if (c == '?') return 2;
+        if (c == 'v' || c == 'V') style = (char)c;
     }
-    if (index >= argc) return 0;
+    if (o.index >= argc) return 0;
 
-    if (describe) {
+    if (style) {
         int status = 0;
-        for (int i = index; i < argc; i++) {
-            const char *kind = command_kind(argv[i]);
-            if (!kind) {
-                status = 1;
-                continue;
-            }
-            if (strcmp(kind, "file") == 0) {
-                char path[PATH_BUF];
-                resolve_command(argv[i], path, sizeof(path));
-                path_to_slashes(path);
-                printf("%s\n", path);
-            } else {
-                printf("%s\n", argv[i]);
-            }
+        for (int i = o.index; i < argc; i++) {
+            if (describe_command(argv[i], style == 'v' ? 'v' : 'V')) continue;
+            if (style == 'V') shell_error("command: %s: not found", argv[i]);
+            status = 1;
         }
         return status;
     }
-
-    StrBuf line;
-    sb_init(&line);
-    for (int i = index; i < argc; i++) {
-        if (i > index) sb_putc(&line, ' ');
-        sb_puts(&line, argv[i]);
-    }
-    int status = exec_bypassing_functions(line.data);
-    sb_free(&line);
-    return status;
+    return run_words(argc - o.index, argv + o.index, 1);
 }
 
 static int builtin_builtin(int argc, char **argv) {
-    if (argc < 2) return 0;
-    BuiltinFn fn = builtin_lookup(argv[1]);
-    if (!fn) fn = coreutil_lookup(argv[1]);
+    int first = options_only(argc, argv, "builtin");
+    if (first < 0) return 2;
+    if (first >= argc) return 0;
+    BuiltinFn fn = builtin_lookup(argv[first]);
+    if (!fn) fn = coreutil_lookup(argv[first]);
     if (!fn) {
-        shell_error("builtin: %s: not a shell builtin", argv[1]);
+        shell_error("builtin: %s: not a shell builtin", argv[first]);
         return 1;
     }
-    return fn(argc - 1, argv + 1);
+    return fn(argc - first, argv + first);
 }
 
 static int builtin_exec(int argc, char **argv) {
-    if (argc < 2) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    while ((c = opt_next(&o, argc, argv, "exec", "a:cl")) > 0)
+        if (c == '?') return 2;
+    if (o.index >= argc) {
         exec_keep_redirections();
         return 0;
     }
 
-    StrBuf line;
-    sb_init(&line);
-    for (int i = 1; i < argc; i++) {
-        if (i > 1) sb_putc(&line, ' ');
-        sb_puts(&line, argv[i]);
-    }
-    int status = exec_text(line.data);
-    sb_free(&line);
-
+    int status = run_words(argc - o.index, argv + o.index, 1);
     shell.running = 0;
     shell.last_status = status;
     return status;
 }
 
 static int builtin_readonly(int argc, char **argv) {
-    if (argc < 2 || strcmp(argv[1], "-p") == 0) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    VarKind kind = VAR_SCALAR;
+    while ((c = opt_next(&o, argc, argv, "readonly", "aAfp")) > 0) {
+        if (c == '?') return 2;
+        if (c == 'a') kind = VAR_INDEXED;
+        if (c == 'A') kind = VAR_ASSOC;
+    }
+    if (o.index >= argc) {
         StrList names;
         sl_init(&names);
         vars_readonly_names(&names);
-        for (size_t i = 0; i < names.len; i++)
-            printf("readonly %s=\"%s\"\n", names.items[i], var_get(names.items[i]));
+        print_declarations(&names);
         sl_free(&names);
         return 0;
     }
 
-    for (int i = 1; i < argc; i++) {
-        char *eq = strchr(argv[i], '=');
-        char *name = eq ? xstrndup(argv[i], (size_t)(eq - argv[i])) : xstrdup(argv[i]);
-        if (eq) assign_word(argv[i]);
-        var_mark_readonly(name);
+    int status = 0;
+    for (int i = o.index; i < argc; i++) {
+        char *name = word_name(argv[i]);
+        if (!var_valid_name(name, 0)) {
+            status = invalid_name("readonly", argv[i]);
+        } else {
+            if (kind != VAR_SCALAR && var_kind(name) != kind) var_declare(name, kind);
+            if (assign_word("readonly", argv[i])) status = 1;
+            var_mark_readonly(name);
+        }
         free(name);
     }
-    return 0;
+    return status;
 }
 
 static int builtin_clear(int argc, char **argv) {
@@ -1031,89 +1541,287 @@ static int builtin_ls(int argc, char **argv) {
     return 0;
 }
 
-static int test_file_op(char op, const char *path) {
-    DWORD attributes = GetFileAttributesA(path);
-    switch (op) {
-    case 'e': return attributes != INVALID_FILE_ATTRIBUTES;
-    case 'f': return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
-    case 'd': return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
-    case 'h':
-    case 'L': return path_is_link(path);
+int test_unary_operator(const char *op) {
+    return op[0] == '-' && op[1] && !op[2] && strchr("abcdefghknoprstuvwxzGLNORS", op[1]);
+}
+
+static int file_type_is(const char *path, char op) {
 #ifdef _WIN32
-    case 'r': return attributes != INVALID_FILE_ATTRIBUTES;
-    case 'w': return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_READONLY);
-    case 'x': return attributes != INVALID_FILE_ATTRIBUTES;
+    (void)path;
+    (void)op;
+    return 0;
 #else
-    case 'r': return attributes != INVALID_FILE_ATTRIBUTES && access(path, R_OK) == 0;
-    case 'w': return attributes != INVALID_FILE_ATTRIBUTES && access(path, W_OK) == 0;
-    case 'x': return attributes != INVALID_FILE_ATTRIBUTES && access(path, X_OK) == 0;
+    struct stat info;
+    if (stat(path, &info) != 0) return 0;
+    switch (op) {
+    case 'b': return S_ISBLK(info.st_mode);
+    case 'c': return S_ISCHR(info.st_mode);
+    case 'p': return S_ISFIFO(info.st_mode);
+    case 'S': return S_ISSOCK(info.st_mode);
+    case 'u': return (info.st_mode & S_ISUID) != 0;
+    case 'g': return (info.st_mode & S_ISGID) != 0;
+    case 'k': return (info.st_mode & S_ISVTX) != 0;
+    case 'O': return info.st_uid == geteuid();
+    case 'G': return info.st_gid == getegid();
+    case 'N': return info.st_mtime >= info.st_atime;
+    default: return 0;
+    }
+#endif
+}
+
+static int variable_is_set(const char *name) {
+    const char *open = strchr(name, '[');
+    if (!open || name[strlen(name) - 1] != ']') return var_exists(name);
+    char *base = xstrndup(name, (size_t)(open - name));
+    char *index = xstrndup(open + 1, strlen(open + 1) - 1);
+    char *resolved = expand_single(index);
+    int set = var_get_element(base, resolved) != NULL;
+    free(resolved);
+    free(index);
+    free(base);
+    return set;
+}
+
+int test_unary(char op, const char *arg) {
+    DWORD attributes = GetFileAttributesA(arg);
+    int exists = attributes != INVALID_FILE_ATTRIBUTES;
+    switch (op) {
+    case 'n': return *arg != '\0';
+    case 'z': return *arg == '\0';
+    case 'v': return variable_is_set(arg);
+    case 'R': return var_exists(arg) && var_is_nameref(arg);
+    case 'o': {
+        SetOption *option = set_option_named(arg);
+        return option && *set_option_slot(option);
+    }
+    case 't': return _isatty(atoi(arg)) != 0;
+    case 'a':
+    case 'e': return exists;
+    case 'f': return exists && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+    case 'd': return exists && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+    case 'h':
+    case 'L': return path_is_link(arg);
+#ifdef _WIN32
+    case 'r':
+    case 'x': return exists;
+    case 'w': return exists && !(attributes & FILE_ATTRIBUTE_READONLY);
+#else
+    case 'r': return exists && access(arg, R_OK) == 0;
+    case 'w': return exists && access(arg, W_OK) == 0;
+    case 'x': return exists && access(arg, X_OK) == 0;
 #endif
     case 's': {
         WIN32_FILE_ATTRIBUTE_DATA info;
-        if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) return 0;
+        if (!GetFileAttributesExA(arg, GetFileExInfoStandard, &info)) return 0;
         return info.nFileSizeLow > 0 || info.nFileSizeHigh > 0;
     }
-    default: return 0;
+    default: return file_type_is(arg, op);
     }
 }
 
-static int evaluate_test(int argc, char **argv) {
-    if (argc == 0) return 1;
-    if (argc == 1) return *argv[0] ? 0 : 1;
+static int same_file(const char *left, const char *right) {
+#ifdef _WIN32
+    char a[PATH_BUF];
+    char b[PATH_BUF];
+    if (GetFileAttributesA(left) == INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesA(right) == INVALID_FILE_ATTRIBUTES)
+        return 0;
+    if (!GetFullPathNameA(left, sizeof(a), a, NULL) || !GetFullPathNameA(right, sizeof(b), b, NULL))
+        return 0;
+    path_to_slashes(a);
+    path_to_slashes(b);
+    return _stricmp(a, b) == 0;
+#else
+    struct stat a;
+    struct stat b;
+    return stat(left, &a) == 0 && stat(right, &b) == 0 && a.st_dev == b.st_dev && a.st_ino == b.st_ino;
+#endif
+}
 
-    if (strcmp(argv[0], "!") == 0) return evaluate_test(argc - 1, argv + 1) == 0 ? 1 : 0;
-
-    if (argc == 2 && argv[0][0] == '-' && argv[0][2] == '\0') {
-        char op = argv[0][1];
-        if (op == 'z') return *argv[1] ? 1 : 0;
-        if (op == 'n') return *argv[1] ? 0 : 1;
-        return test_file_op(op, argv[1]) ? 0 : 1;
+int test_file_binary(const char *op, const char *left, const char *right, int *result) {
+    if (strcmp(op, "-ef") == 0) {
+        *result = same_file(left, right);
+        return 1;
     }
-
-    if (argc >= 3) {
-        const char *left = argv[0];
-        const char *op = argv[1];
-        const char *right = argv[2];
-        int result;
-
-        if (strcmp(op, "=") == 0 || strcmp(op, "==") == 0) result = strcmp(left, right) == 0;
-        else if (strcmp(op, "!=") == 0) result = strcmp(left, right) != 0;
-        else if (strcmp(op, "-eq") == 0) result = atol(left) == atol(right);
-        else if (strcmp(op, "-ne") == 0) result = atol(left) != atol(right);
-        else if (strcmp(op, "-lt") == 0) result = atol(left) < atol(right);
-        else if (strcmp(op, "-le") == 0) result = atol(left) <= atol(right);
-        else if (strcmp(op, "-gt") == 0) result = atol(left) > atol(right);
-        else if (strcmp(op, "-ge") == 0) result = atol(left) >= atol(right);
-        else if (strcmp(op, "\\<") == 0 || strcmp(op, "<") == 0) result = strcmp(left, right) < 0;
-        else if (strcmp(op, "\\>") == 0 || strcmp(op, ">") == 0) result = strcmp(left, right) > 0;
-        else return 1;
-
-        int status = result ? 0 : 1;
-        if (argc > 3) {
-            if (strcmp(argv[3], "-a") == 0) {
-                int rest = evaluate_test(argc - 4, argv + 4);
-                return status == 0 && rest == 0 ? 0 : 1;
-            }
-            if (strcmp(argv[3], "-o") == 0) {
-                int rest = evaluate_test(argc - 4, argv + 4);
-                return status == 0 || rest == 0 ? 0 : 1;
-            }
-        }
-        return status;
-    }
+    if (strcmp(op, "-nt") != 0 && strcmp(op, "-ot") != 0) return 0;
+    WIN32_FILE_ATTRIBUTE_DATA left_info;
+    WIN32_FILE_ATTRIBUTE_DATA right_info;
+    int has_left = GetFileAttributesExA(left, GetFileExInfoStandard, &left_info) != 0;
+    int has_right = GetFileAttributesExA(right, GetFileExInfoStandard, &right_info) != 0;
+    LONG compared = has_left && has_right
+                    ? CompareFileTime(&left_info.ftLastWriteTime, &right_info.ftLastWriteTime)
+                    : has_left - has_right;
+    *result = op[1] == 'n' ? compared > 0 : compared < 0;
     return 1;
+}
+
+typedef struct {
+    char **argv;
+    int argc;
+    int pos;
+    int failed;
+} TestParse;
+
+static int test_fail(TestParse *t, const char *word, const char *message) {
+    if (!t->failed) {
+        if (word) shell_error("test: %s: %s", word, message);
+        else shell_error("test: %s", message);
+    }
+    t->failed = 1;
+    t->pos = t->argc;
+    return 0;
+}
+
+static int test_binary_operator(const char *op) {
+    static const char *BINARY[] = {"=",   "==",  "!=",  "<",   ">",   "-eq", "-ne",
+                                   "-lt", "-le", "-gt", "-ge", "-nt", "-ot", "-ef", NULL};
+    for (int i = 0; BINARY[i]; i++)
+        if (strcmp(BINARY[i], op) == 0) return 1;
+    return 0;
+}
+
+static int test_binary(TestParse *t, const char *left, const char *op, const char *right) {
+    int result = 0;
+    if (strcmp(op, "=") == 0 || strcmp(op, "==") == 0) return strcmp(left, right) == 0;
+    if (strcmp(op, "!=") == 0) return strcmp(left, right) != 0;
+    if (strcmp(op, "<") == 0) return strcmp(left, right) < 0;
+    if (strcmp(op, ">") == 0) return strcmp(left, right) > 0;
+    if (test_file_binary(op, left, right, &result)) return result;
+
+    long long a;
+    long long b;
+    if (!parse_number(left, &a)) return test_fail(t, left, "integer expression expected");
+    if (!parse_number(right, &b)) return test_fail(t, right, "integer expression expected");
+    if (op[1] == 'e') return a == b;
+    if (op[1] == 'n') return a != b;
+    if (op[1] == 'l') return op[2] == 't' ? a < b : a <= b;
+    return op[2] == 't' ? a > b : a >= b;
+}
+
+static const char *test_word(TestParse *t, int offset) {
+    return t->pos + offset < t->argc ? t->argv[t->pos + offset] : NULL;
+}
+
+static int test_is(TestParse *t, int offset, const char *text) {
+    const char *word = test_word(t, offset);
+    return word && strcmp(word, text) == 0;
+}
+
+static int test_or(TestParse *t);
+
+static int test_term(TestParse *t) {
+    if (t->pos >= t->argc) return test_fail(t, NULL, "argument expected");
+    if (test_is(t, 0, "!")) {
+        t->pos++;
+        return !test_term(t);
+    }
+    if (test_is(t, 0, "(")) {
+        t->pos++;
+        int value = test_or(t);
+        if (!test_is(t, 0, ")")) return test_fail(t, NULL, "`)' expected");
+        t->pos++;
+        return value;
+    }
+    if (t->pos + 2 < t->argc && test_binary_operator(test_word(t, 1))) {
+        int value = test_binary(t, test_word(t, 0), test_word(t, 1), test_word(t, 2));
+        if (!t->failed) t->pos += 3;
+        return value;
+    }
+    if (t->pos + 1 < t->argc && test_unary_operator(test_word(t, 0))) {
+        int value = test_unary(test_word(t, 0)[1], test_word(t, 1));
+        t->pos += 2;
+        return value;
+    }
+    return *t->argv[t->pos++] != '\0';
+}
+
+static int test_and(TestParse *t) {
+    int value = test_term(t);
+    while (test_is(t, 0, "-a")) {
+        t->pos++;
+        int right = test_term(t);
+        value = value && right;
+    }
+    return value;
+}
+
+static int test_or(TestParse *t) {
+    int value = test_and(t);
+    while (test_is(t, 0, "-o")) {
+        t->pos++;
+        int right = test_and(t);
+        value = value || right;
+    }
+    return value;
+}
+
+static int test_two(TestParse *t) {
+    const char *first = test_word(t, 0);
+    const char *second = test_word(t, 1);
+    t->pos = t->argc;
+    if (strcmp(first, "!") == 0) return *second == '\0';
+    if (test_unary_operator(first)) return test_unary(first[1], second);
+    return test_fail(t, first, "unary operator expected");
+}
+
+static int test_three(TestParse *t) {
+    const char *first = test_word(t, 0);
+    const char *op = test_word(t, 1);
+    const char *last = test_word(t, 2);
+    if (test_binary_operator(op)) {
+        t->pos = t->argc;
+        return test_binary(t, first, op, last);
+    }
+    if (strcmp(op, "-a") == 0 || strcmp(op, "-o") == 0) {
+        t->pos = t->argc;
+        return op[1] == 'a' ? *first && *last : *first || *last;
+    }
+    if (strcmp(first, "!") == 0) {
+        t->pos++;
+        return !test_two(t);
+    }
+    if (strcmp(first, "(") == 0 && strcmp(last, ")") == 0) {
+        t->pos = t->argc;
+        return *op != '\0';
+    }
+    return test_fail(t, op, "binary operator expected");
+}
+
+static int test_expression(TestParse *t) {
+    switch (t->argc - t->pos) {
+    case 0: return 0;
+    case 1: return *t->argv[t->pos++] != '\0';
+    case 2: return test_two(t);
+    case 3: return test_three(t);
+    case 4:
+        if (test_is(t, 0, "!")) {
+            t->pos++;
+            return !test_three(t);
+        }
+        if (test_is(t, 0, "(") && test_is(t, 3, ")")) {
+            t->pos++;
+            int value = test_two(t);
+            t->pos = t->argc;
+            return value;
+        }
+        return test_or(t);
+    default: return test_or(t);
+    }
 }
 
 static int builtin_test(int argc, char **argv) {
     int count = argc - 1;
     if (strcmp(argv[0], "[") == 0) {
         if (count < 1 || strcmp(argv[argc - 1], "]") != 0) {
-            shell_error("[: missing closing ]");
+            shell_error("[: missing `]'");
             return 2;
         }
         count--;
     }
-    return evaluate_test(count, argv + 1);
+    TestParse t = {argv + 1, count, 0, 0};
+    int value = test_expression(&t);
+    if (!t.failed && t.pos < t.argc) test_fail(&t, NULL, "too many arguments");
+    return t.failed ? 2 : value ? 0 : 1;
 }
 
 static int builtin_true(int argc, char **argv) {
@@ -1128,107 +1836,234 @@ static int builtin_false(int argc, char **argv) {
     return 1;
 }
 
-static int builtin_read(int argc, char **argv) {
-    int index = 1;
-    const char *prompt = NULL;
-    while (index < argc && argv[index][0] == '-' && argv[index][1]) {
-        if (strcmp(argv[index], "-p") == 0 && index + 1 < argc) {
-            prompt = argv[index + 1];
-            index += 2;
-        } else if (strchr(argv[index], 'r')) {
-            index++;
-        } else {
-            index++;
-        }
-    }
-    if (prompt) {
-        fputs(prompt, stdout);
-        fflush(stdout);
-    }
-
-    StrBuf input;
-    sb_init(&input);
-    fflush(stdout);
-    if (read_line_fd(0, &input) == 0) {
-        sb_free(&input);
-        return 1;
-    }
-    char *line = sb_take(&input);
-
-    if (index >= argc) {
-        var_set("REPLY", line);
-        free(line);
-        return 0;
-    }
-
-    char *cursor = line;
-    for (int i = index; i < argc; i++) {
-        while (*cursor == ' ' || *cursor == '\t') cursor++;
-        if (i == argc - 1) {
-            var_set(argv[i], cursor);
-            break;
-        }
-        char *start = cursor;
-        while (*cursor && *cursor != ' ' && *cursor != '\t') cursor++;
-        char saved = *cursor;
-        *cursor = '\0';
-        var_set(argv[i], start);
-        if (saved) cursor++;
-    }
-    free(line);
+static int read_count(const char *builtin, const char *text, long long *out) {
+    if (parse_number(text, out) && *out >= 0) return 1;
+    shell_error("%s: %s: invalid number", builtin, text);
     return 0;
 }
 
-static int *shopt_slot(const char *name) {
-    if (strcmp(name, "globstar") == 0) return &shell.globstar;
-    if (strcmp(name, "nullglob") == 0) return &shell.nullglob;
-    if (strcmp(name, "dotglob") == 0) return &shell.dotglob;
-    if (strcmp(name, "nocasematch") == 0) return &shell.nocasematch;
-    if (strcmp(name, "extglob") == 0) return NULL;
+static void split_fields(const char *line, const char *escaped, const char *ifs, int wanted,
+                         StrList *out) {
+    size_t length = strlen(line);
+    size_t i = 0;
+#define IS_IFS(k) (!escaped[k] && strchr(ifs, line[k]))
+#define IS_SPACE(k) (IS_IFS(k) && strchr(" \t\n", line[k]))
+    while (i < length && IS_SPACE(i)) i++;
+    while (i < length) {
+        if (wanted > 0 && (int)out->len == wanted - 1) {
+            size_t end = length;
+            while (end > i && IS_SPACE(end - 1)) end--;
+            sl_push(out, xstrndup(line + i, end - i));
+            return;
+        }
+        size_t start = i;
+        while (i < length && !IS_IFS(i)) i++;
+        sl_push(out, xstrndup(line + start, i - start));
+        while (i < length && IS_SPACE(i)) i++;
+        if (i < length && IS_IFS(i)) {
+            i++;
+            while (i < length && IS_SPACE(i)) i++;
+        }
+    }
+#undef IS_SPACE
+#undef IS_IFS
+}
+
+static int builtin_read(int argc, char **argv) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
+    const char *array = NULL;
+    const char *prompt = NULL;
+    int raw = 0;
+    int delimiter = '\n';
+    long long limit = -1;
+    int exact = 0;
+    long long fd = 0;
+    int silent = 0;
+    double timeout = -1;
+    while ((c = opt_next(&o, argc, argv, "read", "a:d:ei:n:N:p:rst:u:")) > 0) {
+        switch (c) {
+        case 'a': array = o.arg; break;
+        case 'd': delimiter = (unsigned char)o.arg[0]; break;
+        case 'n':
+        case 'N':
+            if (!read_count("read", o.arg, &limit)) return 1;
+            exact = c == 'N';
+            break;
+        case 'p': prompt = o.arg; break;
+        case 'r': raw = 1; break;
+        case 'u':
+            if (!read_count("read", o.arg, &fd)) return 1;
+            break;
+        case 's': silent = 1; break;
+        case 't': {
+            char *end;
+            timeout = strtod(o.arg, &end);
+            if (end == o.arg || *end || timeout < 0) {
+                shell_error("read: %s: invalid timeout specification", o.arg);
+                return 1;
+            }
+            break;
+        }
+        case 'e':
+        case 'i': break;
+        default: return 2;
+        }
+    }
+    for (int i = o.index; i < argc; i++)
+        if (!var_valid_name(argv[i], 1)) return invalid_name("read", argv[i]);
+    if (array && !var_valid_name(array, 0)) return invalid_name("read", array);
+
+    if (timeout == 0) return term_input_wait((int)fd, 0) ? 0 : 1;
+    if (prompt && _isatty((int)fd)) {
+        fputs(prompt, stderr);
+        fflush(stderr);
+    }
+    fflush(stdout);
+    if (silent) term_echo((int)fd, 0);
+    DWORD deadline = GetTickCount() + (DWORD)(timeout * 1000);
+
+    StrBuf line;
+    StrBuf escaped;
+    sb_init(&line);
+    sb_init(&escaped);
+    int ended = 0;
+    int expired = 0;
+    char ch;
+    while (limit < 0 || (long long)line.len < limit) {
+        long remaining = (long)(deadline - GetTickCount());
+        if (timeout > 0 && (remaining <= 0 || !term_input_wait((int)fd, (int)remaining))) {
+            expired = 1;
+            break;
+        }
+        if (_read((int)fd, &ch, 1) != 1) {
+            ended = 1;
+            break;
+        }
+        if (!exact && (unsigned char)ch == delimiter) break;
+        int quoted = 0;
+        if (!raw && ch == '\\') {
+            if (_read((int)fd, &ch, 1) != 1) {
+                ended = 1;
+                break;
+            }
+            if (ch == '\n') continue;
+            quoted = 1;
+        }
+        sb_putc(&line, ch);
+        sb_putc(&escaped, (char)quoted);
+    }
+    if (delimiter == '\n' && line.len && line.data[line.len - 1] == '\r' && !escaped.data[line.len - 1])
+        line.data[--line.len] = '\0';
+
+    if (silent) term_echo((int)fd, 1);
+
+    const char *ifs = var_get("IFS");
+    if (!ifs) ifs = " \t\n";
+    int status = expired ? 142 : ended ? 1 : 0;
+
+    if (array || o.index >= argc || exact) {
+        const char *name = array ? array : o.index < argc ? argv[o.index] : "REPLY";
+        if (array) {
+            StrList fields;
+            sl_init(&fields);
+            split_fields(line.data, escaped.data, ifs, 0, &fields);
+            var_set_array(name, &fields, VAR_INDEXED);
+            sl_free(&fields);
+        } else if (var_assign(name, line.data)) {
+            status = 1;
+        }
+        for (int i = o.index + 1; !array && i < argc; i++) var_assign(argv[i], "");
+    } else {
+        StrList fields;
+        sl_init(&fields);
+        split_fields(line.data, escaped.data, ifs, argc - o.index, &fields);
+        for (int i = o.index; i < argc; i++) {
+            size_t field = (size_t)(i - o.index);
+            if (var_assign(argv[i], field < fields.len ? fields.items[field] : "")) status = 1;
+        }
+        sl_free(&fields);
+    }
+    sb_free(&line);
+    sb_free(&escaped);
+    return status;
+}
+
+typedef struct {
+    const char *name;
+    int *slot;
+    int state;
+} ShoptOption;
+
+static ShoptOption SHOPT_OPTIONS[] = {
+    {"dotglob", &shell.dotglob, 0},       {"expand_aliases", NULL, 0}, {"extglob", NULL, 0},
+    {"globstar", &shell.globstar, 0},     {"nocasematch", &shell.nocasematch, 0},
+    {"nullglob", &shell.nullglob, 0},
+};
+
+#define SHOPT_COUNT (sizeof(SHOPT_OPTIONS) / sizeof(SHOPT_OPTIONS[0]))
+
+static int *shopt_slot(const char *name, int set_options) {
+    if (set_options) {
+        SetOption *option = set_option_named(name);
+        return option ? set_option_slot(option) : NULL;
+    }
+    for (size_t i = 0; i < SHOPT_COUNT; i++) {
+        ShoptOption *option = &SHOPT_OPTIONS[i];
+        if (strcmp(option->name, name) == 0) return option->slot ? option->slot : &option->state;
+    }
     return NULL;
 }
 
-static int builtin_shopt(int argc, char **argv) {
-    static const char *KNOWN[] = {"globstar", "nullglob", "dotglob", "extglob", "nocasematch", NULL};
+static void shopt_show(const char *name, int on, int quiet, int reusable, int set_options) {
+    if (quiet) return;
+    if (reusable && set_options) printf("set %co %s\n", on ? '-' : '+', name);
+    else if (reusable) printf("shopt %s %s\n", on ? "-s" : "-u", name);
+    else printf("%-15s\t%s\n", name, on ? "on" : "off");
+}
 
+static int builtin_shopt(int argc, char **argv) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
     int setting = 0;
     int clearing = 0;
     int quiet = 0;
-    int index = 1;
-
-    for (; index < argc && argv[index][0] == '-'; index++) {
-        if (strchr(argv[index], 's')) setting = 1;
-        if (strchr(argv[index], 'u')) clearing = 1;
-        if (strchr(argv[index], 'q')) quiet = 1;
+    int reusable = 0;
+    int set_options = 0;
+    while ((c = opt_next(&o, argc, argv, "shopt", "opqsu")) > 0) {
+        if (c == '?') return 2;
+        if (c == 's') setting = 1;
+        if (c == 'u') clearing = 1;
+        if (c == 'q') quiet = 1;
+        if (c == 'p') reusable = 1;
+        if (c == 'o') set_options = 1;
+    }
+    if (setting && clearing) {
+        shell_error("shopt: cannot set and unset shell options simultaneously");
+        return 1;
     }
 
-    if (index >= argc) {
-        for (int i = 0; KNOWN[i]; i++) {
-            int *slot = shopt_slot(KNOWN[i]);
-            printf("%-12s%s\n", KNOWN[i], !slot || *slot ? "on" : "off");
+    if (o.index >= argc) {
+        size_t count = set_options ? SET_OPTION_COUNT : SHOPT_COUNT;
+        for (size_t i = 0; i < count; i++) {
+            const char *name = set_options ? SET_OPTIONS[i].name : SHOPT_OPTIONS[i].name;
+            int on = *shopt_slot(name, set_options);
+            if ((!setting && !clearing) || on == setting) shopt_show(name, on, quiet, reusable, set_options);
         }
         return 0;
     }
 
     int status = 0;
-    for (; index < argc; index++) {
-        int known = 0;
-        for (int i = 0; KNOWN[i]; i++)
-            if (strcmp(KNOWN[i], argv[index]) == 0) known = 1;
-
-        if (!known) {
-            if (!quiet) shell_error("shopt: %s: unknown option", argv[index]);
+    for (int i = o.index; i < argc; i++) {
+        int *slot = shopt_slot(argv[i], set_options);
+        if (!slot) {
+            shell_error("shopt: %s: invalid shell option name", argv[i]);
             status = 1;
-            continue;
-        }
-
-        int *slot = shopt_slot(argv[index]);
-        if (setting && slot) *slot = 1;
-        else if (clearing && slot) *slot = 0;
-        else if (!setting && !clearing) {
-            int on = !slot || *slot;
-            if (!quiet) printf("%-12s%s\n", argv[index], on ? "on" : "off");
-            if (!on) status = 1;
+        } else if (setting || clearing) {
+            *slot = setting;
+        } else {
+            shopt_show(argv[i], *slot, quiet, reusable, set_options);
+            if (!*slot) status = 1;
         }
     }
     return status;
@@ -1671,8 +2506,11 @@ static int builtin_bind(int argc, char **argv) {
 }
 
 static int builtin_getopts(int argc, char **argv) {
+    static long scanned_optind = 0;
+    static long letter = 1;
+
     if (argc < 3) {
-        shell_error("getopts: usage: getopts optstring name [argument ...]");
+        shell_error("getopts: usage: getopts optstring name [arg ...]");
         return 2;
     }
 
@@ -1680,6 +2518,8 @@ static int builtin_getopts(int argc, char **argv) {
     const char *name = argv[2];
     int silent = spec[0] == ':';
     if (silent) spec++;
+    const char *opterr = var_get("OPTERR");
+    int report = !silent && !(opterr && strcmp(opterr, "0") == 0);
 
     StrList args;
     sl_init(&args);
@@ -1692,13 +2532,11 @@ static int builtin_getopts(int argc, char **argv) {
     const char *stored = var_get("OPTIND");
     long position = stored ? atol(stored) : 1;
     if (position < 1) position = 1;
-
-    const char *inside = var_get("FRESH_OPTCHAR");
-    long letter = inside ? atol(inside) : 1;
-    if (letter < 1) letter = 1;
+    if (position != scanned_optind) letter = 1;
 
     int status = 1;
-    var_set("OPTARG", "");
+    var_unset("OPTARG");
+    var_set(name, "?");
 
     while ((size_t)position <= args.len) {
         const char *word = args.items[position - 1];
@@ -1716,51 +2554,42 @@ static int builtin_getopts(int argc, char **argv) {
         }
         letter++;
 
-        const char *found = strchr(spec, option);
+        const char *found = option != ':' ? strchr(spec, option) : NULL;
         char text[2] = {option, '\0'};
-
-        if (!found || option == ':') {
-            var_set(name, "?");
-            if (silent) var_set("OPTARG", text);
-            else shell_error("getopts: illegal option -- %c", option);
-            status = 0;
-            break;
-        }
-
-        if (found[1] == ':') {
-            const char *value = NULL;
-            if (word[letter]) {
-                value = word + letter;
-            } else if ((size_t)position < args.len) {
-                position++;
-                value = args.items[position - 1];
-            }
-            position++;
-            letter = 1;
-
-            if (!value) {
-                var_set(name, silent ? ":" : "?");
-                if (silent) var_set("OPTARG", text);
-                else shell_error("getopts: option requires an argument -- %c", option);
-                status = 0;
-                break;
-            }
-            var_set("OPTARG", value);
-        } else if (!word[letter]) {
-            position++;
-            letter = 1;
-        }
-
-        var_set(name, text);
         status = 0;
+
+        if (!found) {
+            if (silent) var_set("OPTARG", text);
+            else if (report) shell_error("getopts: illegal option -- %c", option);
+        } else if (found[1] == ':') {
+            const char *value = NULL;
+            if (word[letter]) value = word + letter;
+            else if ((size_t)position < args.len) value = args.items[position++];
+            position++;
+            letter = 1;
+            if (value) {
+                var_set("OPTARG", value);
+                var_set(name, text);
+            } else if (silent) {
+                var_set("OPTARG", text);
+                var_set(name, ":");
+            } else if (report) {
+                shell_error("getopts: option requires an argument -- %c", option);
+            }
+        } else {
+            var_set(name, text);
+        }
+        if (!(found && found[1] == ':') && !word[letter]) {
+            position++;
+            letter = 1;
+        }
         break;
     }
 
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "%ld", position);
     var_set("OPTIND", buffer);
-    snprintf(buffer, sizeof(buffer), "%ld", letter);
-    var_set("FRESH_OPTCHAR", buffer);
+    scanned_optind = position;
 
     sl_free(&args);
     return status;
@@ -1768,97 +2597,272 @@ static int builtin_getopts(int argc, char **argv) {
 
 static StrList directory_stack;
 
-static int builtin_pushd(int argc, char **argv) {
-    char cwd[PATH_BUF];
-    if (!GetCurrentDirectoryA(sizeof(cwd), cwd)) return 1;
-    path_to_slashes(cwd);
-
-    const char *target = argc > 1 ? argv[1] : NULL;
-    if (!target) {
-        if (directory_stack.len == 0) {
-            shell_error("pushd: no other directory");
-            return 1;
-        }
-        char *previous = directory_stack.items[directory_stack.len - 1];
-        char *swap = xstrdup(previous);
-        free(previous);
-        directory_stack.items[directory_stack.len - 1] = xstrdup(cwd);
-        int failed = !SetCurrentDirectoryA(swap);
-        if (failed) shell_error("pushd: %s: no such directory", swap);
-        free(swap);
-        return failed;
+static void put_polite(StrBuf *out, const char *path, int long_form) {
+    const char *home = var_get("HOME");
+    size_t length = home ? strlen(home) : 0;
+    if (!long_form && length > 1 && strncmp(path, home, length) == 0 &&
+        (path[length] == '\0' || path[length] == '/')) {
+        sb_putc(out, '~');
+        path += length;
     }
-
-    char native[PATH_BUF];
-    snprintf(native, sizeof(native), "%s", target);
-    path_to_backslashes(native);
-    if (!SetCurrentDirectoryA(native)) {
-        shell_error("pushd: %s: no such directory", target);
-        return 1;
-    }
-    sl_push_copy(&directory_stack, cwd);
-    return 0;
+    sb_puts(out, path);
 }
 
-static int builtin_popd(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+static size_t stack_size(void) {
+    return directory_stack.len + 1;
+}
 
-    if (directory_stack.len == 0) {
-        shell_error("popd: the stack is empty");
-        return 1;
+static const char *stack_entry(size_t index) {
+    if (index == 0) {
+        const char *pwd = var_get("PWD");
+        return pwd ? pwd : "";
     }
-    char *target = directory_stack.items[--directory_stack.len];
-    char native[PATH_BUF];
-    snprintf(native, sizeof(native), "%s", target);
-    path_to_backslashes(native);
+    return directory_stack.items[index - 1];
+}
 
-    int failed = !SetCurrentDirectoryA(native);
-    if (failed) shell_error("popd: %s: no such directory", target);
-    free(target);
-    return failed;
+static int stack_index(const char *word, size_t *index) {
+    long long n;
+    if ((word[0] != '+' && word[0] != '-') || !parse_number(word + 1, &n) || n < 0) return 0;
+    if ((size_t)n >= stack_size()) return -1;
+    *index = word[0] == '+' ? (size_t)n : stack_size() - 1 - (size_t)n;
+    return 1;
+}
+
+static void print_stack(int long_form, int per_line, int numbered) {
+    StrBuf line;
+    sb_init(&line);
+    for (size_t i = 0; i < stack_size(); i++) {
+        if (numbered) sb_printf(&line, "%2zu  ", i);
+        put_polite(&line, stack_entry(i), long_form);
+        sb_putc(&line, per_line || numbered || i + 1 == stack_size() ? '\n' : ' ');
+    }
+    fputs(line.data, stdout);
+    sb_free(&line);
+}
+
+static int stack_range_error(const char *builtin, const char *word) {
+    shell_error("%s: %s: directory stack index out of range", builtin, word);
+    return 1;
 }
 
 static int builtin_dirs(int argc, char **argv) {
-    if (argc > 1 && strcmp(argv[1], "-c") == 0) {
-        sl_clear(&directory_stack);
-        return 0;
+    int long_form = 0;
+    int per_line = 0;
+    int numbered = 0;
+    for (int i = 1; i < argc; i++) {
+        size_t index;
+        int found = stack_index(argv[i], &index);
+        if (found < 0) return stack_range_error("dirs", argv[i]);
+        if (found) {
+            StrBuf line;
+            sb_init(&line);
+            put_polite(&line, stack_entry(index), long_form);
+            printf("%s\n", line.data);
+            sb_free(&line);
+            return 0;
+        }
+        if (argv[i][0] != '-' || strspn(argv[i] + 1, "clpv") != strlen(argv[i] + 1)) {
+            shell_error("dirs: %s: invalid option", argv[i]);
+            return 2;
+        }
+        if (strchr(argv[i], 'c')) sl_clear(&directory_stack);
+        if (strchr(argv[i], 'l')) long_form = 1;
+        if (strchr(argv[i], 'p')) per_line = 1;
+        if (strchr(argv[i], 'v')) numbered = 1;
+        if (strchr(argv[i], 'c')) return 0;
+    }
+    print_stack(long_form, per_line, numbered);
+    return 0;
+}
+
+static void stack_insert(size_t position, const char *path) {
+    sl_push_copy(&directory_stack, path);
+    char *added = directory_stack.items[directory_stack.len - 1];
+    memmove(directory_stack.items + position + 1, directory_stack.items + position,
+            (directory_stack.len - 1 - position) * sizeof(char *));
+    directory_stack.items[position] = added;
+}
+
+static char *stack_remove(size_t position) {
+    char *removed = directory_stack.items[position];
+    memmove(directory_stack.items + position, directory_stack.items + position + 1,
+            (directory_stack.len - position - 1) * sizeof(char *));
+    directory_stack.len--;
+    return removed;
+}
+
+static int builtin_pushd(int argc, char **argv) {
+    int index = 1;
+    int stay = 0;
+    if (index < argc && strcmp(argv[index], "-n") == 0) {
+        stay = 1;
+        index++;
+    }
+    if (index < argc && strcmp(argv[index], "--") == 0) index++;
+
+    int show = 0;
+    char *current = xstrdup(stack_entry(0));
+    int status = 0;
+    if (index >= argc) {
+        if (directory_stack.len == 0) {
+            shell_error("pushd: no other directory");
+            status = 1;
+        } else if (stay || enter_directory("pushd", directory_stack.items[0], &show)) {
+            free(directory_stack.items[0]);
+            directory_stack.items[0] = xstrdup(current);
+        } else {
+            status = 1;
+        }
+    } else {
+        size_t rotate;
+        int found = stack_index(argv[index], &rotate);
+        if (found < 0) {
+            status = stack_range_error("pushd", argv[index]);
+        } else if (found) {
+            StrList all;
+            sl_init(&all);
+            for (size_t i = 0; i < stack_size(); i++) sl_push_copy(&all, stack_entry((rotate + i) % stack_size()));
+            if (enter_directory("pushd", all.items[0], &show)) {
+                sl_clear(&directory_stack);
+                for (size_t i = 1; i < all.len; i++) sl_push_copy(&directory_stack, all.items[i]);
+            } else {
+                status = 1;
+            }
+            sl_free(&all);
+        } else if (stay) {
+            stack_insert(0, argv[index]);
+        } else if (enter_directory("pushd", argv[index], &show)) {
+            stack_insert(0, current);
+        } else {
+            status = 1;
+        }
+    }
+    free(current);
+    if (status == 0) print_stack(0, 0, 0);
+    return status;
+}
+
+static int builtin_popd(int argc, char **argv) {
+    int index = 1;
+    int stay = 0;
+    if (index < argc && strcmp(argv[index], "-n") == 0) {
+        stay = 1;
+        index++;
+    }
+    if (directory_stack.len == 0) {
+        shell_error("popd: directory stack empty");
+        return 1;
     }
 
-    char cwd[PATH_BUF];
-    if (GetCurrentDirectoryA(sizeof(cwd), cwd)) {
-        path_to_slashes(cwd);
-        printf("%s", cwd);
+    size_t target = 0;
+    if (index < argc) {
+        int found = stack_index(argv[index], &target);
+        if (found < 0) return stack_range_error("popd", argv[index]);
+        if (!found) {
+            shell_error("popd: %s: invalid argument", argv[index]);
+            return 2;
+        }
     }
-    for (size_t i = directory_stack.len; i > 0; i--) printf(" %s", directory_stack.items[i - 1]);
-    printf("\n");
+
+    int show = 0;
+    if (target == 0 && !stay) {
+        if (!enter_directory("popd", directory_stack.items[0], &show)) return 1;
+        free(stack_remove(0));
+    } else {
+        free(stack_remove(target == 0 ? 0 : target - 1));
+    }
+    print_stack(0, 0, 0);
     return 0;
 }
 
 static int builtin_mapfile(int argc, char **argv) {
+    Opts o = {1, 0, 0, NULL};
+    int c;
     int strip = 0;
-    int index = 1;
-    for (; index < argc && argv[index][0] == '-'; index++) {
-        if (strchr(argv[index], 't')) strip = 1;
+    int delimiter = '\n';
+    long long count = 0;
+    long long origin = 0;
+    long long skip = 0;
+    long long fd = 0;
+    long long quantum = 5000;
+    int keep = 0;
+    const char *callback = NULL;
+    while ((c = opt_next(&o, argc, argv, argv[0], "d:n:O:s:tu:C:c:")) > 0) {
+        switch (c) {
+        case 'd': delimiter = (unsigned char)o.arg[0]; break;
+        case 't': strip = 1; break;
+        case 'C': callback = o.arg; break;
+        case 'n': if (!read_count(argv[0], o.arg, &count)) return 1; break;
+        case 's': if (!read_count(argv[0], o.arg, &skip)) return 1; break;
+        case 'u': if (!read_count(argv[0], o.arg, &fd)) return 1; break;
+        case 'c': if (!read_count(argv[0], o.arg, &quantum)) return 1; break;
+        case 'O':
+            if (!read_count(argv[0], o.arg, &origin)) return 1;
+            keep = 1;
+            break;
+        default: return 2;
+        }
     }
-    const char *name = index < argc ? argv[index] : "MAPFILE";
+    const char *name = o.index < argc ? argv[o.index] : "MAPFILE";
+    if (!var_valid_name(name, 0)) return invalid_name(argv[0], name);
 
     StrList rows;
     sl_init(&rows);
-    char line[4096];
-    while (fgets(line, sizeof(line), stdin)) {
-        if (strip) line[strcspn(line, "\r\n")] = '\0';
-        sl_push_copy(&rows, line);
+    StrBuf row;
+    sb_init(&row);
+    char ch;
+    long long seen = 0;
+    while (count == 0 || (long long)rows.len < count) {
+        int got = 0;
+        int ended = 1;
+        sb_clear(&row);
+        while (_read((int)fd, &ch, 1) == 1) {
+            got = 1;
+            if ((unsigned char)ch == delimiter) {
+                ended = 0;
+                if (!strip) sb_putc(&row, ch);
+                break;
+            }
+            sb_putc(&row, ch);
+        }
+        if (!got) break;
+        if (seen++ < skip) continue;
+        if (callback && quantum > 0 && (rows.len + 1) % (size_t)quantum == 0) {
+            StrBuf call;
+            sb_init(&call);
+            sb_printf(&call, "%s %lld ", callback, origin + (long long)rows.len);
+            sb_put_quoted(&call, row.data);
+            exec_text(call.data);
+            sb_free(&call);
+        }
+        sl_push_copy(&rows, row.data);
+        if (ended) break;
     }
+    sb_free(&row);
 
-    var_set_array(name, &rows, VAR_INDEXED);
+    if (!keep) {
+        var_set_array(name, &rows, VAR_INDEXED);
+    } else {
+        if (var_kind(name) != VAR_INDEXED) var_declare(name, VAR_INDEXED);
+        for (size_t i = 0; i < rows.len; i++) {
+            char index[32];
+            snprintf(index, sizeof(index), "%lld", origin + (long long)i);
+            var_set_element(name, index, rows.items[i]);
+        }
+    }
     sl_free(&rows);
     return 0;
 }
 
 static int builtin_return(int argc, char **argv) {
+    if (shell.returnable <= 0) {
+        shell_error("return: can only `return' from a function or sourced script");
+        return 2;
+    }
+    int status;
+    if (!exit_status_argument("return", argc, argv, &status)) return status;
     shell.returning = 1;
-    return argc > 1 ? atoi(argv[1]) : shell.last_status;
+    return status;
 }
 
 static int builtin_break(int argc, char **argv) {
@@ -1874,22 +2878,32 @@ static int builtin_continue(int argc, char **argv) {
 }
 
 static int builtin_shift(int argc, char **argv) {
-    int count = argc > 1 ? atoi(argv[1]) : 1;
-    for (int i = 0; i < count; i++) {
-        if (shell.params.len <= 1) return 1;
-        free(shell.params.items[1]);
-        memmove(shell.params.items + 1, shell.params.items + 2,
-                (shell.params.len - 2) * sizeof(char *));
-        shell.params.len--;
+    int index = argc > 1 && strcmp(argv[1], "--") == 0 ? 2 : 1;
+    long long count = 1;
+    if (index < argc && !parse_number(argv[index], &count)) {
+        shell_error("shift: %s: numeric argument required", argv[index]);
+        return 1;
     }
+    size_t available = shell.params.len > 0 ? shell.params.len - 1 : 0;
+    if (count < 0) {
+        shell_error("shift: %s: shift count out of range", argv[index]);
+        return 1;
+    }
+    if ((unsigned long long)count > available) return 1;
+    for (long long i = 0; i < count; i++) free(shell.params.items[1 + i]);
+    memmove(shell.params.items + 1, shell.params.items + 1 + count,
+            (available - (size_t)count) * sizeof(char *));
+    shell.params.len -= (size_t)count;
     return 0;
 }
 
 static int builtin_eval(int argc, char **argv) {
+    int first = options_only(argc, argv, "eval");
+    if (first < 0) return 2;
     StrBuf sb;
     sb_init(&sb);
-    for (int i = 1; i < argc; i++) {
-        if (i > 1) sb_putc(&sb, ' ');
+    for (int i = first; i < argc; i++) {
+        if (i > first) sb_putc(&sb, ' ');
         sb_puts(&sb, argv[i]);
     }
     int status = exec_text(sb.data);

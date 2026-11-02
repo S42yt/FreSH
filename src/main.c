@@ -192,7 +192,11 @@ static void load_rc(void) {
             fclose(f);
         }
     }
-    if (path_is_file(rc)) exec_script_file(rc, NULL);
+    if (path_is_file(rc)) {
+        shell.returnable++;
+        exec_script_file(rc, NULL);
+        shell.returnable--;
+    }
     free(rc);
     timing_mark("freshrc");
 
