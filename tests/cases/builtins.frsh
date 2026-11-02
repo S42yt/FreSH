@@ -37,6 +37,19 @@ chmod +x .fresh-test-source.sh
 check bash_source_executed "$(./.fresh-test-source.sh)" ./.fresh-test-source.sh
 rm .fresh-test-source.sh
 
+printf 'inner=set\nexport PATH=/nowhere\ncd ..\nleaked() { :; }\nexit 3\n' > .fresh-test-child.sh
+chmod +x .fresh-test-child.sh
+before_path=$PATH
+before_dir=$(pwd)
+./.fresh-test-child.sh
+check script_exit_status "$?" 3
+check script_keeps_its_variables "${inner:-unset}" unset
+check script_keeps_its_path "$PATH" "$before_path"
+check script_keeps_its_directory "$(pwd)" "$before_dir"
+check script_keeps_its_functions "$(type leaked > /dev/null 2>&1 || echo no)" no
+check script_still_running yes yes
+rm .fresh-test-child.sh
+
 mkdir .fresh-test-target
 check cd_physical "$(cd -P .fresh-test-target && basename "$(pwd)")" .fresh-test-target
 check test_h_plain_dir "$(test -h .fresh-test-target || echo no)" no
