@@ -1,0 +1,34 @@
+name: Setup action
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  setup:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: fresh
+        uses: ./
+        with:
+          version: pre
+
+      - name: Run a command through fresh
+        shell: bash
+        run: |
+          echo "installed ${{ steps.fresh.outputs.version }}"
+          test "$(fresh -c 'echo $((6 * 7))')" = 42
+
+      - name: Run a step with fresh as its shell
+        shell: fresh {0}
+        run: |
+          answer=$((6 * 7))
+          [[ $answer == 42 ]]

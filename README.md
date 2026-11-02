@@ -25,7 +25,8 @@ box:
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/S42yt/FreSH/master/install.sh)"
 ```
 
-Windows on ARM gets `FreSH-Setup-arm64.exe`. Every way to install it is in
+Windows on ARM gets `FreSH-Setup-arm64.exe`, and a GitHub Actions workflow
+gets it with `uses: S42yt/FreSH@master`. Every way to install it is in
 [installing](docs/installing.md), and [verifying the download](docs/verifying.md)
 takes one command.
 
