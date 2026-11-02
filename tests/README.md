@@ -24,6 +24,7 @@ it on every build.
 | `cases/redirect.frsh` | redirection, pipes, here documents, subshells |
 | `cases/status.frsh` | exit status of every construct |
 | `cases/jobs.frsh` | background jobs: `jobs`, `fg`, `bg`, `stop`, `wait`, `disown`, `kill %job` |
+| `cases/task.frsh` | the `task` runner: starting, logs, states, `wait`, `stop`, `clear` |
 | `cases/commands.frsh` | bundled commands: `grep`, `sed`, `awk`, `sort` and friends |
 
 ## Adding a case

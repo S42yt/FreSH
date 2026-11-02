@@ -32,6 +32,7 @@
 #include "shell.h"
 #include "style.h"
 #include "table.h"
+#include "task.h"
 #include "term.h"
 #include "theme.h"
 #include "update.h"
@@ -3148,7 +3149,7 @@ static const Builtin BUILTINS[] = {
     {"trap", builtin_trap},         {"jobs", builtin_jobs},
     {"wait", builtin_wait},         {"fg", builtin_fg},
     {"bg", builtin_bg},             {"stop", builtin_stop},
-    {"disown", builtin_disown},
+    {"disown", builtin_disown},     {"task", builtin_task},
     {"test", builtin_test},         {"theme", builtin_theme},
     {"plugin", builtin_plugin},     {"true", builtin_true},
     {"type", builtin_type},         {"unalias", builtin_unalias},

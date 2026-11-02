@@ -33,6 +33,7 @@ extern char **environ;
 #include "rustcore.h"
 #include "style.h"
 #include "table.h"
+#include "task.h"
 #include "shell.h"
 #include "vars.h"
 
@@ -1737,6 +1738,7 @@ typedef struct {
     DWORD pid;
     HANDLE process;
     char *command;
+    char *name;
     int stopped;
     int done;
     int status;
@@ -1773,6 +1775,7 @@ static void job_finish(int slot, DWORD code) {
     jobs[slot].done = 1;
     jobs[slot].stopped = 0;
     jobs[slot].status = (int)code;
+    task_finished((unsigned long)jobs[slot].pid, (int)code);
 }
 
 static int job_poll(int slot) {
@@ -1839,6 +1842,7 @@ static void job_drop(int slot, int remember) {
     }
     CloseHandle(jobs[slot].process);
     free(jobs[slot].command);
+    free(jobs[slot].name);
     memset(&jobs[slot], 0, sizeof(Job));
     if (slot != job_current && slot != job_previous) return;
     jobs_refresh();
@@ -1922,6 +1926,12 @@ static void job_line(FILE *out, int slot, int format) {
             job_running(slot) ? " &" : "");
 }
 
+static int job_named(const char *name) {
+    for (int i = 0; i < job_slots; i++)
+        if (jobs[i].process && jobs[i].name && strcmp(jobs[i].name, name) == 0) return i;
+    return -1;
+}
+
 int jobs_lookup(const char *who, const char *spec) {
     const char *word = spec ? spec : "current";
     const char *text = !spec ? "" : spec[0] == '%' ? spec + 1 : spec;
@@ -1934,7 +1944,7 @@ int jobs_lookup(const char *who, const char *spec) {
     } else if (strspn(text, "0123456789") == strlen(text)) {
         long number = strtol(text, NULL, 10);
         found = number > 0 && number <= job_slots ? (int)number - 1 : -1;
-    } else {
+    } else if ((found = job_named(text)) < 0) {
         int contains = text[0] == '?';
         for (int i = 0; i < job_slots; i++) {
             if (!jobs[i].process) continue;
@@ -1975,6 +1985,19 @@ int jobs_next(int slot, int state) {
 
 long jobs_pid(int slot) {
     return (long)jobs[slot].pid;
+}
+
+int jobs_stopped(int slot) {
+    return jobs[slot].stopped;
+}
+
+void jobs_name(unsigned long pid, const char *name, const char *label) {
+    int slot = jobs_find_pid(pid);
+    if (slot < 0) return;
+    free(jobs[slot].name);
+    free(jobs[slot].command);
+    jobs[slot].name = xstrdup(name);
+    jobs[slot].command = xstrdup(label);
 }
 
 void jobs_report(int slot, int format) {

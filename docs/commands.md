@@ -35,6 +35,7 @@ rejected with the same message and status GNU uses.
 | `bg [job...]` | | resume a stopped job in the background |
 | `stop [job...]` | | suspend a job, the FreSH stand in for Ctrl+Z |
 | `disown [job\|pid...]` | `-a` `-h` `-r` | forget a job and leave it running |
+| `task [list]` / `task run name command...` | | named background jobs with a log each: `log name`, `wait [name...]`, `stop name...`, `clear`; see [scripting](scripting.md#running-tasks-in-the-background) |
 | `alias [name=value]` | | no arguments lists aliases |
 | `unalias name` | | |
 | `source file` / `. file` | | runs in the current shell |
