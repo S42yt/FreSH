@@ -1,0 +1,69 @@
+name: Setup FreSH
+description: Download a FreSH release, check it against its SHA256SUMS.txt and put fresh on PATH
+author: S42yt
+branding:
+  icon: terminal
+  color: green
+
+inputs:
+  version:
+    description: 'latest for the newest release, pre for the newest prerelease or release, or a version such as 26.11.1-prerelease-7'
+    default: latest
+  token:
+    description: Token used to ask GitHub for the releases
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The version that was installed
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: install
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        FRESH_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        repo=S42yt/FreSH
+
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Windows-X64) asset=FreSH.exe binary=FreSH.exe ;;
+          Windows-ARM64) asset=FreSH-arm64.exe binary=FreSH.exe ;;
+          macOS-X64) asset=fresh-macos-x86_64 binary=fresh ;;
+          macOS-ARM64) asset=fresh-macos-arm64 binary=fresh ;;
+          Linux-X64) asset=fresh-linux-x86_64 binary=fresh ;;
+          Linux-ARM64) asset=fresh-linux-arm64 binary=fresh ;;
+          *) echo "::error::no FreSH build for $RUNNER_OS on $RUNNER_ARCH"; exit 1 ;;
+        esac
+
+        case "$FRESH_VERSION" in
+          latest) tag=$(gh release view --repo "$repo" --json tagName --jq .tagName) ;;
+          pre) tag=$(gh api "repos/$repo/releases" --jq '[.[] | select(.draft | not) | select(.tag_name | contains("-experiment-") | not)][0].tag_name') ;;
+          *) tag=v${FRESH_VERSION#v} ;;
+        esac
+
+        dir="$RUNNER_TEMP/fresh-$tag"
+        mkdir -p "$dir"
+        cd "$dir"
+        gh release download "$tag" --repo "$repo" --clobber --pattern "$asset" --pattern SHA256SUMS.txt
+        if [ ! -f "$asset" ]; then
+          echo "::error::FreSH $tag has no $asset, see https://github.com/$repo/releases/tag/$tag"
+          exit 1
+        fi
+
+        line=$(awk -v asset="$asset" '$2 == asset || $2 == "*" asset' SHA256SUMS.txt)
+        if [ -z "$line" ]; then
+          echo "::error::SHA256SUMS.txt of FreSH $tag has no line for $asset"
+          exit 1
+        fi
+        if command -v sha256sum > /dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
+        echo "$line" | $sum -c -
+
+        [ "$asset" = "$binary" ] || mv "$asset" "$binary"
+        chmod +x "$binary"
+        echo "$dir" >> "$GITHUB_PATH"
+        echo "version=${tag#v}" >> "$GITHUB_OUTPUT"

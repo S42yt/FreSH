@@ -144,6 +144,31 @@ exist, `copy` and `paste` use the system clipboard tools, `admin` runs through
 `sudo`, and the bundled unix commands step aside for the real ones on `PATH`
 exactly as they do on Windows.
 
+### GitHub Actions
+
+The repository is an action. It downloads the portable binary for the runner,
+checks it against the release's `SHA256SUMS.txt` and puts `fresh` on `PATH`,
+on Linux, macOS and Windows, x64 and ARM:
+
+```yaml
+- uses: S42yt/FreSH@master
+  with:
+    version: pre     # latest (the default), pre, or a version such as 26.11.1-prerelease-7
+
+- run: fresh build.frsh
+
+- shell: fresh {0}
+  run: echo "this step runs in FreSH"
+```
+
+`latest` is the newest release, `pre` the newest prerelease or release the way
+`fresh update --pre` picks it, and a version is that version exactly. The
+installed version is in the `version` output. Releases before
+26.11.1-prerelease-2 have no macOS binary and before 26.11.1-prerelease-3 no
+Linux one, so on those runners the action stops and says so. A tool that
+takes a shell command, `just` with `set shell := ["fresh", "-c"]` for example,
+runs its recipes in FreSH from then on.
+
 ### Checking what you downloaded
 
 FreSH is not code signed yet, so Windows shows a SmartScreen prompt the first
