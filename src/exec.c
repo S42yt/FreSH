@@ -1937,6 +1937,8 @@ static int file_check(char flag, const char *path) {
     case 'e': return exists;
     case 'f': return exists && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
     case 'd': return exists && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+    case 'h':
+    case 'L': return path_is_link(path);
 #ifdef _WIN32
     case 'r':
     case 'x': return exists;
@@ -1970,7 +1972,7 @@ static int bracket_primary(Bracket *b) {
         return value;
     }
 
-    if (word[0] == '-' && word[1] && !word[2] && strchr("efdrwxsznv", word[1])) {
+    if (word[0] == '-' && word[1] && !word[2] && strchr("efdhLrwxsznv", word[1])) {
         char flag = word[1];
         b->pos++;
         const char *operand = bracket_peek(b);
@@ -2620,6 +2622,25 @@ int exec_subshell(const char *text) {
     return status;
 }
 
+static void source_push(const char *path, StrList *outer) {
+    sl_init(outer);
+    var_values("BASH_SOURCE", outer);
+    StrList stack;
+    sl_init(&stack);
+    char *shown = xstrdup(path);
+    path_to_slashes(shown);
+    sl_push(&stack, shown);
+    for (size_t i = 0; i < outer->len; i++) sl_push_copy(&stack, outer->items[i]);
+    var_set_array("BASH_SOURCE", &stack, VAR_INDEXED);
+    sl_free(&stack);
+}
+
+static void source_pop(StrList *outer) {
+    if (outer->len > 0) var_set_array("BASH_SOURCE", outer, VAR_INDEXED);
+    else var_unset("BASH_SOURCE");
+    sl_free(outer);
+}
+
 int exec_script_file(const char *path, const StrList *args) {
     FILE *f = fopen(path, "rb");
     if (!f) {
@@ -2650,12 +2671,15 @@ int exec_script_file(const char *path, const StrList *args) {
     if (back > leaf) leaf = back;
     char *saved_name = shell.script_name;
     shell.script_name = xstrdup(leaf ? leaf + 1 : path);
+    StrList outer_sources;
+    source_push(path, &outer_sources);
 
     int was_running = shell.running;
     shell.depth++;
     int status = exec_text(text);
     shell.depth--;
     shell.returning = 0;
+    source_pop(&outer_sources);
 
     free(shell.script_name);
     shell.script_name = saved_name;

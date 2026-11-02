@@ -49,6 +49,15 @@ static int builtin_cd(int argc, char **argv) {
     char previous[PATH_BUF];
     GetCurrentDirectoryA(sizeof(previous), previous);
 
+    while (argc > 1 && (strcmp(argv[1], "-L") == 0 || strcmp(argv[1], "-P") == 0)) {
+        argc--;
+        argv++;
+    }
+    if (argc > 1 && strcmp(argv[1], "--") == 0) {
+        argc--;
+        argv++;
+    }
+
     if (argc < 2) {
         target = var_get("HOME");
         if (!target) target = home_dir();
@@ -948,6 +957,8 @@ static int test_file_op(char op, const char *path) {
     case 'e': return attributes != INVALID_FILE_ATTRIBUTES;
     case 'f': return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
     case 'd': return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+    case 'h':
+    case 'L': return path_is_link(path);
 #ifdef _WIN32
     case 'r': return attributes != INVALID_FILE_ATTRIBUTES;
     case 'w': return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_READONLY);

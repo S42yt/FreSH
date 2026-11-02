@@ -28,6 +28,13 @@ mkdir -p adir
 [ -s present.txt ] || printf 'empty file ok\n'
 printf 'x' > present.txt
 [ -s present.txt ] && printf 'non empty ok\n'
+[ -h present.txt ] || printf 'not a link ok\n'
+[[ -L adir ]] || printf 'dir not a link ok\n'
+( cd -P adir && printf 'cd physical ok\n' )
+
+printf 'printf "%%s\\n" "${BASH_SOURCE[0]}"\n' > sourced.sh
+. ./sourced.sh
+rm -f sourced.sh
 
 if test "a" = "a"; then printf 'test builtin ok\n'; fi
 

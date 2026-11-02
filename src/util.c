@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "platform.h"
 
@@ -423,6 +424,16 @@ int path_is_dir(const char *p) {
 int path_is_file(const char *p) {
     DWORD a = GetFileAttributesA(p);
     return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+int path_is_link(const char *p) {
+#ifdef _WIN32
+    DWORD a = GetFileAttributesA(p);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
+    struct stat info;
+    return lstat(p, &info) == 0 && S_ISLNK(info.st_mode);
+#endif
 }
 
 int path_is_absolute(const char *p) {

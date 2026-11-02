@@ -29,6 +29,27 @@ named() { echo "$FUNCNAME"; }
 check funcname_inside "$(named)" named
 check funcname_outside "${FUNCNAME:-none}" none
 
+printf 'echo "${BASH_SOURCE[0]}"\n' > .fresh-test-source.sh
+outer_source="${BASH_SOURCE[*]}"
+check bash_source_sourced "$(source ./.fresh-test-source.sh)" ./.fresh-test-source.sh
+check bash_source_restored "${BASH_SOURCE[*]}" "$outer_source"
+chmod +x .fresh-test-source.sh
+check bash_source_executed "$(./.fresh-test-source.sh)" ./.fresh-test-source.sh
+rm .fresh-test-source.sh
+
+mkdir .fresh-test-target
+check cd_physical "$(cd -P .fresh-test-target && basename "$(pwd)")" .fresh-test-target
+check test_h_plain_dir "$(test -h .fresh-test-target || echo no)" no
+check cond_h_plain_dir "$([[ -h .fresh-test-target ]] || echo no)" no
+if ! on_windows; then
+  ln -s .fresh-test-target .fresh-test-link
+  ok test_h_symlink "$(test -h .fresh-test-link && echo yes)"
+  ok test_L_symlink "$([ -L .fresh-test-link ] && echo yes)"
+  ok cond_h_symlink "$([[ -h .fresh-test-link ]] && echo yes)"
+  rm .fresh-test-link
+fi
+rm -r .fresh-test-target
+
 false | true
 check pipestatus_first "${PIPESTATUS[0]}" 1
 check pipestatus_last "${PIPESTATUS[1]}" 0
