@@ -83,6 +83,11 @@ check using_without_from "$(using shout 2> /dev/null; echo $?)" 2
 unset -f whisper
 rm -r .fresh-test-using
 
+check man_names_a_builtin "$(man cd | grep -c 'cd - change the working directory')" 1
+check man_has_a_synopsis "$(man cd | grep -c '^SYNOPSIS')" 1
+check man_needs_a_name "$(man 2> /dev/null; echo $?)" 1
+ok man_unknown_fails "$(man fresh-no-such-page > /dev/null 2>&1 || echo yes)"
+
 false | true
 check pipestatus_first "${PIPESTATUS[0]}" 1
 check pipestatus_last "${PIPESTATUS[1]}" 0
