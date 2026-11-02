@@ -831,9 +831,17 @@ typedef struct {
 } Signal;
 
 static const Signal SIGNALS[] = {
+#ifdef _WIN32
     {"HUP", 1}, {"INT", 2}, {"QUIT", 3}, {"ILL", 4}, {"TRAP", 5}, {"ABRT", 6}, {"BUS", 7}, {"FPE", 8},
     {"KILL", 9}, {"USR1", 10}, {"SEGV", 11}, {"USR2", 12}, {"PIPE", 13}, {"ALRM", 14}, {"TERM", 15},
     {"CHLD", 17}, {"CONT", 18}, {"STOP", 19}, {"TSTP", 20}, {"TTIN", 21}, {"TTOU", 22}, {"WINCH", 28},
+#else
+    {"HUP", SIGHUP}, {"INT", SIGINT}, {"QUIT", SIGQUIT}, {"ILL", SIGILL}, {"TRAP", SIGTRAP},
+    {"ABRT", SIGABRT}, {"BUS", SIGBUS}, {"FPE", SIGFPE}, {"KILL", SIGKILL}, {"USR1", SIGUSR1},
+    {"SEGV", SIGSEGV}, {"USR2", SIGUSR2}, {"PIPE", SIGPIPE}, {"ALRM", SIGALRM}, {"TERM", SIGTERM},
+    {"CHLD", SIGCHLD}, {"CONT", SIGCONT}, {"STOP", SIGSTOP}, {"TSTP", SIGTSTP}, {"TTIN", SIGTTIN},
+    {"TTOU", SIGTTOU}, {"WINCH", SIGWINCH},
+#endif
 };
 
 static int signal_number(const char *text) {
@@ -864,7 +872,13 @@ static int send_signal(unsigned long pid, int number) {
     CloseHandle(process);
     return ok;
 #else
-    return kill((pid_t)pid, number) == 0;
+    if (kill((pid_t)pid, number) != 0) return 0;
+    if (number == SIGTERM || number == SIGHUP) {
+        if (jobs_find_pid(pid) >= 0) kill((pid_t)pid, SIGCONT);
+        number = SIGCONT;
+    }
+    if (number == SIGSTOP || number == SIGTSTP || number == SIGCONT) jobs_set_stopped(pid, number != SIGCONT);
+    return 1;
 #endif
 }
 
@@ -945,16 +959,16 @@ static int cmd_kill(int argc, char **argv) {
         return 2;
     }
     int status = 0;
+    jobs_refresh();
     for (int i = index; i < argc; i++) {
         unsigned long pid;
         if (argv[i][0] == '%') {
-            long job_pid = jobs_pid(atoi(argv[i] + 1));
-            if (job_pid <= 0) {
-                cmd_error("kill", "%s: no such job", argv[i]);
+            int slot = jobs_lookup("kill", argv[i]);
+            if (slot < 0) {
                 status = 1;
                 continue;
             }
-            pid = (unsigned long)job_pid;
+            pid = (unsigned long)jobs_pid(slot);
         } else {
             char *end;
             pid = strtoul(argv[i], &end, 10);

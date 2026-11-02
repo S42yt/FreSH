@@ -29,11 +29,12 @@ rejected with the same message and status GNU uses.
 | `local name[=value]` | | function scoped variable |
 | `declare` / `typeset` | `-a` `-A` | declare an indexed or associative array |
 | `trap command SIGNAL...` | | EXIT HUP INT QUIT TERM ERR DEBUG RETURN, `trap -` removes |
-| `jobs` | | background jobs, running or stopped |
-| `wait [id]` | | wait for one job or all of them |
-| `fg [id]` | | resume if stopped and wait for it |
-| `bg [id]` | | resume a stopped job in the background |
-| `stop [id]` | | suspend a job, the FreSH stand in for Ctrl+Z |
+| `jobs [job...]` | `-l` `-p` `-r` `-s` | background jobs in bash's format, a finished one is listed once |
+| `wait [job\|pid...]` | `-n` `-p name` | wait and return the status, 127 for an unknown one, 0 with no argument |
+| `fg [job]` | | resume if stopped and wait for it |
+| `bg [job...]` | | resume a stopped job in the background |
+| `stop [job...]` | | suspend a job, the FreSH stand in for Ctrl+Z |
+| `disown [job\|pid...]` | `-a` `-h` `-r` | forget a job and leave it running |
 | `alias [name=value]` | | no arguments lists aliases |
 | `unalias name` | | |
 | `source file` / `. file` | | runs in the current shell |
@@ -163,7 +164,7 @@ implemented.
 | `id` | `-u` `-g` `-G` `-n` `-r` `-z` | real ids on unix, placeholders on Windows |
 | `groups` | | |
 | `ps` | | Windows only; unix has the real one |
-| `kill pids` | `-s SIG` `-SIG` `-l [SIG]` `%job` | real signals on unix; on Windows `STOP` and `CONT` suspend and resume, anything else terminates |
+| `kill pids` | `-s SIG` `-SIG` `-l [SIG]` `%job` | a job is `%1`, `%+`, `%-`, `%name` or `%?text`; real signals on unix; on Windows `STOP` and `CONT` suspend and resume, anything else terminates |
 | `pkill pattern` | `-x` `-i` `-e` `-c` | Windows only |
 | `xargs [command]` | `-0` `-d DELIM` `-n N` `-L N` `-I REPL` `-i` `-r` `-t` `-a FILE` `-E EOF` | splits on whitespace with quotes like GNU; exit 123 when a command fails, 124 on 255 |
 | `seq [first [incr]] last` | `-s SEP` `-w` `-f FORMAT` | decimals follow the arguments, `seq 1 0.5 2` prints `1.0 1.5 2.0` |

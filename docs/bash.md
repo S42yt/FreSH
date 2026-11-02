@@ -58,11 +58,11 @@ and `>(...)`, and `/dev/null`, `/dev/stdout`, `/dev/stderr`.
 ### Builtins
 
 ```
-:  .  [  alias  bg  break  builtin  cd  command  continue  declare  dirs  echo
-eval  exec  exit  export  false  fg  getopts  help  history  jobs  kill  let
-local  mapfile  popd  printf  pushd  pwd  read  readarray  readonly  return
-set  shift  shopt  source  test  trap  true  type  typeset  unalias  unset
-wait
+:  .  [  alias  bg  break  builtin  cd  command  continue  declare  dirs
+disown  echo  eval  exec  exit  export  false  fg  getopts  help  history
+jobs  kill  let  local  mapfile  popd  printf  pushd  pwd  read  readarray
+readonly  return  set  shift  shopt  source  test  trap  true  type  typeset
+unalias  unset  wait
 ```
 
 Their options, exit statuses and output follow bash 5, down to the format of
@@ -114,8 +114,7 @@ and an unquoted `${a[@]}` splits its elements again.
   a descriptor other than 0, `3<<< text`. `read -u 3` and `3>&-` work.
 - `compgen` and `complete`: FreSH has its own completion, and `bind` binds keys
   in the FreSH way, described in [shortcuts](shortcuts.md).
-- Job control beyond `jobs`, `fg`, `bg`, `wait` and `stop`. Backgrounding a
-  bundled command runs it in the foreground, because it runs inside the shell.
+- `jobs -n`, `jobs -x`, `suspend` and `set -b`.
 - Signals other than the eight above, which Windows does not deliver.
 - A descriptor above 2 is not passed to an external program. `printf x >&3`
   works, `some-program.exe >&3` does not, because Windows only inherits the
@@ -138,3 +137,11 @@ and an unquoted `${a[@]}` splits its elements again.
   body shifts the ones after it.
 - An error is louder than in bash in a few places, all listed in
   [how it fails](errors.md), because a wrong answer is worse than a stop.
+- Job control is always on. In a script, `fg`, `bg` and `stop` work and a job
+  stopped with `stop` or `kill -STOP` is listed as stopped, where bash without
+  `set -m` says `no job control` and never notices the stop. A job killed by a
+  signal stays in `jobs` until it is listed or waited for, where a bash script
+  drops it after the next command. Windows has no SIGTSTP and no Ctrl+Z:
+  `stop`, `kill -STOP` and `kill -TSTP` suspend the job's threads, and any
+  other signal ends the job outright, so a job there cannot trap it. A
+  background pipeline is one job with one process id.

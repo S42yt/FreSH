@@ -5,3 +5,4 @@
 #
 # An entry is a promise that the difference was looked at and kept on purpose.
 # It is not a place to park a bug.
+jobcontrol	fg, bg and stop work in a script and see a stopped job, where bash without set -m says no job control

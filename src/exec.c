@@ -70,9 +70,10 @@ static StrList command_cache;
 static int command_cache_valid = 0;
 
 static int exec_command(Node *node, IoSet io, int background, HANDLE *async_out);
-static int exec_pipeline(Node *node, int background);
+static int exec_pipeline(Node *node);
 static void spools_close(void);
-static void job_add(HANDLE process, const char *command);
+static void job_add(HANDLE process, char *command);
+static char *job_label(Node *node);
 static void resolutions_release(void);
 static int skip_functions = 0;
 static int keep_redirections = 0;
@@ -1059,8 +1060,7 @@ static int call_function(Node *body, const StrList *args) {
     return status;
 }
 
-static int run_program(const char *path, char **argv, int argc, IoSet *io, int background,
-                       HANDLE *async_out) {
+static int run_program(const char *path, char **argv, int argc, IoSet *io, HANDLE *async_out) {
     int status = 0;
 #ifdef _WIN32
     const char *ext = path_ext(path);
@@ -1086,17 +1086,6 @@ static int run_program(const char *path, char **argv, int argc, IoSet *io, int b
         *async_out = process;
         return 0;
     }
-    if (background) {
-        StrBuf label;
-        sb_init(&label);
-        for (int i = 0; i < argc; i++) {
-            if (i > 0) sb_putc(&label, ' ');
-            sb_puts(&label, argv[i]);
-        }
-        job_add(process, label.data);
-        sb_free(&label);
-        return 0;
-    }
 
     WaitForSingleObject(process, INFINITE);
     DWORD exit_code = 0;
@@ -1117,7 +1106,7 @@ static int run_script(const char *path, char **argv, int argc, IoSet *io, HANDLE
     child[2] = (char *)path;
     for (int i = 1; i < argc; i++) child[i + 2] = argv[i];
     child[argc + 2] = NULL;
-    int status = run_program(exe, child, argc + 2, io, 0, async_out);
+    int status = run_program(exe, child, argc + 2, io, async_out);
     free(child);
     return status;
 }
@@ -1381,7 +1370,7 @@ static int exec_background_child(Node *node) {
         return 1;
     }
 #endif
-    job_add(process, "background");
+    job_add(process, job_label(node));
     return 0;
 }
 
@@ -1468,7 +1457,9 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
         BuiltinFn enter = builtin_lookup("cd");
         status = enter(2, arguments);
     } else if (resolved && !is_shell_script(path)) {
-        status = run_program(path, argv, argc, &io, background, async_out);
+        HANDLE process = NULL;
+        status = run_program(path, argv, argc, &io, background ? &process : async_out);
+        if (process) job_add(process, job_label(node));
     } else if (resolved && !background) {
         status = run_script(path, argv, argc, &io, async_out);
     } else if (background) {
@@ -1628,7 +1619,7 @@ static int pipeline_length(Node *node) {
     return node->kind == N_PIPE ? pipeline_length(node->left) + 1 : 1;
 }
 
-static int exec_pipeline(Node *node, int background) {
+static int exec_pipeline(Node *node) {
     if (pipeline_length(node) > MAX_STAGES) {
         shell_error("a pipeline cannot have more than %d stages", MAX_STAGES);
         return 1;
@@ -1712,10 +1703,6 @@ static int exec_pipeline(Node *node, int background) {
     }
 
     for (int i = 0; i < process_count; i++) {
-        if (background) {
-            CloseHandle(processes[i]);
-            continue;
-        }
         WaitForSingleObject(processes[i], INFINITE);
         DWORD exit_code = 0;
         GetExitCodeProcess(processes[i], &exit_code);
@@ -1736,7 +1723,7 @@ static int exec_pipeline(Node *node, int background) {
     var_set_array("PIPESTATUS", &reported, VAR_INDEXED);
     sl_free(&reported);
 
-    if (!background && shell.pipefail) {
+    if (shell.pipefail) {
         status = 0;
         for (int i = 0; i < count; i++)
             if (stage_status[i] != 0) status = stage_status[i];
@@ -1747,75 +1734,321 @@ static int exec_pipeline(Node *node, int background) {
 }
 
 typedef struct {
-    int id;
     DWORD pid;
     HANDLE process;
     char *command;
     int stopped;
+    int done;
+    int status;
+    int notified;
 } Job;
 
+typedef struct {
+    DWORD pid;
+    int status;
+} Reaped;
+
 static Job *jobs = NULL;
-static int job_count = 0;
-static int job_cap = 0;
-static int next_job_id = 1;
+static int job_slots = 0;
+static int job_current = -1;
+static int job_previous = -1;
+static Reaped *reaped = NULL;
+static int reaped_count = 0;
+static int reaped_cap = 0;
 
-static void job_add(HANDLE process, const char *command) {
-    if (job_count + 1 > job_cap) {
-        job_cap = job_cap ? job_cap * 2 : 16;
-        jobs = xrealloc(jobs, (size_t)job_cap * sizeof(Job));
-    }
-    jobs[job_count].id = next_job_id++;
-    jobs[job_count].pid = GetProcessId(process);
-    jobs[job_count].process = process;
-    jobs[job_count].command = xstrdup(command);
-    shell.last_background_pid = jobs[job_count].pid;
-    if (shell.interactive) printf("[%d] %lu\n", jobs[job_count].id, jobs[job_count].pid);
-    job_count++;
+static const char *const SIGNAL_TEXT[16] = {
+    [1] = "Hangup", [2] = "Interrupt",    [3] = "Quit",         [6] = "Aborted",
+    [9] = "Killed", [13] = "Broken pipe", [14] = "Alarm clock", [15] = "Terminated",
+};
+
+static int job_live(int slot) {
+    return slot >= 0 && slot < job_slots && jobs[slot].process;
 }
 
-static void job_remove(int index) {
-    CloseHandle(jobs[index].process);
-    free(jobs[index].command);
-    memmove(jobs + index, jobs + index + 1, (size_t)(job_count - index - 1) * sizeof(Job));
-    job_count--;
+static int job_running(int slot) {
+    return job_live(slot) && !jobs[slot].done && !jobs[slot].stopped;
 }
 
-void jobs_list(StrList *out) {
-    for (int i = job_count - 1; i >= 0; i--) {
+static void job_finish(int slot, DWORD code) {
+    jobs[slot].done = 1;
+    jobs[slot].stopped = 0;
+    jobs[slot].status = (int)code;
+}
+
+static int job_poll(int slot) {
+    DWORD code = 0;
+    if (!jobs[slot].done && GetExitCodeProcess(jobs[slot].process, &code) && code != STILL_ACTIVE)
+        job_finish(slot, code);
+    return jobs[slot].done;
+}
+
+void jobs_refresh(void) {
+    for (int i = 0; i < job_slots; i++)
+        if (jobs[i].process) job_poll(i);
+}
+
+static int job_block(int slot) {
+    if (!jobs[slot].done) {
+        WaitForSingleObject(jobs[slot].process, INFINITE);
         DWORD code = 0;
-        int running = GetExitCodeProcess(jobs[i].process, &code) && code == STILL_ACTIVE;
-        if (!running) {
-            job_remove(i);
-            continue;
+        GetExitCodeProcess(jobs[slot].process, &code);
+        job_finish(slot, code);
+    }
+    return jobs[slot].status;
+}
+
+static int job_newest(int below, int stopped) {
+    for (int i = below - 1; i >= 0; i--)
+        if (job_live(i) && !jobs[i].done && jobs[i].stopped == stopped) return i;
+    return -1;
+}
+
+static void job_make_current(int slot) {
+    if (job_current != slot) {
+        job_previous = job_current;
+        job_current = slot;
+    }
+    if (job_previous != slot && job_live(job_previous) && jobs[job_previous].stopped) return;
+    int candidate = jobs[slot].stopped ? job_newest(slot, 1) : -1;
+    if (candidate < 0) candidate = job_newest(job_running(slot) ? slot : job_slots, 0);
+    job_previous = candidate >= 0 ? candidate : slot;
+}
+
+static void job_reset_current(void) {
+    int candidate = -1;
+    if (job_live(job_current) && jobs[job_current].stopped) candidate = job_current;
+    else if (job_live(job_previous) && jobs[job_previous].stopped) candidate = job_previous;
+    if (candidate < 0) candidate = job_newest(job_slots, 1);
+    if (candidate < 0) candidate = job_newest(job_slots, 0);
+    if (candidate >= 0) job_make_current(candidate);
+    else job_current = job_previous = -1;
+}
+
+static char job_marker(int slot) {
+    return slot == job_current ? '+' : slot == job_previous ? '-' : ' ';
+}
+
+static void job_drop(int slot, int remember) {
+    if (remember && jobs[slot].done) {
+        if (reaped_count == reaped_cap) {
+            reaped_cap = reaped_cap ? reaped_cap * 2 : 16;
+            reaped = xrealloc(reaped, (size_t)reaped_cap * sizeof(Reaped));
         }
-        StrBuf sb;
-        sb_init(&sb);
-        sb_printf(&sb, "[%d] %lu  %s  %s", jobs[i].id, jobs[i].pid,
-                  jobs[i].stopped ? "stopped" : "running", jobs[i].command);
-        sl_push(out, sb_take(&sb));
+        reaped[reaped_count].pid = jobs[slot].pid;
+        reaped[reaped_count++].status = jobs[slot].status;
     }
-    sl_sort(out);
+    CloseHandle(jobs[slot].process);
+    free(jobs[slot].command);
+    memset(&jobs[slot], 0, sizeof(Job));
+    if (slot != job_current && slot != job_previous) return;
+    jobs_refresh();
+    job_reset_current();
 }
 
-int jobs_wait(int id) {
-    for (int i = 0; i < job_count; i++) {
-        if (jobs[i].id != id && (int)jobs[i].pid != id) continue;
-        WaitForSingleObject(jobs[i].process, INFINITE);
-        DWORD code = 0;
-        GetExitCodeProcess(jobs[i].process, &code);
-        job_remove(i);
-        return (int)code;
+static void job_add(HANDLE process, char *command) {
+    jobs_refresh();
+    int slot = 0;
+    if (shell.interactive) {
+        for (int i = job_slots; i > 0 && !slot; i--)
+            if (jobs[i - 1].process) slot = i;
+    } else {
+        while (slot < job_slots && jobs[slot].process) slot++;
     }
+    if (slot >= job_slots) {
+        int grown = job_slots ? job_slots * 2 : 16;
+        jobs = xrealloc(jobs, (size_t)grown * sizeof(Job));
+        memset(jobs + job_slots, 0, (size_t)(grown - job_slots) * sizeof(Job));
+        job_slots = grown;
+    }
+    jobs[slot].pid = GetProcessId(process);
+    jobs[slot].process = process;
+    jobs[slot].command = command;
+    shell.last_background_pid = jobs[slot].pid;
+    job_reset_current();
+    if (shell.interactive) fprintf(stderr, "[%d] %lu\n", slot + 1, (unsigned long)jobs[slot].pid);
+}
+
+static int ends_with_word(const StrBuf *text, const char *word) {
+    size_t length = strlen(word);
+    if (text->len < length || memcmp(text->data + text->len - length, word, length) != 0) return 0;
+    return text->len == length || text->data[text->len - length - 1] == ' ';
+}
+
+static char *job_label(Node *node) {
+    int was_background = node->background;
+    node->background = 0;
+    StrBuf source;
+    sb_init(&source);
+    node_source(node, &source);
+    node->background = was_background;
+
+    StrBuf label;
+    sb_init(&label);
+    for (size_t i = 0; i < source.len; i++) {
+        if (source.data[i] != '\n') sb_putc(&label, source.data[i]);
+        else if (ends_with_word(&label, "{") || ends_with_word(&label, "then") ||
+                 ends_with_word(&label, "do") || ends_with_word(&label, "else") ||
+                 ends_with_word(&label, "&"))
+            sb_putc(&label, ' ');
+        else sb_puts(&label, "; ");
+    }
+    sb_free(&source);
+    return sb_take(&label);
+}
+
+static const char *job_signal(int slot) {
+    int status = jobs[slot].status;
+    return jobs[slot].done && status > 128 && status < 144 ? SIGNAL_TEXT[status - 128] : NULL;
+}
+
+static const char *job_state(int slot, char *buffer, size_t size) {
+    int status = jobs[slot].status;
+    if (!jobs[slot].done) return jobs[slot].stopped ? "Stopped" : "Running";
+    if (status == 0) return "Done";
+    if (job_signal(slot)) return job_signal(slot);
+    snprintf(buffer, size, "Exit %d", status);
+    return buffer;
+}
+
+static void job_line(FILE *out, int slot, int format) {
+    if (format == 'p') {
+        fprintf(out, "%lu\n", (unsigned long)jobs[slot].pid);
+        return;
+    }
+    char buffer[32];
+    fprintf(out, "[%d]%c ", slot + 1, job_marker(slot));
+    if (format == 'l') fprintf(out, "%5lu", (unsigned long)jobs[slot].pid);
+    fprintf(out, " %-24s%s%s\n", job_state(slot, buffer, sizeof(buffer)), jobs[slot].command,
+            job_running(slot) ? " &" : "");
+}
+
+int jobs_lookup(const char *who, const char *spec) {
+    const char *word = spec ? spec : "current";
+    const char *text = !spec ? "" : spec[0] == '%' ? spec + 1 : spec;
+    int found = -1;
+
+    if (!*text || strcmp(text, "%") == 0 || strcmp(text, "+") == 0) {
+        found = job_current;
+    } else if (strcmp(text, "-") == 0) {
+        found = job_previous;
+    } else if (strspn(text, "0123456789") == strlen(text)) {
+        long number = strtol(text, NULL, 10);
+        found = number > 0 && number <= job_slots ? (int)number - 1 : -1;
+    } else {
+        int contains = text[0] == '?';
+        for (int i = 0; i < job_slots; i++) {
+            if (!jobs[i].process) continue;
+            const char *command = jobs[i].command;
+            if (contains ? !strstr(command, text + 1) : strncmp(command, text, strlen(text)) != 0)
+                continue;
+            if (found >= 0) {
+                shell_error("%s: %s: ambiguous job spec", who, word);
+                return -1;
+            }
+            found = i;
+        }
+    }
+    if (job_live(found)) {
+        job_poll(found);
+        return found;
+    }
+    shell_error("%s: %s: no such job", who, word);
+    return -1;
+}
+
+int jobs_find_pid(unsigned long pid) {
+    for (int i = 0; i < job_slots; i++)
+        if (jobs[i].process && jobs[i].pid == pid) return i;
+    return -1;
+}
+
+int jobs_next(int slot, int state) {
+    for (int i = slot + 1; i < job_slots; i++) {
+        if (!jobs[i].process) continue;
+        job_poll(i);
+        if (state == 'r' && !job_running(i)) continue;
+        if (state == 's' && !jobs[i].stopped) continue;
+        return i;
+    }
+    return -1;
+}
+
+long jobs_pid(int slot) {
+    return (long)jobs[slot].pid;
+}
+
+void jobs_report(int slot, int format) {
+    if (jobs[slot].done) jobs[slot].notified = 1;
+    job_line(stdout, slot, format);
+}
+
+void jobs_sweep(void) {
+    for (int i = 0; i < job_slots; i++)
+        if (jobs[i].process && jobs[i].notified) job_drop(i, 1);
+}
+
+void jobs_notify(void) {
+    for (int slot = jobs_next(-1, 0); slot >= 0; slot = jobs_next(slot, 0)) {
+        if (!jobs[slot].done) continue;
+        job_line(stderr, slot, 0);
+        jobs[slot].notified = 1;
+    }
+    jobs_sweep();
+}
+
+int jobs_wait(int slot) {
+    int status = job_block(slot);
+    job_drop(slot, 1);
+    return status;
+}
+
+int jobs_wait_pid(unsigned long pid) {
+    int slot = jobs_find_pid(pid);
+    if (slot >= 0) return jobs_wait(slot);
+    for (int i = reaped_count - 1; i >= 0; i--)
+        if (reaped[i].pid == pid) return reaped[i].status;
+    shell_error("wait: pid %lu is not a child of this shell", pid);
     return 127;
 }
 
-static int job_index(int id) {
-    if (job_count == 0) return -1;
-    if (id == 0) return job_count - 1;
-    for (int i = 0; i < job_count; i++) {
-        if (jobs[i].id == id || (int)jobs[i].pid == id) return i;
+int jobs_wait_any(const int *slots, int count, unsigned long *pid) {
+    for (;;) {
+        int waiting = 0;
+        for (int i = 0; i < job_slots; i++) {
+            if (!jobs[i].process) continue;
+            int listed = count == 0;
+            for (int j = 0; j < count && !listed; j++) listed = slots[j] == i;
+            if (!listed) continue;
+            if (job_poll(i)) {
+                *pid = jobs[i].pid;
+                return jobs_wait(i);
+            }
+            if (!jobs[i].stopped) waiting = 1;
+        }
+        if (!waiting) return -1;
+        Sleep(10);
     }
-    return -1;
+}
+
+void jobs_wait_all(void) {
+    jobs_refresh();
+    for (int i = 0; i < job_slots; i++) {
+        if (!jobs[i].process) continue;
+        if (jobs[i].stopped && !jobs[i].done) {
+            shell_error("wait: job %d is stopped", i + 1);
+            continue;
+        }
+        if (!shell.interactive && jobs[i].done && !job_signal(i) &&
+                jobs[i].pid == shell.last_background_pid)
+            continue;
+        job_block(i);
+        job_drop(i, 0);
+    }
+    reaped_count = 0;
+}
+
+void jobs_disown(int slot) {
+    job_drop(slot, 0);
 }
 
 #ifndef _WIN32
@@ -1851,88 +2084,77 @@ static int walk_threads(DWORD pid, int suspend) {
 
 #endif
 
-long jobs_pid(int id) {
-    int index = job_index(id);
-    return index < 0 ? -1 : (long)jobs[index].pid;
+void jobs_set_stopped(unsigned long pid, int stopped) {
+    int slot = jobs_find_pid(pid);
+    if (slot < 0 || job_poll(slot)) return;
+    jobs[slot].stopped = stopped;
+    job_reset_current();
 }
 
 int jobs_suspend_pid(unsigned long pid) {
     int stopped = walk_threads((DWORD)pid, 1) != 0;
-    for (int i = 0; i < job_count; i++)
-        if (jobs[i].pid == pid && stopped) jobs[i].stopped = 1;
+    if (stopped) jobs_set_stopped(pid, 1);
     return stopped;
 }
 
 int jobs_resume_pid(unsigned long pid) {
     int resumed = walk_threads((DWORD)pid, 0) != 0;
-    for (int i = 0; i < job_count; i++)
-        if (jobs[i].pid == pid && resumed) jobs[i].stopped = 0;
+    if (resumed) jobs_set_stopped(pid, 0);
     return resumed;
 }
 
-int jobs_suspend(int id) {
-    int index = job_index(id);
-    if (index < 0) {
-        shell_error("stop: no such job");
+int jobs_suspend(int slot) {
+    if (job_poll(slot)) {
+        shell_error("stop: job %d has terminated", slot + 1);
         return 1;
     }
-    if (jobs[index].stopped) return 0;
-    if (!walk_threads(jobs[index].pid, 1)) {
-        shell_error("stop: cannot suspend %lu", jobs[index].pid);
+    if (jobs[slot].stopped) return 0;
+    if (!walk_threads(jobs[slot].pid, 1)) {
+        shell_error("stop: cannot suspend %lu", (unsigned long)jobs[slot].pid);
         return 1;
     }
-    jobs[index].stopped = 1;
-    printf("[%d] stopped  %s\n", jobs[index].id, jobs[index].command);
+    jobs[slot].stopped = 1;
+    job_reset_current();
+    job_line(stdout, slot, 0);
     return 0;
 }
 
-int jobs_resume(int id) {
-    int index = job_index(id);
-    if (index < 0) {
-        shell_error("bg: no such job");
+int jobs_resume(int slot) {
+    if (job_poll(slot)) {
+        shell_error("bg: job %d has terminated", slot + 1);
         return 1;
     }
-    if (jobs[index].stopped) {
-        walk_threads(jobs[index].pid, 0);
-        jobs[index].stopped = 0;
+    if (!jobs[slot].stopped) {
+        shell_error("bg: job %d already in background", slot + 1);
+        return 0;
     }
-    printf("[%d] %s &\n", jobs[index].id, jobs[index].command);
+    walk_threads(jobs[slot].pid, 0);
+    jobs[slot].stopped = 0;
+    printf("[%d]%c %s &\n", slot + 1, job_marker(slot), jobs[slot].command);
     return 0;
 }
 
-int jobs_foreground(int id) {
-    int index = job_index(id);
-    if (index < 0) {
-        shell_error("fg: no such job");
-        return 1;
+int jobs_foreground(int slot) {
+    printf("%s\n", jobs[slot].command);
+    fflush(stdout);
+    job_make_current(slot);
+    if (jobs[slot].stopped) {
+        walk_threads(jobs[slot].pid, 0);
+        jobs[slot].stopped = 0;
     }
-    if (jobs[index].stopped) {
-        walk_threads(jobs[index].pid, 0);
-        jobs[index].stopped = 0;
-    }
-    printf("%s\n", jobs[index].command);
-
-    WaitForSingleObject(jobs[index].process, INFINITE);
-    DWORD code = 0;
-    GetExitCodeProcess(jobs[index].process, &code);
-    job_remove(index);
-    return (int)code;
-}
-
-int jobs_wait_all(void) {
-    int status = 0;
-    while (job_count > 0) {
-        WaitForSingleObject(jobs[0].process, INFINITE);
-        DWORD code = 0;
-        GetExitCodeProcess(jobs[0].process, &code);
-        status = (int)code;
-        job_remove(0);
-    }
+    int status = job_block(slot);
+    job_drop(slot, 0);
     return status;
 }
 
 void jobs_cleanup(void) {
-    while (job_count > 0) job_remove(0);
+    for (int i = 0; i < job_slots; i++)
+        if (jobs[i].process) job_drop(i, 0);
+    free(jobs);
+    free(reaped);
+    jobs = NULL;
+    reaped = NULL;
+    job_slots = reaped_count = reaped_cap = 0;
 }
 
 void run_trap(const char *command) {
@@ -2241,7 +2463,7 @@ int exec_node(Node *node) {
     int mark = tracked_count;
     int status;
 
-    if (node->background && node->kind != N_SIMPLE && node->kind != N_PIPE)
+    if (node->background && node->kind != N_SIMPLE)
         status = exec_background_child(node);
     else if (node->kind != N_SIMPLE && node->kind != N_PIPE && node->redirs)
         status = exec_command(node, io_default(), node->background, NULL);
@@ -2367,13 +2589,21 @@ static int exec_switch(Node *node) {
     }
 
     case N_PIPE:
-        status = exec_pipeline(node, node->background);
+        status = exec_pipeline(node);
         break;
 
-    case N_SEQ:
-        exec_node(node->left);
-        status = exec_node(node->right);
+    case N_SEQ: {
+        size_t depth = 0;
+        for (Node *link = node; link->kind == N_SEQ; link = link->left) depth++;
+        Node *local[16];
+        Node **order = depth < 16 ? local : xmalloc((depth + 1) * sizeof(Node *));
+        Node *link = node;
+        for (size_t i = depth; i > 0; i--, link = link->left) order[i] = link->right;
+        order[0] = link;
+        for (size_t i = 0; i <= depth; i++) status = exec_node(order[i]);
+        if (order != local) free(order);
         break;
+    }
 
     case N_AND:
         status = exec_condition(node->left);

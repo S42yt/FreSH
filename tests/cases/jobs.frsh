@@ -1,0 +1,58 @@
+suite jobs
+
+settle() {
+  while [ -n "$(jobs -r)" ]; do sleep 0.1; done
+}
+
+sleep 30 &
+first=$!
+sleep 31 &
+check jobs_bash_format "$(jobs)" "$(printf '[1]-  Running                 sleep 30 &\n[2]+  Running                 sleep 31 &')"
+check jobs_p_is_bang "$(jobs -p %+)" "$!"
+check jobs_spec_by_text "$(jobs %?30)" "[1]-  Running                 sleep 30 &"
+jobs %sleep 2> /dev/null
+check jobs_ambiguous_spec "$?" 1
+
+check stop_reports "$(stop %1)" "[1]+  Stopped                 sleep 30"
+check jobs_s_stopped "$(jobs -s)" "[1]+  Stopped                 sleep 30"
+check jobs_r_running "$(jobs -r)" "[2]-  Running                 sleep 31 &"
+check bg_resumes "$(bg %1)" "[1]+ sleep 30 &"
+check bg_running_job "$(bg %1 2> /dev/null; echo $?)" 0
+check jobs_s_after_bg "$(jobs -s)" ""
+
+kill -STOP %2
+check kill_stop_marks_stopped "$(jobs -s)" "[2]+  Stopped                 sleep 31"
+kill -CONT %2
+check kill_cont_marks_running "$(jobs -s)" ""
+kill -STOP %1
+kill %1
+wait %1
+check kill_wakes_stopped_job "$?" 143
+fg_out=$(kill %2; fg %2)
+check fg_returns_status "$?" 143
+check fg_prints_command "$fg_out" "sleep 31"
+check fg_no_job "$(fg 2> /dev/null; echo $?)" 1
+wait "$first"
+check wait_remembers_status "$?" 143
+
+sleep 30 &
+kill %1
+settle
+check jobs_signal_name "$(jobs)" "[1]+  Terminated              sleep 30"
+check jobs_listed_once "$(jobs)" ""
+
+false &
+settle
+wait
+check wait_all_succeeds "$?" 0
+check wait_keeps_last_finished "$(jobs)" "[1]+  Exit 1                  false"
+wait -n
+check wait_n_without_jobs "$?" 127
+
+background_job() { sleep 1; }
+background_job &
+check jobs_label_function "$(jobs)" "[1]+  Running                 background_job &"
+disown
+check disown_forgets "$(jobs)" ""
+check disown_keeps_running "$(kill -0 $! && echo yes)" yes
+kill $!
