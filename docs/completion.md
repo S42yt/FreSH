@@ -1,12 +1,13 @@
 # Tab completion
 
-FreSH completes on Tab with its own engine, written in C and built into the
-shell. It needs no setup, no plugin and no completion scripts, and it answers
-from what FreSH already knows: the commands it can run, the files on disk, the
-variables it holds and the help pages it ships.
+FreSH completes on Tab out of the box, with no setup and no plugin: commands,
+files, variables, and the flags a command's help page lists. On top of that it
+runs the bash completion scripts that tools already ship, so `git`, `gh`,
+`kubectl`, `rustup` and the rest complete their subcommands, branches and
+options the way they do in bash.
 
-This page is what it does today, what it does not do, and how to teach it the
-flags of a tool it does not know.
+This page covers what Tab does on its own, how FreSH finds and runs a tool's
+completion script, how to write one, and where it differs from bash.
 
 ## Pressing Tab
 
@@ -52,73 +53,199 @@ A word that contains `/`, `\` or `.` is taken as a path, so `./bu` and
 environment variables included. `$HO` becomes `$HOME`, `${HO` becomes
 `${HOME}`.
 
-### A word starting with `-`
+### The arguments of a command
 
-After a command, `-` completes to the flags that command's help page lists, so
-`grep -` offers only the flags FreSH's `grep` implements and `sort --` only its
-long options. The flags come from the same text `help <command>` prints, which
-keeps the two from disagreeing.
+After the command name, FreSH first asks the command's completion, if it has
+one: a script the tool ships, or a `complete` line of your own. The next
+sections are about those.
 
-A program FreSH has no help page for gets no flag completion, until you give
-it one, see [Teaching FreSH a tool's flags](#teaching-fresh-a-tools-flags).
+When there is none, or it offers nothing, FreSH answers itself:
 
-### Any other word
+- a word starting with `-` completes to the flags the command's help page
+  lists, so `grep -` offers only the flags FreSH's `grep` implements
+- `cd`, `pushd`, `mkdir` and `rmdir` complete directories only
+- `help`, `which`, `type`, `man` and `describe` complete command names
+- everything else completes to a path, relative to the current directory or
+  to the directory already typed. `~/` is your home directory, directories end
+  in `/` so Tab keeps going into them, and files starting with `.` are only
+  offered once you type the `.`
 
-Everything else completes to a path, relative to the current directory or to
-the directory already typed. `~/` is your home directory. Directories end in
-`/`, so Tab keeps going into them, and paths are written with forward slashes.
-Files starting with `.` are only offered once you type the `.`.
+## Completion scripts
 
-A few commands complete something narrower:
+Most command line tools print a bash completion script when asked. FreSH runs
+those scripts as they are.
 
-| Command | Completes |
+### Where FreSH looks
+
+The first time you press Tab after a command that has no completion yet, FreSH
+looks for a script named after it and loads the first one it finds:
+
+1. `~/.fresh/completions/`, your own folder
+2. next to the program itself, in `../share/bash-completion/completions`,
+   `../etc/bash_completion.d`, `../share/<command>/completion` and
+   `../mingw64/share/<command>/completion`
+
+In each folder the file can be called `<command>`, `<command>.bash`,
+`<command>.sh` or `<command>-completion.bash`.
+
+The second place is why git completes with nothing to set up. Git for Windows
+ships `git-completion.bash` beside `git.exe`, Linux distributions put it in
+`/usr/share/bash-completion/completions`, and Homebrew in its `etc` folder, and
+FreSH finds each one from where `git` itself lives.
+
+A script is loaded once per shell. Anything it prints while loading is thrown
+away, so a noisy script cannot scribble over your prompt. `rehash` makes FreSH
+look again, for a script you added while the shell was open.
+
+`FRESH_HOME` moves the whole `~/.fresh` folder, completions included.
+
+### Adding a tool's script
+
+Save what the tool prints into `~/.fresh/completions`, named after the command:
+
+```sh
+gh completion -s bash      > ~/.fresh/completions/gh
+kubectl completion bash    > ~/.fresh/completions/kubectl
+helm completion bash       > ~/.fresh/completions/helm
+docker completion bash     > ~/.fresh/completions/docker
+rustup completions bash    > ~/.fresh/completions/rustup
+rustup completions bash cargo > ~/.fresh/completions/cargo
+```
+
+The next Tab after `gh ` uses it. Nothing goes in `~/.freshrc`, and a shell
+that never completes `gh` never loads the script, so startup stays as fast as
+it was.
+
+Some tools complete through a program rather than a script, and take a single
+line in `~/.freshrc`:
+
+```sh
+complete -C terraform terraform
+complete -C aws_completer aws
+```
+
+### Seeing what Tab would offer
+
+`fresh complete` prints the matches for a line, as if Tab were pressed at its
+end. It is the quickest way to check that a script loaded and answers:
+
+```
+λ fresh complete 'git sw'
+switch
+λ fresh complete 'gh pr li'
+list
+```
+
+It returns 1 when nothing matches. `complete -p` lists every completion that
+is loaded, as the commands that would recreate it.
+
+## Writing your own
+
+`complete` tells Tab how to complete the arguments of a command, with the same
+options as in bash.
+
+A fixed list of words:
+
+```sh
+complete -W 'start stop restart status' svc
+```
+
+`-W` is expanded each time Tab is pressed, so it can read something that
+changes:
+
+```sh
+complete -W '$(ls ~/projects)' work
+```
+
+A function, for anything that depends on what came before. It is called with
+the command, the word being completed and the word before it, sees the line
+in `COMP_WORDS` and `COMP_CWORD`, and puts its answer in `COMPREPLY`:
+
+```sh
+_deploy() {
+  local cur=${COMP_WORDS[COMP_CWORD]}
+  case $COMP_CWORD in
+    1) COMPREPLY=($(compgen -W 'staging production' -- "$cur")) ;;
+    2) COMPREPLY=($(compgen -W '--dry-run --force' -- "$cur")) ;;
+  esac
+}
+complete -F _deploy deploy
+```
+
+The options that matter most:
+
+| Option | Meaning |
 | --- | --- |
-| `cd`, `pushd`, `mkdir`, `rmdir` | directories only |
-| `help`, `which`, `type`, `man`, `describe` | command names, not files |
+| `-W words` | complete from these words |
+| `-F function` | call a function and offer its `COMPREPLY` |
+| `-C command` | run a command and offer each line it prints; it gets `COMP_LINE` and `COMP_POINT` in its environment |
+| `-f` `-d` `-c` `-v` `-a` `-b` `-k` `-e` `-u` | files, directories, commands, variables, aliases, builtins, keywords, exported variables, the user |
+| `-A action` | the same by name, such as `-A function` or `-A arrayvar` |
+| `-X pattern` | drop the matches that fit the pattern, or with a leading `!` keep only those; `&` stands for the word |
+| `-P prefix` `-S suffix` | put text before or after every match |
+| `-o nospace` | do not add a space after a single match |
+| `-o filenames` | the matches are paths, so directories get a `/` |
+| `-o dirnames` `-o plusdirs` | directories when nothing else matched, or always as well |
+| `-o nosort` | keep the order the matches came in |
+| `-p` `-r` | print or remove completions |
 
-## Where the names come from
+`compgen` takes the same options and prints the matches for one word, which is
+how a function usually filters its candidates. `compopt` changes the options
+of the completion that is running, from inside its function, for example
+`compopt -o nospace` after offering `--output=`.
 
-Program names on `PATH` are read once and kept in memory, so Tab does not walk
-the disk on every key. Setting or exporting `PATH` reads them again, and
-`rehash` does the same for a program installed while the shell is open.
+The variables a function sees:
 
-The cmdlet list is read from PowerShell the first time it is needed, which
-takes a moment, then cached in `~/.fresh/cmdlets.cache`. `rehash` refreshes it
-too. `FRESH_FOREIGN=0` leaves cmdlets out of completion as well as out of
-routing.
+| Variable | Holds |
+| --- | --- |
+| `COMP_WORDS` | the words of the command being completed, as an array |
+| `COMP_CWORD` | the index in `COMP_WORDS` of the word the cursor is on |
+| `COMP_LINE` | the command as typed |
+| `COMP_POINT` | where the cursor is in `COMP_LINE` |
+| `COMP_TYPE` | always `37`, the bash value for cycling through matches one at a time |
+| `COMPREPLY` | the answer, as an array |
 
-## Teaching FreSH a tool's flags
+An alias of a single word completes like the command it names, so with
+`alias k=kubectl` the line `k get po` completes as `kubectl get po` would.
 
-Flag completion reads help pages, and `describe` adds one. Anything written as
-a flag in the usage line or the detail of a page becomes something `-`
-completes to, for any command, alias or function:
+## Teaching FreSH a tool's flags without a script
+
+FreSH's own flag completion reads help pages, and `describe` adds one.
+Anything written as a flag in the usage line or the detail of a page becomes
+something `-` completes to:
 
 ```sh
 describe rg "search files with ripgrep" \
   "rg [options] <pattern> [path...]" \
   "  -i --ignore-case   match without regard to case
   -w --word-regexp   whole words only
-  -l --files-with-matches
   --hidden           search hidden files too"
 ```
 
 After this, `rg --h` completes to `--hidden`, and `help rg` prints the page.
-Put the line in `~/.freshrc` or in a plugin, as described in
-[Plugins](plugins.md#help-pages). A word counts as a flag when it starts with
-`-` or `--` and stands at the start of a line, after a space or after `[`.
+It is the lighter choice when a tool ships no completion script and a list of
+flags is all you want. See [Plugins](plugins.md#help-pages) for `describe`.
 
-## What it does not do
+## Where it differs from bash
 
-FreSH does not run completion scripts written for another shell. The
-`complete` and `compgen` builtins of bash, `compdef` of zsh, and the files fish
-and PowerShell read are not supported, so the completions a tool ships for
-those shells, through something like `tool completion bash`, do nothing in
-FreSH.
-
-It follows that FreSH does not complete what comes after a subcommand: `git
-checkout` does not offer branch names, and `docker exec` does not offer
-containers. Flags of a subcommand complete only when they are on the page of
-the command itself.
-
-The list of what bash does and FreSH does not is kept in
-[Bash compatibility](bash.md#does-not-work).
+- When a completion offers nothing, FreSH falls back to its own completion,
+  so a script that fails or does not know a word still leaves you with files
+  and flags. In bash that takes `-o default` on every `complete` line.
+- `COMP_WORDBREAKS` starts without the `:` bash puts in it, so a Windows path
+  like `C:/Users` stays one word. Scripts read the variable, so they adjust,
+  and git's script adds the colon back for itself.
+- `COMP_TYPE` is `37`, because Tab cycles through the matches, which is what
+  bash calls menu completion. Scripts that print descriptions next to their
+  matches, such as those cobra generates for `gh` and `kubectl`, leave them
+  out, so cycling inserts the word and not the description.
+- What a completion function prints is thrown away rather than drawn over the
+  prompt, `set -e` and `set -u` are off while it runs, and an `exit` inside it
+  does not end the shell.
+- Of the bash-completion library, `_get_comp_words_by_ref` and `_filedir` are
+  built in, because the scripts tools generate call them. `_init_completion`
+  is left out on purpose, so a script that checks for it takes its own
+  fallback. Scripts in `/usr/share/bash-completion` that depend on the rest of
+  that library do nothing, and Tab falls back to FreSH's own completion.
+- `complete -D`, `-E` and `-I` are not supported. The actions `group`,
+  `hostname`, `job`, `service`, `signal`, `setopt`, `shopt`, `binding`,
+  `running`, `stopped` and `disabled` are accepted and offer nothing.

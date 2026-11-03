@@ -40,6 +40,9 @@ rejected with the same message and status GNU uses.
 | `unalias name` | | |
 | `source file` / `. file` | | runs in the current shell |
 | `man name...` | | FreSH's page for a builtin or a bundled command it is running, the system `man` for the rest |
+| `complete [options] name...` | `-W` `-F` `-C` `-X` `-P` `-S` `-G` `-o` `-A` `-abcdefkuv` `-p` `-r` | how Tab completes a command's arguments; see [Tab completion](completion.md) |
+| `compgen [options] [word]` | the options of `complete` | print the matches for a word, one per line |
+| `compopt [-o option] [+o option] [name...]` | | change completion options, from inside a completion function when no name is given |
 | `using name... from file` | | takes only the named functions from a file, see [scripting](scripting.md#taking-functions-from-another-file) |
 | `eval words` | | |
 | `exit [code]` | | |
