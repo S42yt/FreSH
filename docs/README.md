@@ -5,6 +5,8 @@
 - [Shortcuts](shortcuts.md), the everyday wins: jumping to a directory,
   auto cd, the clipboard, archives, key bindings, and what Tab and the arrow
   keys do
+- [Tab completion](completion.md), what Tab completes and where the names
+  come from, how to teach it a tool's flags, and what it does not do
 - [Configuration](configuration.md), every setting in `~/.freshrc`, where
   files live, how startup works, and `fresh doctor`
 - [Themes](themes.md), the prompt format language and how to write a theme
