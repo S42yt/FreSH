@@ -170,6 +170,7 @@ so a script can rely on it.
 | `FRESH_AUTOCD` | `1` | a directory name on its own becomes a `cd` |
 | `FRESH_JUMP` | `1` | remember visited directories for `z` |
 | `FRESH_ACTIONS` | `1` | start the [actions](actions.md) in `~/.fresh/actions` with an interactive shell |
+| `FRESH_PREFER_BUNDLED` | `0` | `1` runs the bundled unix commands even when `PATH` has a program of the same name, see [commands](commands.md) |
 
 Colour is disabled automatically when output is redirected, so
 `ls > files.txt` never writes escape codes into the file.

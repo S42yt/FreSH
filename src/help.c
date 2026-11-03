@@ -27,8 +27,8 @@ typedef struct {
 } HelpEntry;
 
 static const HelpEntry ENTRIES[] = {
-    {"alias", "alias [<name>=<value> ...]", "name a command so a short word runs it",
-     "With no arguments it lists what is defined.\n"
+    {"alias", "alias [-p] [<name>=<value> ...]", "name a command so a short word runs it",
+     "With no arguments, or -p, it lists what is defined.\n"
      "  alias ll='ls -l'\n"
      "  alias                 show every alias"},
 
@@ -40,7 +40,11 @@ static const HelpEntry ENTRIES[] = {
     {"break", "break [<levels>]", "leave a loop early",
      "break 2 leaves two nested loops."},
 
-    {"cd", "cd [<directory>]", "change the working directory",
+    {"builtin", "builtin <name> [<argument> ...]", "run a builtin even when a function has its name",
+     "Lets a function wrap the builtin it replaces.\n"
+     "  cd() { builtin cd \"$@\" && ls; }"},
+
+    {"cd", "cd [-L|-P] [<directory>]", "change the working directory",
      "No argument goes to $HOME. A single - goes back to where you were.\n"
      "  cd src/parser\n"
      "  cd -"},
@@ -72,8 +76,9 @@ static const HelpEntry ENTRIES[] = {
 
     {"clear", "clear", "wipe the screen", NULL},
 
-    {"command", "command [-v] <name> [<argument> ...]", "run past a function of the same name",
-     "  -v   say what would run instead of running it"},
+    {"command", "command [-v|-V] <name> [<argument> ...]", "run past a function of the same name",
+     "  -v   say what would run instead of running it\n"
+     "  -V   the same, in a sentence"},
 
     {"action", "action [list | run <file> ... | stop <name|id|all> ... | reload]",
      "see and steer the actions running in this shell",
@@ -144,10 +149,14 @@ static const HelpEntry ENTRIES[] = {
 
     {"continue", "continue [<levels>]", "skip to the next turn of a loop", NULL},
 
-    {"declare", "declare [-a|-A] [<name>[=<value>] ...]", "create a variable or an array",
-     "  -a   an array with numbered keys\n"
-     "  -A   an array with named keys\n"
-     "With no argument it prints every variable."},
+    {"declare", "declare [-aAilnrux] [-g] [-p] [-f|-F] [<name>[=<value>] ...]", "create a variable or an array",
+     "  -a   an array with numbered keys      -A   an array with named keys\n"
+     "  -i   an integer, assignments are arithmetic\n"
+     "  -l   lower case      -u   upper case      -n   a reference to another name\n"
+     "  -x   export it       -r   read only       -g   global, even inside a function\n"
+     "  -p   print the declaration      -f   print functions      -F   only their names\n"
+     "A + instead of - takes the attribute off. With no argument it prints every variable.\n"
+     "typeset is the same command."},
 
     {"describe", "describe <name> <summary> [<usage>] [<detail>]",
      "give a command a help page, for plugins to document what they add",
@@ -166,11 +175,17 @@ static const HelpEntry ENTRIES[] = {
 
     {"eval", "eval <word> ...", "join the words and run the result as a command", NULL},
 
-    {"exit", "exit [<status>]", "leave the shell",
-     "Inside a script called as a command it ends that script only."},
+    {"exec", "exec [<command> [<argument> ...]]", "run a command in place of the shell",
+     "With only redirections they apply to the rest of the shell instead.\n"
+     "  exec > build.log 2>&1"},
 
-    {"export", "export [<name>[=<value>] ...]", "mark a variable so programs you start can see it",
-     "With no argument it lists the environment.\n"
+    {"exit", "exit [<status>]", "leave the shell",
+     "Inside a script called as a command it ends that script only. quit is the same command."},
+
+    {"export", "export [-n] [-f] [-p] [<name>[=<value>] ...]", "mark a variable so programs you start can see it",
+     "With no argument, or -p, it lists the environment.\n"
+     "  -n   take the mark off again\n"
+     "  -f   the names are functions\n"
      "  export EDITOR=nvim"},
 
     {"false", "false", "do nothing and report failure", NULL},
@@ -207,7 +222,7 @@ static const HelpEntry ENTRIES[] = {
      "With no argument it lists everything.\n"
      "  help cd     what cd does and the arguments it takes"},
 
-    {"history", "history [-c] [<count>]", "commands you have run",
+    {"history", "history [-c | <count>]", "commands you have run",
      "  -c        forget them all\n"
      "  history 20   the last twenty"},
 
@@ -223,9 +238,14 @@ static const HelpEntry ENTRIES[] = {
      "  -s   only stopped jobs\n"
      "The current job is marked +, the one before -. A finished job is listed once."},
 
-    {"mapfile", "mapfile [-t] [-d <delim>] [-n <count>] [-O <origin>] [-s <count>] [-u <fd>] [<name>]",
+    {"let", "let <expression> ...", "do arithmetic",
+     "The same as (( )). It succeeds when the last value is not 0.\n"
+     "  let n=2**8 count++"},
+
+    {"mapfile", "mapfile [-t] [-d <delim>] [-n <count>] [-O <origin>] [-s <count>] [-u <fd>] [-C <command>] [-c <count>] [<name>]",
      "read the input into an array",
      "  -t   drop the newline from each line\n"
+     "  -C   run a command every -c lines, 5000 unless set\n"
      "readarray is the same command. The default name is MAPFILE."},
 
     {"paste", "paste", "print what is on the clipboard", NULL},
@@ -276,7 +296,7 @@ static const HelpEntry ENTRIES[] = {
      "With no argument it opens an interactive PowerShell.\n"
      "  ps1 \"Get-Service | Where-Object Status -eq Running\""},
 
-    {"pwd", "pwd", "print the working directory", NULL},
+    {"pwd", "pwd [-L|-P]", "print the working directory", NULL},
 
     {"read", "read [-rs] [-a <array>] [-d <delim>] [-n|-N <count>] [-p <prompt>] [-t <seconds>] [-u <fd>] [<name> ...]",
      "read a line into variables",
@@ -333,18 +353,29 @@ static const HelpEntry ENTRIES[] = {
      "  theme reset     rewrite the bundled themes and plugins\n"
      "Set FRESH_THEME in ~/.freshrc to keep one."},
 
-    {"trap", "trap <command> <signal> ...", "run a command when something happens",
+    {"time", "time <pipeline>", "how long a command took",
+     "Prints the real time on stderr once it finishes.\n"
+     "  time make -j8"},
+
+    {"trap", "trap [-lp] <command> <signal> ...", "run a command when something happens",
      "Signals: EXIT HUP INT QUIT TERM ERR DEBUG RETURN, by name or number.\n"
+     "  -p   print what is set      -l   list the signals\n"
      "  trap 'rm -r $tmp' EXIT\n"
      "  trap - ERR      remove it"},
 
     {"true", "true", "do nothing and report success", NULL},
 
-    {"type", "type <name> ...", "say whether a name is an alias, function, builtin or file", NULL},
+    {"type", "type [-t|-p|-P] <name> ...", "say whether a name is an alias, keyword, function, builtin or file",
+     "  -t   one word: alias, keyword, function, builtin or file\n"
+     "  -p   the path, when it is a file\n"
+     "  -P   the path on PATH, even when something else has the name"},
 
-    {"unalias", "unalias <name> ...", "forget an alias", NULL},
+    {"unalias", "unalias [-a] <name> ...", "forget an alias",
+     "  -a   forget every alias"},
 
-    {"unset", "unset <name> ...", "forget a variable", NULL},
+    {"unset", "unset [-f|-v] <name> ...", "forget a variable",
+     "  -f   the names are functions      -v   only variables\n"
+     "  unset 'map[key]'   remove one element of an array"},
 
     {"using", "using <function> [<function> ...] from <file>", "take functions from another script",
      "FreSH addition. Defines only the named functions; nothing else in the file runs.\n"
@@ -545,6 +576,7 @@ static const HelpEntry *find_entry(const char *name) {
     if (strcmp(name, "[") == 0) return find_entry("test");
     if (strcmp(name, "typeset") == 0) return find_entry("declare");
     if (strcmp(name, "quit") == 0) return find_entry("exit");
+    if (strcmp(name, "readarray") == 0) return find_entry("mapfile");
     return NULL;
 }
 
