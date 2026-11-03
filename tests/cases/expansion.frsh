@@ -46,3 +46,10 @@ shift
 check after_shift "$1" two
 
 check tilde_expands "$(cd ~; pwd)" "$(cd "$HOME"; pwd)"
+
+self="$here/../build/FreSH.exe"
+[ -f "$self" ] || self="$here/../build/fresh"
+check dash_c_positionals "$("$self" --norc -c 'echo "0: $0, 1: $1, 2: $2, #: $#"' a b c)" "0: a, 1: b, 2: c, #: 2"
+check dash_c_all_args "$("$self" --norc -c 'printf "[%s]" "$@"' name 'two words' last)" "[two words][last]"
+check dash_c_no_args "$("$self" --norc -c 'echo $#')" 0
+check dash_c_options_after_are_args "$("$self" --norc -c 'echo "$0"' --version)" --version
