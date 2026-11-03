@@ -404,6 +404,28 @@ task is an ordinary job underneath: it shows in `jobs` under its command,
 `wait %build` and `kill %build` find it by name, and `fg %build` brings it to
 the front.
 
+### Waiting for something to happen
+
+A function whose name starts with `*` can `yield` until something happens in
+the shell, and carries on from there when it does:
+
+```sh
+*watch_config() {
+  while :; do
+    yield change config.toml
+    say "config.toml changed, reloading"
+    reload_config
+  done
+}
+watch_config            # starts it; the script goes on
+```
+
+`yield` waits for `cd`, `prompt`, `command [pattern]`, `after <time>` or
+`change <file>`. In a script, a waiting function gets its turn between the
+script's top level statements. Put such functions in a `#! fresh_action` file
+in `~/.fresh/actions` and they run in every interactive shell. The whole story
+is in [Actions](actions.md).
+
 ### Side by side
 
 The bash way:
