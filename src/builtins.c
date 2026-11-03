@@ -21,6 +21,7 @@
 #endif
 
 #include "commands.h"
+#include "complete.h"
 #include "exec.h"
 #include "expand.h"
 #include "foreign.h"
@@ -1474,6 +1475,7 @@ static int builtin_rehash(int argc, char **argv) {
 
     path_reload_environment();
     foreign_forget();
+    complete_forget();
     fresh_home_init();
     theme_load_configured();
     plugins_load_configured();
@@ -3157,6 +3159,10 @@ static const Builtin BUILTINS[] = {
     {"[", builtin_test},            {".", builtin_source},
     {":", builtin_true},            {"using", builtin_using},
     {"man", builtin_man},
+    {"complete", builtin_complete_spec}, {"compgen", builtin_compgen},
+    {"compopt", builtin_compopt},
+    {"_get_comp_words_by_ref", builtin_comp_words_by_ref},
+    {"_filedir", builtin_filedir},
 };
 
 static Table builtin_table;
@@ -3189,6 +3195,7 @@ void builtin_complete(const char *prefix, size_t length, StrList *out) {
 }
 
 void builtin_names(StrList *out) {
-    for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++)
-        sl_push_copy(out, BUILTINS[i].name);
+    for (size_t i = 0; i < sizeof(BUILTINS) / sizeof(BUILTINS[0]); i++) {
+        if (BUILTINS[i].name[0] != '_') sl_push_copy(out, BUILTINS[i].name);
+    }
 }

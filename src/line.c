@@ -317,7 +317,8 @@ static void apply_match(Editor *editor, size_t start, const char *match, int sin
     if (needs_quotes) insert_text(editor, "\"", 1);
 
     size_t length = strlen(match);
-    if (single && length > 0 && match[length - 1] != '/' && match[length - 1] != '\\')
+    if (single && length > 0 && match[length - 1] != '/' && match[length - 1] != '\\' &&
+        !complete_nospace())
         insert_text(editor, " ", 1);
 }
 

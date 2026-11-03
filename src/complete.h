@@ -10,5 +10,13 @@
 #include "util.h"
 
 void complete_at(const char *buffer, size_t cursor, StrList *matches, size_t *replace_start);
+int complete_nospace(void);
+void complete_forget(void);
+
+int builtin_complete_spec(int argc, char **argv);
+int builtin_compgen(int argc, char **argv);
+int builtin_compopt(int argc, char **argv);
+int builtin_comp_words_by_ref(int argc, char **argv);
+int builtin_filedir(int argc, char **argv);
 
 #endif

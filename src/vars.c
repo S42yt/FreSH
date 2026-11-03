@@ -185,6 +185,7 @@ void vars_init(void) {
         var_set_exported("PWD", cwd);
     }
     if (!getenv("HOME")) var_set_exported("HOME", home_dir());
+    var_set("COMP_WORDBREAKS", " \t\n\"'><=;|&(");
     var_unexport("_");
     if (!getenv("SHELL")) {
         char exe[PATH_BUF];
