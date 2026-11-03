@@ -110,3 +110,10 @@ check not_operator "$(! false && echo negated)" negated
 long_list=$(seq 1 20000 | sed "s/.*/long_count=&/")
 eval "$long_list"
 check long_statement_list "$long_count" 20000
+
+roundtrip_case() { case $1 in a|b) echo ab ;; c) echo c ;& d) echo d ;; esac; }
+eval "$(declare -f roundtrip_case)"
+check case_alternatives_survive_declare "$(roundtrip_case b)" ab
+check case_fallthrough_survives_declare "$(roundtrip_case c | tr '\n' ' ')" "c d "
+check case_function_in_background "$(true & wait $!; echo $?)" 0
+unset -f roundtrip_case

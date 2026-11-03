@@ -56,3 +56,16 @@ set -- one two three
 argv=("$@")
 printf '%s\n' "${#argv[@]}"
 printf '%s\n' "${argv[1]}"
+
+letters=(a b c d)
+i=2
+printf '%s\n' "${letters[i]}" "${letters[i+1]}" "${letters[i-1]}" "${#letters[i]}"
+letters[i]=C
+printf '%s\n' "${letters[*]}"
+unset 'letters[i-2]'
+printf '%s\n' "${letters[*]}"
+
+tab=$(printf '\t')
+items=("list${tab}desc" two)
+printf '[%s]\n' "${items[0]%%"$tab"*}" "${items[1]#t}" "${items[0]:0:3}" "${items[1]/w/W}" "${items[1]^^}"
+printf '[%s]\n' "${items[1]:-x}" "${items[5]:-fallback}" "${items[7]-unset}" "${items[1]:+set}" "${items[i-1]%o}"

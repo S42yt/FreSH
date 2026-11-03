@@ -26,6 +26,7 @@ it on every build.
 | `cases/jobs.frsh` | background jobs: `jobs`, `fg`, `bg`, `stop`, `wait`, `disown`, `kill %job` |
 | `cases/task.frsh` | the `task` runner: starting, logs, states, `wait`, `stop`, `clear` |
 | `cases/commands.frsh` | bundled commands: `grep`, `sed`, `awk`, `sort` and friends |
+| `cases/completion.frsh` | `complete`, `compgen`, `compopt`, completion functions and scripts, through `fresh complete` |
 
 ## Adding a case
 

@@ -75,6 +75,33 @@ static const HelpEntry ENTRIES[] = {
     {"command", "command [-v] <name> [<argument> ...]", "run past a function of the same name",
      "  -v   say what would run instead of running it"},
 
+    {"complete", "complete [-abcdefkuv] [-o <option>] [-A <action>] [-W <words>] [-F <function>] [-C <command>] [-X <filter>] [-P <prefix>] [-S <suffix>] [-pr] [<name> ...]",
+     "tell Tab how to complete a command's arguments",
+     "  -W   complete from a list of words, expanded when Tab is pressed\n"
+     "  -F   call a function with COMP_WORDS and COMP_CWORD set, and offer its COMPREPLY\n"
+     "  -C   run a command with COMP_LINE and COMP_POINT exported, one match per line\n"
+     "  -f -d -c -v -a -b -k -e -u   files, directories, commands, variables, aliases,\n"
+     "       builtins, keywords, exported variables, the user\n"
+     "  -o   nospace, filenames, dirnames, plusdirs, nosort, default, bashdefault\n"
+     "  -X   drop the matches that fit a pattern, or keep them with a leading !\n"
+     "  -p   print the specifications, as commands that recreate them\n"
+     "  -r   remove them\n"
+     "A script in ~/.fresh/completions named after the command is loaded on the first Tab.\n"
+     "  complete -W 'start stop status' svc\n"
+     "  complete -o nospace -F _git git"},
+
+    {"compgen", "compgen [-abcdefkuv] [-o <option>] [-A <action>] [-W <words>] [-C <command>] [-X <filter>] [-P <prefix>] [-S <suffix>] [<word>]",
+     "print what Tab would offer for a word",
+     "Takes the options of complete and prints one match per line.\n"
+     "Returns 1 when nothing matches.\n"
+     "  compgen -W 'add commit push' -- co"},
+
+    {"compopt", "compopt [-o <option>] [+o <option>] [<name> ...]",
+     "change the options of a completion while it runs",
+     "  -o   turn an option on, such as nospace or filenames\n"
+     "  +o   turn it off\n"
+     "With no name it changes the completion running now, from inside its function."},
+
     {"copy", "copy [<text> ...]", "put text on the clipboard",
      "With no argument it takes what comes down the pipe.\n"
      "  ls | copy"},
@@ -151,10 +178,11 @@ static const HelpEntry ENTRIES[] = {
      "Arguments arrive as $1 $2 and $@, and local keeps a variable inside.\n"
      "  greet() { echo \"hi $1\"; }"},
 
-    {"fresh", "fresh [version|doctor|update [--check] [--pre] [--selector]]",
+    {"fresh", "fresh [version|doctor|complete <line>|update [--check] [--pre] [--selector]]",
      "about this shell, and looking after it",
      "  fresh                    version, paths, theme and plugins\n"
      "  fresh doctor             check ~/.freshrc and say where it breaks\n"
+     "  fresh complete <line>    print what Tab offers at the end of the line\n"
      "  fresh update             fetch and install the newest release\n"
      "  fresh update --check     only say whether there is one\n"
      "  fresh update --pre       take the newest prerelease as well\n"

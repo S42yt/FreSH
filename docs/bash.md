@@ -58,11 +58,11 @@ and `>(...)`, and `/dev/null`, `/dev/stdout`, `/dev/stderr`.
 ### Builtins
 
 ```
-:  .  [  alias  bg  break  builtin  cd  command  continue  declare  dirs
-disown  echo  eval  exec  exit  export  false  fg  getopts  help  history
-jobs  kill  let  local  mapfile  popd  printf  pushd  pwd  read  readarray
-readonly  return  set  shift  shopt  source  test  trap  true  type  typeset
-unalias  unset  wait
+:  .  [  alias  bg  break  builtin  cd  command  compgen  complete  compopt
+continue  declare  dirs  disown  echo  eval  exec  exit  export  false  fg
+getopts  help  history  jobs  kill  let  local  mapfile  popd  printf  pushd
+pwd  read  readarray  readonly  return  set  shift  shopt  source  test  trap
+true  type  typeset  unalias  unset  wait
 ```
 
 Their options, exit statuses and output follow bash 5, down to the format of
@@ -70,6 +70,14 @@ Their options, exit statuses and output follow bash 5, down to the format of
 differential checks each of them. `set -e -u -x -f -o pipefail --`, `shopt -s
 globstar nullglob dotglob extglob nocasematch expand_aliases`, `trap` for EXIT
 HUP INT QUIT TERM ERR DEBUG RETURN.
+
+### Completion
+
+`complete -F`, `-W`, `-C`, `-X`, `-P`, `-S`, `-G`, `-o` and the actions,
+`compgen` with the same options, and `compopt`. A completion function gets
+`COMP_WORDS`, `COMP_CWORD`, `COMP_LINE` and `COMP_POINT` and answers in
+`COMPREPLY`, so the bash completion scripts tools ship, git's included, run
+unchanged. The details are in [Tab completion](completion.md).
 
 ### Patterns
 
@@ -112,8 +120,8 @@ and an unquoted `${a[@]}` splits its elements again.
   the definition does see it.
 - Duplicating an input descriptor, `cmd <&3` and `3<&-`, and a here string on
   a descriptor other than 0, `3<<< text`. `read -u 3` and `3>&-` work.
-- `compgen` and `complete`: FreSH has its own completion, described in
-  [Tab completion](completion.md), and `bind` binds keys in the FreSH way,
+- `complete -D`, `-E` and `-I`, and the bash-completion library beyond
+  `_get_comp_words_by_ref` and `_filedir`. `bind` binds keys in the FreSH way,
   described in [shortcuts](shortcuts.md).
 - `jobs -n`, `jobs -x`, `suspend` and `set -b`.
 - Signals other than the eight above, which Windows does not deliver.
@@ -124,6 +132,10 @@ and an unquoted `${a[@]}` splits its elements again.
 ## Where FreSH differs on purpose
 
 - Paths use forward slashes, and `\` stays an escape character.
+- Completion splits words on `COMP_WORDBREAKS` without the `:` bash puts in
+  it, so `C:/Users` stays one word, and a completion that offers nothing hands
+  Tab back to FreSH's own. Both are explained in
+  [Tab completion](completion.md#where-it-differs-from-bash).
 - `printf`, `echo`, `find`, `sort` and `awk` always use the built in version,
   so a script behaves the same on every machine. Call `gawk` or a full path for
   a different one.

@@ -185,6 +185,7 @@ void vars_init(void) {
         var_set_exported("PWD", cwd);
     }
     if (!getenv("HOME")) var_set_exported("HOME", home_dir());
+    var_set("COMP_WORDBREAKS", " \t\n\"'><=;|&(");
     var_unexport("_");
     if (!getenv("SHELL")) {
         char exe[PATH_BUF];
@@ -429,14 +430,23 @@ void var_set_array(const char *name, const StrList *values, VarKind kind) {
     }
 }
 
+static const char *indexed_key(Entry *e, const char *index, char *buffer, size_t size) {
+    if (e->kind == VAR_ASSOC) return index;
+    const char *digits = index[0] == '-' ? index + 1 : index;
+    int numeric = *digits != '\0';
+    for (const char *p = digits; *p; p++) {
+        if (!isdigit((unsigned char)*p)) numeric = 0;
+    }
+    int ok = 1;
+    long n = numeric ? atol(index) : eval_arith(index, &ok);
+    if (n < 0) n += (long)e->values.len;
+    snprintf(buffer, size, "%ld", n);
+    return buffer;
+}
+
 static int index_position(Entry *e, const char *index) {
     char resolved[24];
-    if (index[0] == '-' && e->kind == VAR_INDEXED) {
-        int n = (int)e->values.len + atoi(index);
-        if (n < 0) return -1;
-        snprintf(resolved, sizeof(resolved), "%d", n);
-        index = resolved;
-    }
+    index = indexed_key(e, index, resolved, sizeof(resolved));
     for (size_t i = 0; i < e->keys.len; i++) {
         if (strcmp(e->keys.items[i], index) == 0) return (int)i;
     }
@@ -471,7 +481,8 @@ void var_set_element(const char *name, const char *index, const char *value) {
         e->values.items[position] = cased_copy(e, value);
         return;
     }
-    sl_push_copy(&e->keys, index);
+    char resolved[24];
+    sl_push_copy(&e->keys, indexed_key(e, index, resolved, sizeof(resolved)));
     sl_push(&e->values, cased_copy(e, value));
 }
 
@@ -590,7 +601,10 @@ int var_is_integer(const char *name) {
 const char *var_get_element(const char *name, const char *index) {
     Entry *e = find(name);
     if (!e) return NULL;
-    if (e->kind == VAR_SCALAR) return strcmp(index, "0") == 0 ? e->value : NULL;
+    if (e->kind == VAR_SCALAR) {
+        char resolved[24];
+        return strcmp(indexed_key(e, index, resolved, sizeof(resolved)), "0") == 0 ? e->value : NULL;
+    }
 
     int position = index_position(e, index);
     return position >= 0 ? e->values.items[position] : NULL;

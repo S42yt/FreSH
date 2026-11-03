@@ -1,0 +1,127 @@
+suite completion
+
+work=.fresh-test-completion
+rm -r "$work" 2> /dev/null
+mkdir -p "$work/files/sub" "$work/home/completions"
+: > "$work/files/first.pdf"
+: > "$work/files/fine.txt"
+
+joined() { tr '\n' ' ' | sed 's/ $//'; }
+
+check compgen_words "$(compgen -W 'add commit push' -- co)" commit
+check compgen_words_sorted "$(compgen -W 'push add apply' -- a | joined)" "add apply"
+compgen_list='alpha beta'
+check compgen_words_expand "$(compgen -W '$compgen_list' -- b)" beta
+check compgen_filter_out "$(compgen -W 'a.txt b.pdf' -X '*.pdf' -- | joined)" a.txt
+check compgen_filter_keep "$(compgen -W 'a.txt b.pdf' -X '!*.pdf' -- | joined)" b.pdf
+check compgen_prefix_suffix "$(compgen -W 'one' -P '<' -S '>' -- o)" "<one>"
+compgen_variable_one=1
+check compgen_variables "$(compgen -v compgen_variable_o)" compgen_variable_one
+check compgen_files "$(cd "$work/files" && compgen -f fi | joined)" "fine.txt first.pdf"
+check compgen_directories "$(cd "$work/files" && compgen -d s)" sub
+check compgen_nothing "$(compgen -W 'one' -- z; echo $?)" 1
+check compgen_bad_option "$(compgen -o nonsense -- x 2> /dev/null; echo $?)" 2
+
+complete -W 'start stop status' svc
+check complete_print "$(complete -p svc)" "complete -W 'start stop status' svc"
+check complete_words "$(fresh complete 'svc st' | joined)" "start status stop"
+check complete_words_after_options "$(fresh complete 'svc -x sto')" stop
+
+_ct_tool() { COMPREPLY=($(compgen -W "one two three" -- "${COMP_WORDS[COMP_CWORD]}")); }
+complete -F _ct_tool ct_tool
+check complete_function "$(fresh complete 'ct_tool t' | joined)" "three two"
+check complete_function_print "$(complete -p ct_tool)" "complete -F _ct_tool ct_tool"
+
+_ct_args() { COMPREPLY=("$1|$2|$3"); }
+complete -F _ct_args ct_args
+check complete_function_arguments "$(fresh complete 'ct_args foo ba')" "ct_args|ba|foo"
+
+_ct_cword() { COMPREPLY=("$COMP_CWORD:${COMP_WORDS[COMP_CWORD]}:${#COMP_WORDS[@]}"); }
+complete -F _ct_cword ct_cword
+check complete_cword "$(fresh complete 'ct_cword one tw')" "2:tw:3"
+check complete_cword_new_word "$(fresh complete 'ct_cword one ')" "2::3"
+check complete_cword_equals "$(fresh complete 'ct_cword --color=al')" "3:al:4"
+check complete_line_and_point "$(_ct_point() { COMPREPLY=("$COMP_LINE@$COMP_POINT"); }; complete -F _ct_point ct_point; fresh complete 'echo hi; ct_point x')" "ct_point x@10"
+
+_ct_ref() {
+  local cur prev words cword
+  _get_comp_words_by_ref -n = cur prev words cword
+  COMPREPLY=("$cword:$cur:$prev:${words[0]}")
+}
+complete -F _ct_ref ct_ref
+check words_by_ref_joins "$(fresh complete 'ct_ref a --color=al')" "2:--color=al:a:ct_ref"
+_ct_ref_split() {
+  local cur prev
+  _get_comp_words_by_ref cur prev
+  COMPREPLY=("$cur:$prev")
+}
+complete -F _ct_ref_split ct_ref_split
+check words_by_ref_splits "$(fresh complete 'ct_ref_split --color=al')" "al:="
+
+_ct_quiet() { echo noise; echo more noise >&2; COMPREPLY=(quiet); }
+complete -F _ct_quiet ct_quiet
+check complete_function_is_silenced "$(fresh complete 'ct_quiet q' 2>&1)" quiet
+
+_ct_exit() { set -e; false; exit 3; }
+complete -F _ct_exit ct_exit
+check complete_survives_exit "$(fresh complete 'ct_exit x'; echo alive)" alive
+
+_ct_empty() { COMPREPLY=(); }
+complete -F _ct_empty ct_empty
+check complete_empty_falls_back "$(cd "$work/files" && fresh complete 'ct_empty fi' | joined)" "fine.txt first.pdf"
+
+_ct_files() {
+  local cur
+  _get_comp_words_by_ref cur
+  _filedir pdf
+}
+complete -F _ct_files ct_files
+check filedir_extension "$(cd "$work/files" && fresh complete 'ct_files ' | joined)" "first.pdf sub/"
+_ct_dirs() {
+  local cur
+  _get_comp_words_by_ref cur
+  _filedir -d
+}
+complete -F _ct_dirs ct_dirs
+check filedir_directories "$(cd "$work/files" && fresh complete 'ct_dirs ')" sub/
+
+complete -C 'printf "%s\n" "x-$COMP_POINT"' ct_command
+check complete_command "$(fresh complete 'ct_command a' | joined)" "a ct_command x-12"
+
+alias ct_alias=ct_tool
+check complete_through_alias "$(fresh complete 'ct_alias tw')" two
+unalias ct_alias
+
+complete -o nospace -o filenames -W 'x' ct_options
+check complete_print_options "$(complete -p ct_options)" "complete -o filenames -o nospace -W 'x' ct_options"
+compopt +o nospace ct_options
+check compopt_named "$(complete -p ct_options)" "complete -o filenames -W 'x' ct_options"
+check compopt_outside "$(compopt -o nospace 2> /dev/null; echo $?)" 1
+check compopt_is_builtin "$(type -t compopt)" builtin
+
+complete -r ct_options
+check complete_remove "$(complete -p ct_options 2> /dev/null; echo $?)" 1
+
+saved_fresh_home=$FRESH_HOME
+FRESH_HOME=$work/home
+printf "complete -W 'from-the-file' ct_loaded\n" > "$work/home/completions/ct_loaded"
+check complete_loads_from_home "$(fresh complete 'ct_loaded fr')" from-the-file
+printf "complete -W 'bash-named' ct_named\n" > "$work/home/completions/ct_named.bash"
+check complete_loads_bash_file "$(fresh complete 'ct_named b')" bash-named
+if [ -n "$saved_fresh_home" ]; then FRESH_HOME=$saved_fresh_home; else unset FRESH_HOME; fi
+
+if have git; then
+  git_home=$(dirname "$(command -v git)")/..
+  for git_script in share/bash-completion/completions/git etc/bash_completion.d/git-completion.bash \
+                    share/git/completion/git-completion.bash mingw64/share/git/completion/git-completion.bash; do
+    if [ -f "$git_home/$git_script" ]; then
+      check git_completion_script "$(fresh complete 'git sw' | sed 's/ *$//')" switch
+      break
+    fi
+  done
+fi
+
+check help_complete "$(help complete | grep -c 'COMPREPLY')" 1
+
+complete -r svc ct_tool ct_args ct_cword ct_point ct_ref ct_ref_split ct_quiet ct_exit ct_empty ct_files ct_dirs ct_command ct_loaded ct_named
+rm -r "$work"

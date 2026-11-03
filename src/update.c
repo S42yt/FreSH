@@ -15,6 +15,7 @@
 #include <wininet.h>
 #endif
 
+#include "complete.h"
 #include "config.h"
 #include "keys.h"
 #include "rustcore.h"
@@ -907,9 +908,20 @@ int builtin_fresh(int argc, char **argv) {
         return 0;
     }
 
+    if (argc == 3 && strcmp(argv[1], "complete") == 0) {
+        StrList matches;
+        sl_init(&matches);
+        size_t start = 0;
+        complete_at(argv[2], strlen(argv[2]), &matches, &start);
+        for (size_t i = 0; i < matches.len; i++) printf("%s\n", matches.items[i]);
+        int found = matches.len > 0;
+        sl_free(&matches);
+        return found ? 0 : 1;
+    }
+
     if (argc > 1) {
         shell_error(
-            "fresh: usage: fresh [version | doctor | update [--check] [--pre] [--selector]]");
+            "fresh: usage: fresh [version | doctor | complete <line> | update [--check] [--pre] [--selector]]");
         return 2;
     }
 
