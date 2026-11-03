@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "builtins.h"
+#include "action.h"
 #include "complete.h"
 #include "commands.h"
 #include "exec.h"
@@ -473,6 +474,18 @@ char *line_read(int continuation) {
 
     char *result = NULL;
     while (1) {
+        while (!continuation && actions_idle_waiting() && !term_key_within(250)) {
+            if (!actions_idle_due()) continue;
+            StrBuf clear;
+            sb_init(&clear);
+            if (editor.rows_up > 0) sb_printf(&clear, "\x1b[%dA", editor.rows_up);
+            sb_puts(&clear, "\r\x1b[J");
+            term_write(clear.data);
+            sb_free(&clear);
+            editor.rows_up = 0;
+            actions_idle_fire();
+            render(&editor);
+        }
         int key = term_read_key();
         int pasting = term_input_pending();
         int was_tab = key == KEY_TAB;

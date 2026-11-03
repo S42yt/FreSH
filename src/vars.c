@@ -771,6 +771,90 @@ void scope_pop(void) {
     free(scope->items);
 }
 
+typedef struct {
+    Scope *frames;
+    size_t count;
+    Entry *live;
+    int *has_live;
+} Detached;
+
+size_t scope_level(void) {
+    return scope_depth;
+}
+
+static void take_entry(const char *name, Entry *out, int *found) {
+    Entry *current = find(name);
+    *found = current != NULL;
+    if (!current) return;
+    *out = *current;
+    release_slot(current);
+    memset(current, 0, sizeof(Entry));
+}
+
+static void put_entry(const char *name, Entry *entry) {
+    Entry *placed = add(name);
+    free(placed->name);
+    sl_free(&placed->keys);
+    sl_free(&placed->values);
+    *placed = *entry;
+}
+
+void *scope_detach(size_t base) {
+    if (base >= scope_depth) return NULL;
+
+    Detached *d = xmalloc(sizeof(Detached));
+    d->count = scope_depth - base;
+    d->frames = xmalloc(d->count * sizeof(Scope));
+    size_t total = 0;
+    for (size_t f = base; f < scope_depth; f++) total += scopes[f].len;
+    d->live = xmalloc((total ? total : 1) * sizeof(Entry));
+    d->has_live = xmalloc((total ? total : 1) * sizeof(int));
+
+    size_t slot = total;
+    for (size_t f = scope_depth; f > base; f--) {
+        Scope *scope = &scopes[f - 1];
+        for (size_t i = scope->len; i > 0; i--) {
+            Saved *saved = &scope->items[i - 1];
+            slot--;
+            take_entry(saved->name, &d->live[slot], &d->has_live[slot]);
+            if (saved->existed) put_entry(saved->name, &saved->saved);
+            else entry_free(&saved->saved);
+        }
+        d->frames[f - 1 - base] = *scope;
+    }
+    scope_depth = base;
+    return d;
+}
+
+void scope_attach(void *handle) {
+    Detached *d = handle;
+    if (!d) return;
+
+    size_t slot = 0;
+    for (size_t f = 0; f < d->count; f++) {
+        if (scope_depth + 1 >= scope_cap) {
+            scope_cap = scope_cap ? scope_cap * 2 : 8;
+            scopes = xrealloc(scopes, scope_cap * sizeof(Scope));
+        }
+        Scope *scope = &scopes[scope_depth++];
+        *scope = d->frames[f];
+        for (size_t i = 0; i < scope->len; i++, slot++) {
+            Saved *saved = &scope->items[i];
+            take_entry(saved->name, &saved->saved, &saved->existed);
+            if (!saved->existed) {
+                memset(&saved->saved, 0, sizeof(Entry));
+                sl_init(&saved->saved.keys);
+                sl_init(&saved->saved.values);
+            }
+            if (d->has_live[slot]) put_entry(saved->name, &d->live[slot]);
+        }
+    }
+    free(d->frames);
+    free(d->live);
+    free(d->has_live);
+    free(d);
+}
+
 void var_make_local(const char *name) {
     if (scope_depth == 0) return;
     Scope *scope = &scopes[scope_depth - 1];

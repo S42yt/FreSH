@@ -20,6 +20,7 @@
 #include <unistd.h>
 #endif
 
+#include "action.h"
 #include "commands.h"
 #include "complete.h"
 #include "exec.h"
@@ -3161,6 +3162,7 @@ static const Builtin BUILTINS[] = {
     {"man", builtin_man},
     {"complete", builtin_complete_spec}, {"compgen", builtin_compgen},
     {"compopt", builtin_compopt},
+    {"yield", builtin_yield},       {"action", builtin_action},
     {"_get_comp_words_by_ref", builtin_comp_words_by_ref},
     {"_filedir", builtin_filedir},
 };

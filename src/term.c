@@ -175,6 +175,14 @@ int term_input_pending(void) {
     return pushback >= 0 || _kbhit() != 0;
 }
 
+int term_key_within(int milliseconds) {
+    for (int waited = 0;; waited += 20) {
+        if (term_input_pending()) return 1;
+        if (waited >= milliseconds) return 0;
+        Sleep(20);
+    }
+}
+
 int term_read_key(void) {
     int ch;
     if (pushback >= 0) {
@@ -298,6 +306,11 @@ static int read_byte(void) {
 
 int term_input_pending(void) {
     return byte_ready(0);
+}
+
+int term_key_within(int milliseconds) {
+    term_raw();
+    return term_input_pending() || term_input_wait(0, milliseconds);
 }
 
 int term_input_wait(int fd, int milliseconds) {
