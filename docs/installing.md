@@ -208,3 +208,10 @@ FreSH C:\some\folder        # start in a folder
 FreSH --version
 ```
 
+As in bash, the words after a `-c` command become its arguments, starting at
+`$0`, and an option after the command is an argument too:
+
+```sh
+FreSH -c 'echo "$0 got $1 and $2"' name a b    # name got a and b
+```
+

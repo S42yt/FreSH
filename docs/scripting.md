@@ -90,7 +90,7 @@ Expansion forms:
 | `${name:=other}` | value, assigning `other` first when unset |
 | `${#name}` | length of the value |
 | `$1` `$2` ... | positional arguments |
-| `$0` | script path |
+| `$0` | script path, or the first word after a `-c` command |
 | `$#` | number of arguments |
 | `$@` `$*` | all arguments, `"$@"` keeps them separate |
 | `$?` | exit status of the last command |

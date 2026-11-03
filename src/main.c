@@ -544,7 +544,9 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
             command = argv[++i];
+            script_arg = i + 1;
             interactive = 0;
+            break;
         } else if (strcmp(argv[i], "--norc") == 0 || strcmp(argv[i], "--noprofile") == 0) {
             read_rc = 0;
         } else if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -576,6 +578,11 @@ int main(int argc, char *argv[]) {
     int status = 0;
     if (command) {
         if (read_rc) load_rc();
+        if (script_arg < argc) {
+            sl_free(&shell.params);
+            sl_init(&shell.params);
+            for (int i = script_arg; i < argc; i++) sl_push_copy(&shell.params, argv[i]);
+        }
         status = exec_text(command);
     } else if (script) {
         if (read_rc) load_rc();
