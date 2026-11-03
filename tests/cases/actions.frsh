@@ -1,0 +1,117 @@
+suite actions
+
+work=.fresh-test-actions
+rm -r "$work" 2> /dev/null
+mkdir -p "$work/sub"
+
+act_log=""
+*act_commands() { while :; do yield command; act_log+="[$?]"; done; }
+act_commands
+true
+false
+true
+check yield_command_status "$act_log" "[0][1][0]"
+action stop act_commands
+
+*act_line() { yield command; act_seen=$FRESH_EVENT_ARG; act_event=$FRESH_EVENT; }
+act_line
+true with words
+check yield_command_line "$act_seen" "true with words"
+check yield_command_event "$act_event" command
+
+act_matched=""
+*act_pattern() { while :; do yield command printf; act_matched+="hit "; done; }
+act_pattern
+true
+printf ''
+true
+check yield_command_pattern "$act_matched" "hit "
+action stop act_pattern
+
+act_kept=""
+*act_noisy() { while :; do yield command; true; done; }
+act_noisy
+false
+act_kept=$?
+check yield_keeps_main_status "$act_kept" 1
+action stop act_noisy
+
+act_dirs=""
+*act_cd() { while :; do yield cd; act_dirs+="${FRESH_EVENT_ARG##*/} "; done; }
+act_cd
+cd "$work/sub"
+cd ../..
+check yield_cd "$act_dirs" "sub $(basename "$(pwd)") "
+action stop act_cd
+
+act_timer=""
+*act_after() { yield after 0; act_timer=fired; }
+act_after
+true
+check yield_after "$act_timer" fired
+
+act_changed=""
+*act_change() { yield change "$work/watched"; act_changed=$FRESH_EVENT; }
+act_change
+true
+check yield_change_waits "$act_changed" ""
+: > "$work/watched"
+true
+check yield_change "$act_changed" change
+
+*act_local() { local act_private=inside; yield command true; act_after_local=$act_private; }
+act_local
+check action_local_hidden "${act_private-unset}" unset
+act_private=outside
+true
+check action_local_kept "$act_after_local" inside
+check action_local_restored "$act_private" outside
+
+*act_params() { act_first=$1; yield command true; act_again=$1; }
+set -- main-one main-two
+act_params from-action
+check action_params_own "$act_first" from-action
+check action_params_main "$1" main-one
+true
+check action_params_resume "$act_again" from-action
+set --
+
+*act_exit() { yield command; exit 3; }
+act_exit
+true
+check action_exit_keeps_shell "$(action list | grep -c act_exit)" 0
+
+*act_quick() { return 4; }
+act_quick
+check star_without_yield "$?" 4
+check star_declare "$(declare -f act_quick | head -n 1)" "*act_quick () "
+check star_background "$(true & wait $!; echo $?)" 0
+
+check yield_outside "$(yield cd 2> /dev/null; echo $?)" 2
+*act_capture() { act_captured=$(yield cd 2> /dev/null; echo $?); }
+act_capture
+check yield_in_substitution "$act_captured" 1
+check yield_bad_usage "$( *act_usage() { yield sometime 2> /dev/null; echo $?; }; act_usage)" 2
+
+act_hits=0
+*act_redefine() { while :; do yield command; act_hits=$((act_hits + 1)); done; }
+act_redefine
+act_redefine() { :; }
+true
+true
+check action_survives_redefine "$act_hits" 2
+action stop act_redefine
+
+printf '#! fresh_action\n*act_from_file() { while :; do yield prompt; done; }\n' > "$work/one.frsh"
+action run "$work/one.frsh"
+check action_run_file "$(action list | grep -c 'act_from_file.*waiting for the prompt.*one.frsh')" 1
+printf '*act_no_header() { :; }\n' > "$work/plain.frsh"
+check action_run_needs_header "$(action run "$work/plain.frsh" 2> /dev/null; echo $?)" 1
+check action_stop_unknown "$(action stop nothing_like_this 2> /dev/null; echo $?)" 1
+action stop all
+check action_stop_all "$(action list)" "  no actions running"
+
+check help_yield "$(help yield | grep -c 'FRESH_EVENT')" 1
+
+unset -f act_commands act_line act_pattern act_noisy act_cd act_after act_change act_local act_params act_exit act_quick act_capture act_redefine act_from_file act_usage
+rm -r "$work"

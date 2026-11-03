@@ -16,6 +16,7 @@
 #include <signal.h>
 #endif
 
+#include "action.h"
 #include "config.h"
 #include "exec.h"
 #include "history.h"
@@ -372,6 +373,7 @@ static void interactive_loop(void) {
 
     while (shell.running) {
         jobs_notify();
+        actions_before_prompt();
         char *line = line_read(0);
         if (!line) break;
 
@@ -402,13 +404,15 @@ static void interactive_loop(void) {
                 if (changed) printf("%s\n", expanded);
                 history_add(expanded);
                 history_save();
-                exec_text(expanded);
+                actions_begin();
+                actions_after_line(expanded, exec_text(expanded));
                 free(expanded);
             }
         } else if (*trimmed) {
             history_add(trimmed);
             history_save();
-            exec_text(trimmed);
+            actions_begin();
+            actions_after_line(trimmed, exec_text(trimmed));
         }
         sb_free(&command);
     }
@@ -593,6 +597,7 @@ int main(int argc, char *argv[]) {
         sl_free(&args);
     } else {
         if (read_rc) load_rc();
+        if (read_rc && option_enabled("FRESH_ACTIONS", 1)) actions_load_folder();
         history_load();
         interactive_loop();
         history_save();

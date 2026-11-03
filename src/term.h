@@ -63,6 +63,7 @@ int term_width(void);
 int term_height(void);
 int term_read_key(void);
 int term_input_pending(void);
+int term_key_within(int milliseconds);
 int term_input_wait(int fd, int milliseconds);
 void term_echo(int fd, int on);
 void term_write(const char *s);

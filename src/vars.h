@@ -53,6 +53,9 @@ void var_append(const char *name, const char *value);
 
 void scope_push(void);
 void scope_pop(void);
+size_t scope_level(void);
+void *scope_detach(size_t base);
+void scope_attach(void *handle);
 
 void *vars_snapshot(void);
 void vars_restore(void *handle);

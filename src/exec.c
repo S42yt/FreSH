@@ -24,6 +24,7 @@ extern char **environ;
 
 #include "term.h"
 
+#include "action.h"
 #include "builtins.h"
 #include "commands.h"
 #include "expand.h"
@@ -63,6 +64,8 @@ typedef struct {
 } FdSave;
 
 static Table function_table;
+static Table star_table;
+static int isolation;
 
 static HANDLE tracked[MAX_TRACKED];
 static int tracked_count = 0;
@@ -123,7 +126,7 @@ void exec_cleanup(void) {
 }
 
 static void function_release(void *body) {
-    node_free(body);
+    if (!action_adopt(body)) node_free(body);
 }
 
 static Node *function_find(const char *name) {
@@ -132,7 +135,28 @@ static Node *function_find(const char *name) {
 
 void function_define(const char *name, Node *body) {
     if (!function_table.buckets) table_init(&function_table, 32, 0, function_release);
+    if (!star_table.buckets) table_init(&star_table, 8, 0, NULL);
+    int star = name[0] == '*' && name[1];
+    if (star) name++;
     table_put(&function_table, name, body);
+    if (star) {
+        table_put(&star_table, name, (void *)1);
+        action_note_function(name);
+    } else {
+        table_remove(&star_table, name);
+    }
+}
+
+int function_is_star(const char *name) {
+    return star_table.buckets && table_get(&star_table, name) != NULL;
+}
+
+Node *function_body(const char *name) {
+    return function_find(name);
+}
+
+int exec_isolated(void) {
+    return isolation;
 }
 
 int function_defined(const char *name) {
@@ -140,13 +164,14 @@ int function_defined(const char *name) {
 }
 
 int function_undefine(const char *name) {
+    if (star_table.buckets) table_remove(&star_table, name);
     return function_table.buckets && table_remove(&function_table, name);
 }
 
 int function_source(const char *name, StrBuf *out) {
     Node *body = function_find(name);
     if (!body) return 0;
-    sb_printf(out, "%s () \n", name);
+    sb_printf(out, "%s%s () \n", function_is_star(name) ? "*" : "", name);
     node_source(body, out);
     return 1;
 }
@@ -556,6 +581,7 @@ static void discard_stdin_buffer(void) {
 }
 
 static void fds_apply(const IoSet *io, FdSave *save) {
+    isolation++;
     IoSet base = io_default();
     save->saved[0] = save->saved[1] = save->saved[2] = -1;
     fflush(stdout);
@@ -614,6 +640,7 @@ static void fds_apply(const IoSet *io, FdSave *save) {
 }
 
 static void fds_restore(FdSave *save) {
+    isolation--;
     fflush(stdout);
     fflush(stderr);
     if (save->saved[0] >= 0) discard_stdin_buffer();
@@ -666,6 +693,7 @@ static int io_assign(IoSet *io, int fd, HANDLE handle) {
 }
 
 static void fds_discard(FdSave *save) {
+    isolation--;
     for (int i = 0; i < 3; i++) {
         if (save->saved[i] >= 0) _close(save->saved[i]);
         save->saved[i] = -1;
@@ -1061,6 +1089,10 @@ static int call_function(Node *body, const StrList *args) {
     return status;
 }
 
+int exec_function_body(Node *body, const StrList *args) {
+    return call_function(body, args);
+}
+
 static int run_program(const char *path, char **argv, int argc, IoSet *io, HANDLE *async_out) {
     int status = 0;
 #ifdef _WIN32
@@ -1296,7 +1328,8 @@ static void background_preamble(StrBuf *out) {
     for (size_t i = 0; i < names.len; i++) {
         Node *body = function_find(names.items[i]);
         if (!body) continue;
-        sb_printf(out, "%s() {\n", names.items[i]);
+        sb_printf(out, "%s%s() {\n", function_is_star(names.items[i]) ? "*" : "",
+                  names.items[i]);
         node_source(body, out);
         sb_puts(out, "\n}\n");
     }
@@ -1474,7 +1507,8 @@ static int exec_simple(Node *node, IoSet io, int background, HANDLE *async_out) 
             StrList args;
             sl_init(&args);
             for (int i = 0; i < argc; i++) sl_push_copy(&args, argv[i]);
-            status = call_function(f, &args);
+            status = function_is_star(argv[0]) ? action_start(argv[0], f, &args)
+                                               : call_function(f, &args);
             sl_free(&args);
         } else if (builtin) {
             status = builtin(argc, argv);
@@ -2623,7 +2657,11 @@ static int exec_switch(Node *node) {
         Node *link = node;
         for (size_t i = depth; i > 0; i--, link = link->left) order[i] = link->right;
         order[0] = link;
-        for (size_t i = 0; i <= depth; i++) status = exec_node(order[i]);
+        for (size_t i = 0; i <= depth; i++) {
+            actions_begin();
+            status = exec_node(order[i]);
+            actions_statement(order[i], status);
+        }
         if (order != local) free(order);
         break;
     }
@@ -2883,7 +2921,9 @@ int exec_subshell(const char *text) {
     void *snapshot = vars_snapshot();
     int was_running = shell.running;
 
+    isolation++;
     int status = exec_text(text);
+    isolation--;
     if (!shell.running) {
         shell.running = was_running;
         status = shell.last_status;
@@ -3064,7 +3104,9 @@ int capture_command(const char *command, StrBuf *out) {
     void *snapshot = vars_snapshot();
     int was_running = shell.running;
 
+    isolation++;
     int status = exec_text(command);
+    isolation--;
 
     if (!shell.running) {
         shell.running = was_running;

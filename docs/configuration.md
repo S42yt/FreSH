@@ -7,6 +7,8 @@
 | `~/.freshrc` | your settings, a FreSH script sourced every start |
 | `~/.fresh/themes/*.theme` | prompt themes |
 | `~/.fresh/plugins/*.plugin` | plugins |
+| `~/.fresh/actions/*.frsh` | [actions](actions.md), started with every interactive shell |
+| `~/.fresh/completions/` | [completion scripts](completion.md#where-fresh-looks), loaded on the first Tab |
 | `~/.fresh_history` | command history |
 
 `~` is `%USERPROFILE%` unless you set `HOME`. The `~/.fresh` folder can be
@@ -41,7 +43,9 @@ numbers in [benchmarks](benchmarks.md) were found.
    plugins
 4. the theme named by `FRESH_THEME` is sourced
 5. every plugin named in `FRESH_PLUGINS` is sourced, in order
-6. history is loaded and the prompt appears
+6. every `#! fresh_action` file in `~/.fresh/actions` is loaded and its
+   actions start, unless `FRESH_ACTIONS=0`
+7. history is loaded and the prompt appears
 
 Because the theme is sourced after `~/.freshrc`, a theme overrides a
 `FRESH_PROMPT` you set in `.freshrc`. To write your own prompt inline, set
@@ -165,6 +169,7 @@ so a script can rely on it.
 | `FRESH_FOREIGN` | `1` | send PowerShell cmdlets and cmd builtins to their own shell |
 | `FRESH_AUTOCD` | `1` | a directory name on its own becomes a `cd` |
 | `FRESH_JUMP` | `1` | remember visited directories for `z` |
+| `FRESH_ACTIONS` | `1` | start the [actions](actions.md) in `~/.fresh/actions` with an interactive shell |
 
 Colour is disabled automatically when output is redirected, so
 `ls > files.txt` never writes escape codes into the file.

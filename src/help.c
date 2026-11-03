@@ -75,6 +75,15 @@ static const HelpEntry ENTRIES[] = {
     {"command", "command [-v] <name> [<argument> ...]", "run past a function of the same name",
      "  -v   say what would run instead of running it"},
 
+    {"action", "action [list | run <file> ... | stop <name|id|all> ... | reload]",
+     "see and steer the actions running in this shell",
+     "  list     what is running and what each one waits for, the default\n"
+     "  run      load a #! fresh_action file and start its *functions\n"
+     "  stop     end an action by name or number, or all of them\n"
+     "  reload   stop the actions from ~/.fresh/actions and load the folder again\n"
+     "Every #! fresh_action file in ~/.fresh/actions starts with an interactive shell.\n"
+     "FRESH_ACTIONS=0 in ~/.freshrc turns that off."},
+
     {"complete", "complete [-abcdefkuv] [-o <option>] [-A <action>] [-W <words>] [-F <function>] [-C <command>] [-X <filter>] [-P <prefix>] [-S <suffix>] [-pr] [<name> ...]",
      "tell Tab how to complete a command's arguments",
      "  -W   complete from a list of words, expanded when Tab is pressed\n"
@@ -351,6 +360,17 @@ static const HelpEntry ENTRIES[] = {
     {"warn", "warn [<message> ...]", "print a message with a yellow bang", NULL},
 
     {"which", "which <name> ...", "the path a command resolves to", NULL},
+
+    {"yield", "yield cd | prompt | command [<pattern>] | after <time> | change <file>",
+     "pause a *function until something happens in the shell",
+     "FreSH addition. Only inside a function defined as *name() { ... }.\n"
+     "  cd        the working directory changed\n"
+     "  prompt    the next prompt is about to be drawn\n"
+     "  command   a command line finished, its status is what yield returns\n"
+     "  after     a time passed: 30s, 25m, 2h, 500ms\n"
+     "  change    a file changed, appeared or went away\n"
+     "FRESH_EVENT and FRESH_EVENT_ARG say what woke it.\n"
+     "  *remind() { yield after 25m; say 'take a break'; }"},
 
     {"awk", "awk [-F <sep>] [-v <name>=<value>] '<program>' [<file> ...]",
      "run a program over each line of input",
