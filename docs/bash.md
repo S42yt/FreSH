@@ -112,8 +112,9 @@ and an unquoted `${a[@]}` splits its elements again.
   the definition does see it.
 - Duplicating an input descriptor, `cmd <&3` and `3<&-`, and a here string on
   a descriptor other than 0, `3<<< text`. `read -u 3` and `3>&-` work.
-- `compgen` and `complete`: FreSH has its own completion, and `bind` binds keys
-  in the FreSH way, described in [shortcuts](shortcuts.md).
+- `compgen` and `complete`: FreSH has its own completion, described in
+  [Tab completion](completion.md), and `bind` binds keys in the FreSH way,
+  described in [shortcuts](shortcuts.md).
 - `jobs -n`, `jobs -x`, `suspend` and `set -b`.
 - Signals other than the eight above, which Windows does not deliver.
 - A descriptor above 2 is not passed to an external program. `printf x >&3`

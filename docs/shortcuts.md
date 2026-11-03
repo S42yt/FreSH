@@ -103,7 +103,7 @@ way to interrupt.
 ## Already there
 
 - **Tab** completes commands, files, variables and the flags a command's help
-  page lists, ignoring case.
+  page lists, ignoring case, see [Tab completion](completion.md).
 - **Up** and **Down** filter history by what you have typed, and **Ctrl+R**
   searches it.
 - **Right** or **End** accepts the grey suggestion from history.
