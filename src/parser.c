@@ -714,10 +714,13 @@ int node_source(const Node *node, StrBuf *out) {
     case N_CASE:
         sb_printf(out, "case %s in\n", node->name);
         for (const Node *item = node->right; item; item = item->extra) {
-            source_words(&item->words, out, 0);
+            for (size_t i = 0; i < item->words.len; i++) {
+                if (i > 0) sb_putc(out, '|');
+                sb_puts(out, item->words.items[i]);
+            }
             sb_puts(out, ") ");
             ok = ok && node_source(item->right, out);
-            sb_puts(out, " ;;\n");
+            sb_puts(out, item->background ? " ;&\n" : " ;;\n");
         }
         sb_puts(out, "esac");
         break;
