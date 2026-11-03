@@ -34,3 +34,10 @@ check iterate "$joined" "one.two.three.four.eight."
 text=start
 text+=middle
 check string_append "$text" startmiddle
+
+subscripted=(a b c d)
+position=2
+check subscript_variable "${subscripted[position]}" c
+check subscript_arithmetic "${subscripted[position+1]}" d
+subscripted[position]=C
+check subscript_assign "${subscripted[*]}" "a b C d"

@@ -195,7 +195,8 @@ static int split_subscript(const char *body, char *name, size_t name_size, char 
 static char *brace_expand(const char *body);
 
 static char *apply_to_element(const char *value, const char *operator_text) {
-    var_set("FRESH_ELEMENT", value);
+    if (value) var_set("FRESH_ELEMENT", value);
+    else var_unset("FRESH_ELEMENT");
 
     StrBuf body;
     sb_init(&body);
@@ -488,6 +489,31 @@ static char *brace_expand(const char *body) {
     while (body[name_length] && (isalnum((unsigned char)body[name_length]) ||
                                  body[name_length] == '_'))
         name_length++;
+
+    if (name_length > 0 && name_length < sizeof(name) && body[name_length] == '[' &&
+        !isdigit((unsigned char)body[0])) {
+        const char *close = body + name_length + 1;
+        int depth = 1;
+        for (; *close; close++) {
+            if (*close == '[') depth++;
+            else if (*close == ']' && --depth == 0) break;
+        }
+        size_t index_length = (size_t)(close - body) - name_length - 1;
+        int whole = index_length == 1 && strchr("@*", body[name_length + 1]);
+        if (*close == ']' && close[1] && strchr(":#%/^,@-+=?", close[1]) && !whole) {
+            memcpy(name, body, name_length);
+            name[name_length] = '\0';
+            char *index = xstrndup(body + name_length + 1, index_length);
+            char *resolved = expand_single(index);
+            const char *element = var_get_element(name, resolved);
+            char *copy = element ? xstrdup(element) : NULL;
+            free(index);
+            free(resolved);
+            char *result = apply_to_element(copy, close + 1);
+            free(copy);
+            return result;
+        }
+    }
 
     if (name_length > 0 && name_length < sizeof(name) && body[name_length]) {
         char operator = body[name_length];
