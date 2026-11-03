@@ -10,7 +10,9 @@ fallbacks. If an executable of the same name is on `PATH`, that one runs
 instead, so installing GNU coreutils or busybox transparently upgrades them.
 `find`, `sort`, `kill`, `printf`, `echo`, `awk`, `more` and `where` are the
 exceptions: Windows or other shells ship unrelated tools with those names, and
-`kill` must speak FreSH's own job table, so FreSH always uses its own.
+`kill` must speak FreSH's own job table, so FreSH always uses its own. Set
+`FRESH_PREFER_BUNDLED=1` to use every bundled command even when `PATH` has
+one of the same name.
 
 Only the flags listed here are implemented, and every listed flag behaves like
 the GNU original, checked against it on every push. An unknown flag is
@@ -20,15 +22,15 @@ rejected with the same message and status GNU uses.
 
 | Command | Flags | Notes |
 | --- | --- | --- |
-| `cd [dir]` | | no argument goes `$HOME`, `-` goes to the previous directory |
-| `pwd` | | forward slashes |
+| `cd [dir]` | | no argument goes `$HOME`, `-` goes to the previous directory and prints it; `-L` and `-P` are accepted so bash scripts run, and change nothing |
+| `pwd` | | forward slashes, the path the system reports; `-L` and `-P` are accepted and change nothing |
 | `echo [args]` | `-n` `-e` `-E` | `-e` enables `\n \t \r \e \\` |
-| `export [NAME=value]` | | no arguments lists the environment |
-| `unset NAME` | | |
-| `set` | `-e` `-x` `-u` | no arguments lists variables |
+| `export [NAME=value]` | `-n` `-f` `-p` | no arguments lists the environment, `-n` takes the mark off again, `-f` checks the names are functions |
+| `unset NAME` | `-f` `-v` | `-f` forgets a function, `-v` only variables; `NAME[key]` removes one element |
+| `set [options] [--] [args]` | `-e` `-u` `-x` `-f` `-o NAME` `+o NAME` | no arguments lists variables, `set -o` lists the options, `--` replaces `$1`, `$2`, ...; `-o pipefail` fails a pipeline when any stage fails; see [bash](bash.md) for the options that are accepted but do nothing |
 | `local name[=value]` | | function scoped variable |
-| `declare` / `typeset` | `-a` `-A` | declare an indexed or associative array |
-| `trap command SIGNAL...` | | EXIT HUP INT QUIT TERM ERR DEBUG RETURN, `trap -` removes |
+| `declare` / `typeset` | `-a` `-A` `-i` `-l` `-u` `-n` `-x` `-r` `-g` `-p` `-f` `-F` | arrays, integer, lower and upper case, a name reference, export, read only; `-g` makes it global from inside a function, `-p` prints the declaration, `-f` and `-F` print functions and their names; `+` takes an attribute off |
+| `trap command SIGNAL...` | `-l` `-p` | EXIT HUP INT QUIT TERM ERR DEBUG RETURN, `trap -` removes, `-p` prints what is set, `-l` lists the signals |
 | `jobs [job...]` | `-l` `-p` `-r` `-s` | background jobs in bash's format, a finished one is listed once |
 | `wait [job\|pid...]` | `-n` `-p name` | wait and return the status, 127 for an unknown one, 0 with no argument |
 | `fg [job]` | | resume if stopped and wait for it |
@@ -36,8 +38,8 @@ rejected with the same message and status GNU uses.
 | `stop [job...]` | | suspend a job, the FreSH stand in for Ctrl+Z |
 | `disown [job\|pid...]` | `-a` `-h` `-r` | forget a job and leave it running |
 | `task [list]` / `task run name command...` | | named background jobs with a log each: `log name`, `wait [name...]`, `stop name...`, `clear`; see [scripting](scripting.md#running-tasks-in-the-background) |
-| `alias [name=value]` | | no arguments lists aliases |
-| `unalias name` | | |
+| `alias [name=value]` | `-p` | no arguments lists aliases |
+| `unalias name` | `-a` | `-a` removes every alias |
 | `source file` / `. file` | | runs in the current shell |
 | `man name...` | | FreSH's page for a builtin or a bundled command it is running, the system `man` for the rest |
 | `action [list\|run file\|stop name\|reload]` | | the [actions](actions.md) running in this shell |
@@ -47,21 +49,22 @@ rejected with the same message and status GNU uses.
 | `compopt [-o option] [+o option] [name...]` | | change completion options, from inside a completion function when no name is given |
 | `using name... from file` | | takes only the named functions from a file, see [scripting](scripting.md#taking-functions-from-another-file) |
 | `eval words` | | |
-| `exit [code]` | | |
+| `exit [code]` / `quit` | | `quit` is the same as `exit` |
 | `return [code]` | | in a function or sourced script |
 | `break [n]` / `continue [n]` | | |
 | `shift [n]` | | |
-| `read [-p prompt] [names]` | `-p` | fills `REPLY` when no name given |
+| `read [names]` | `-r` `-s` `-a ARRAY` `-d DELIM` `-n N` `-N N` `-p PROMPT` `-t SECONDS` `-u FD` | fills `REPLY` when no name given; `-r` keeps backslashes, `-s` hides what is typed |
 | `test expr` / `[ expr ]` | | see [scripting](scripting.md#conditionals) |
 | `true` / `false` | | |
 | `:` | | the null command, always succeeds, the same as `true` |
 | `getopts optstring name` | | parses options, sets `OPTIND` and `OPTARG` |
+| `let expression...` | | arithmetic, the same as `(( ))`; succeeds when the last value is not 0 |
 | `pushd [dir]` / `popd` / `dirs` | `-c` | the directory stack, no argument swaps the top two |
-| `mapfile` / `readarray` | `-t` | read the input into an array, `-t` drops the newlines |
+| `mapfile` / `readarray` | `-t` `-d DELIM` `-n N` `-O ORIGIN` `-s N` `-u FD` `-C CALLBACK` `-c N` | read the input into an array, `-t` drops the newlines |
 | `shopt` | `-s` `-u` `-q` | `globstar` `nullglob` `dotglob` `extglob` `nocasematch` |
-| `command name` | `-v` | run past a function of the same name, `-v` says what it is |
+| `command name` | `-v` `-V` | run past a function of the same name, `-v` says what it is, `-V` says it in words |
 | `builtin name` | | run the builtin even when a function shadows it |
-| `exec command` | | run it and leave |
+| `exec [command]` | | run it and leave; with only redirections, as in `exec > log.txt`, they stay for the rest of the shell |
 | `readonly [name=value]` | `-p` | a variable that cannot be changed again |
 | `time pipeline` | | how long it took, on stderr |
 | `z [word ...]` | | jump to a directory you have used, see [shortcuts](shortcuts.md) |
@@ -69,9 +72,10 @@ rejected with the same message and status GNU uses.
 | `copypath [file]` | | put the full path on the clipboard |
 | `extract archive [dir]` | | unpack zip, tar, gz, bz2, xz, 7z or rar |
 | `admin [command]` | | reopen FreSH elevated, through `sudo` on macOS |
-| `history [n]` | `-c` | `-c` clears |
+| `history [n]` | `-c` | the last `n` commands, `-c` clears |
+| `bind [key action]` | `-l` `-r KEY` | put a key to work, see [shortcuts](shortcuts.md#keys-of-your-own) |
 | `which name...` | | path of a command |
-| `type name...` | | says whether it is an alias, function, builtin or file |
+| `type name...` | `-t` `-p` `-P` | says whether it is an alias, keyword, function, builtin or file, `-t` in one word, `-p` and `-P` the path |
 | `ls [path]` | `-a` `-l` `-1` | colours by kind, `/` for directories, `*` for executables; one plain name per line when piped |
 | `clear` | | erases the screen and the scrollback, the way `cls` does |
 | `rehash` | | rescan `PATH`, reload the theme and plugins after editing them |
@@ -85,6 +89,9 @@ rejected with the same message and status GNU uses.
 | `plugin [list\|load name...]` | | see [plugins](plugins.md) |
 | `gitinfo` | | repository, branch, user, clean or dirty |
 | `fresh` | | version, paths, active theme and plugins |
+| `fresh version` | | the version on its own |
+| `fresh doctor` / `fresh check` | | look for problems in the setup, see [configuration](configuration.md#checking-it) |
+| `fresh complete line` | | print what Tab would offer at the end of the line, see [Tab completion](completion.md) |
 | `fresh update` | `--check` `--pre` `--selector` | fetch and install a release from github |
 
 ## Files and directories
